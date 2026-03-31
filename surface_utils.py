@@ -17,11 +17,9 @@ def get_missing_tetrahedral_vectors(atoms, idx, cutoff=2.6, bond_length=1.48):
     Given a Si atom index, identify its missing tetrahedral bond vectors.
     PBC-Aware: Uses the distance vectors 'D' returned by neighbor_list.
     """
-    # 1. Get neighbors with MIC/PBC
     i_list, j_list, D_list = neighbor_list('ijD', atoms, cutoff)
     neighbors_D = D_list[i_list == idx]
     
-    # Normalize neighbors to unit vectors
     unit_vectors = []
     for d in neighbors_D:
         mag = np.linalg.norm(d)
@@ -30,7 +28,7 @@ def get_missing_tetrahedral_vectors(atoms, idx, cutoff=2.6, bond_length=1.48):
             
     num_neighbors = len(unit_vectors)
     if num_neighbors >= 4:
-        return [] # Fully coordinated
+        return []
         
     if num_neighbors == 2:
         v1, v2 = unit_vectors[0], unit_vectors[1]
@@ -78,44 +76,38 @@ def passivate_slab(atoms, species='H', side='bottom', bond_length=1.48):
         atoms += Atoms(species * len(new_h_pos), positions=new_h_pos)
     return atoms
 
-def reconstruct_2x1_buckled(atoms, bond_length=2.30, buckle=0.7):
+def reconstruct_2x1_buckled(atoms, bond_length=2.30, buckle=0.7, pattern='checkerboard'):
     """
     PBC-Aware 2x1 reconstruction (Minimum Image Convention).
-    Correctly pairs surface atoms across cell boundaries.
+    Supports 'stripe' (p(2x2)) and 'checkerboard' (c(4x2)) patterns.
     """
     indices = find_surface_indices(atoms, 'top')
-    # Use neighbor list to find coordination
     i_list, j_list = neighbor_list('ij', atoms, 2.6)
     
-    # Filter for undercoordinated Si (Coord < 4)
     surface_si = []
     for idx in indices:
         if np.sum(i_list == idx) < 4:
             surface_si.append(idx)
             
     paired = set()
-    dimer_pairs = []
+    initial_dimers = []
     
     for idx1 in surface_si:
         if idx1 in paired: continue
-        
         pref_vec = get_natural_pairing_vector(atoms, idx1)
         if pref_vec is None: continue
         
         pos1 = atoms.positions[idx1]
-        best_idx2 = -1
-        best_dist = 10.0
-        
-        # PBC-Aware distance search
-        # Using get_distances with mic=True
         other_indices = [i for i in surface_si if i != idx1 and i not in paired]
         if not other_indices: continue
         
-        # D_all has vectors; d_all has distances
         D_all, d_all = get_distances(pos1, atoms.positions[other_indices], cell=atoms.cell, pbc=atoms.pbc)
-        # Flatten (since we only passed one pos1)
         D_all = D_all[0]
         d_all = d_all[0]
+        
+        best_idx2 = -1
+        best_dist = 10.0
+        best_dist_vec = None
         
         for idx_in_sub, idx2 in enumerate(other_indices):
             dist = d_all[idx_in_sub]
@@ -123,30 +115,67 @@ def reconstruct_2x1_buckled(atoms, bond_length=2.30, buckle=0.7):
             dist_unit = dist_vec / dist
             alignment = abs(np.dot(dist_unit, pref_vec))
             
-            if dist < 4.5 and alignment > 0.8: # Must be close and aligned
+            if dist < 4.5 and alignment > 0.8: 
                 if dist < best_dist:
                     best_dist = dist
                     best_idx2 = idx2
                     best_dist_vec = dist_vec
         
         if best_idx2 != -1:
-            dimer_pairs.append((idx1, best_idx2, best_dist_vec))
+            initial_dimers.append({'ids': (idx1, best_idx2), 'dist_vec': best_dist_vec})
             paired.add(idx1)
             paired.add(best_idx2)
             
-    # Apply Buckling and Shift (PBC-Aware)
+    # Organize dimers into Rows and Columns for pattern control
+    if not initial_dimers:
+        return []
+        
+    # Calculate centroids for each dimer
+    for d in initial_dimers:
+        p1 = atoms.positions[d['ids'][0]]
+        p2_eff = p1 + d['dist_vec']
+        d['centroid'] = (p1 + p2_eff) / 2
+        d['dimer_vec'] = d['dist_vec'] / np.linalg.norm(d['dist_vec'])
+        
+    # Pick a dimerization axis (X or Y) from the first dimer
+    axis_idx = 0 if abs(initial_dimers[0]['dimer_vec'][0]) > 0.5 else 1
+    other_axis = 1 - axis_idx
+    
+    # Sort dimers by their position along 'other_axis' to identify rows
+    # Then sort within each row along 'axis_idx' to identify columns
+    rows = {}
+    for d in initial_dimers:
+        row_pos = round(d['centroid'][other_axis], 2)
+        if row_pos not in rows: rows[row_pos] = []
+        rows[row_pos].append(d)
+        
+    sorted_row_pos = sorted(rows.keys())
+    final_dimer_data = []
+    
+    for row_idx, r_pos in enumerate(sorted_row_pos):
+        row_dimers = sorted(rows[r_pos], key=lambda x: x['centroid'][axis_idx])
+        for col_idx, d in enumerate(row_dimers):
+            # Assign Phase S based on pattern
+            if pattern == 'stripe': # p(2x2)
+                S = (-1)**col_idx
+            else: # checkerboard c(4x2)
+                S = (-1)**(col_idx + row_idx)
+            
+            d['phase'] = S
+            final_dimer_data.append((d['ids'][0], d['ids'][1], d['dist_vec'], S))
+            
+    # Apply Buckling and Shift
     d_xy = np.sqrt(bond_length**2 - buckle**2)
-    for idx1, idx2, dist_vec in dimer_pairs:
+    for idx1, idx2, dist_vec, S in final_dimer_data:
         p1 = atoms.positions[idx1]
-        p2_eff = p1 + dist_vec # Use MIC-corrected position image
+        p2_eff = p1 + dist_vec
         center = (p1 + p2_eff) / 2
         vec = (p1 - p2_eff) / np.linalg.norm(p1 - p2_eff)
         
-        # Shift positions
-        atoms.positions[idx1] = center + vec * (d_xy / 2) + np.array([0, 0, buckle / 2])
-        # For idx2, it might be a periodic image. We apply the shift and let it wrap?
-        # Actually, if we modify idx2's absolute position, it works.
-        atoms.positions[idx2] = center - vec * (d_xy / 2) - np.array([0, 0, buckle / 2])
+        # Apply Buckle using phase S
+        # If S=1, idx1 up. If S=-1, idx1 down.
+        atoms.positions[idx1] = center + vec * (d_xy / 2) + np.array([0, 0, S * buckle / 2])
+        atoms.positions[idx2] = center - vec * (d_xy / 2) - np.array([0, 0, S * buckle / 2])
         
-    print(f"Applied PBC-aware 2x1 reconstruction to {len(dimer_pairs)} pairs.")
-    return dimer_pairs
+    print(f"Applied Organized 2x1 reconstruction ({pattern}) to {len(final_dimer_data)} pairs.")
+    return final_dimer_data
