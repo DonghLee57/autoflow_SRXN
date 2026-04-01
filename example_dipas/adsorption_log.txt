@@ -1,0 +1,26 @@
+--- DIPAS Adsorption Candidates Log ---
+Candidate 000: Physisorption on Site 61
+Candidate 001: Physisorption on Site 61
+Candidate 002: Physisorption on Site 61
+Candidate 003: Physisorption on Site 61
+Candidate 004: Physisorption on Site 61
+Candidate 005: Physisorption on Site 61
+Candidate 006: Physisorption on Site 61
+Candidate 007: Physisorption on Site 61
+Candidate 008: Physisorption on Site 61
+Candidate 009: Physisorption on Site 61
+Candidate 010: Physisorption on Site 61
+Candidate 011: Physisorption on Site 61
+Candidate 012: Physisorption on Site 63
+Candidate 013: Physisorption on Site 63
+Candidate 014: Physisorption on Site 63
+Candidate 015: Physisorption on Site 63
+Candidate 016: Physisorption on Site 63
+Candidate 017: Physisorption on Site 63
+Candidate 018: Physisorption on Site 63
+Candidate 019: Physisorption on Site 63
+Candidate 020: Physisorption on Site 63
+Candidate 021: Physisorption on Site 63
+Candidate 022: Physisorption on Site 63
+Candidate 023: Physisorption on Site 63
+Candidate 024: True Dissociation (k=1): N cleaved, Fragments on (61, 127)
