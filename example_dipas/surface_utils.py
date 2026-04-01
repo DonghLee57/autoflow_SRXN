@@ -45,6 +45,18 @@ def get_missing_tetrahedral_vectors(atoms, idx, cutoff=2.6, bond_length=1.48):
         v4 = a_coeff * w_unit - b_coeff * p_unit
         
         return [v3 * bond_length, v4 * bond_length]
+        
+    if num_neighbors == 3:
+        v1, v2, v3 = unit_vectors[0], unit_vectors[1], unit_vectors[2]
+        sum_vec = v1 + v2 + v3
+        sum_mag = np.linalg.norm(sum_vec)
+        if sum_mag < 1e-6:
+            return []
+
+        sum_unit = sum_vec / sum_mag
+        v4_direction = -sum_unit
+        return [v4_direction * bond_length]
+
     return []
 
 def get_natural_pairing_vector(atoms, idx):
