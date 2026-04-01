@@ -16,10 +16,9 @@ def screen_adsorption_sites(slab_path='slab.vasp', mol_path='mol.vasp'):
     print(f"Generated {len(phy_candidates)} Physisorption candidates.")
     write('candidates_physisorption.extxyz', phy_candidates)
 
-    # 6. Screening / Expt
     all_candidates = phy_candidates #+ chem_candidates
     #write('Adsorption_candidates.extxyz', all_candidates)
-g
+
     with open('adsorption_log.txt', 'w') as f:
         f.write("--- Adsorption Candidates Log ---\n")
         for i, atoms in enumerate(all_candidates):
