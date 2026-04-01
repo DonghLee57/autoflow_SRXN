@@ -18,6 +18,20 @@ class AdsorptionWorkflowManager:
         all_surface = np.where(slab.positions[:, 2] > z_max - 1.5)[0]
         self.surface_indices = self.get_unique_surface_indices(slab, all_surface)
         print(f"Surface Symmetry Analysis: {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites.")
+    
+    def _get_rotation_center(self, atoms, mode='com'):
+        """Helper to get rotation/placement center."""
+        if mode == 'com':
+            return atoms.get_center_of_mass()
+        elif mode == 'closest':
+            com = atoms.get_center_of_mass()
+            idx = np.argmin(np.linalg.norm(atoms.positions - com, axis=1))
+            return atoms.positions[idx]
+        elif isinstance(mode, int):
+            return atoms.positions[mode]
+        else:
+            return np.array([0.0, 0.0, 0.0])
+
 
     def get_unique_surface_indices(self, slab, indices):
         lattice, positions, numbers = slab.get_cell(), slab.get_scaled_positions(), slab.get_atomic_numbers()
@@ -82,35 +96,58 @@ class AdsorptionWorkflowManager:
         _, d = get_distances(adsorbate.positions, substrate.positions, cell=atoms.cell, pbc=atoms.pbc)
         return np.any(d < cutoff)
 
-    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=16):
+    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=16, rot_center='com'):
         from itertools import product
         phi = np.pi * (3.0 - np.sqrt(5.0))
         # Unique rotations
         rot_vectors, sampled_coords = [], []
+        
+        # Determine center for rotation/sampling
+        initial_center = self._get_rotation_center(molecule, mode=rot_center)
+        
         for i in range(n_rot):
-            y = 1 - (i / float(n_rot - 1)) * 2
+            if n_rot > 1:
+                y = 1 - (i / float(n_rot - 1)) * 2
+            else:
+                y = 1.0 # Or any fixed value
             r = np.sqrt(1 - y * y)
             theta = phi * i
             vec = np.array([np.cos(theta) * r, y, np.sin(theta) * r])
             m_test = molecule.copy()
-            m_test.rotate([0, 0, 1], vec)
-            m_test.center()
-            d = np.sort(np.linalg.norm(m_test.positions, axis=1))
+            # Rotate around initial_center
+            m_test.rotate([0, 0, 1], vec, center=initial_center)
+            # Re-calculate center after rotation for invariant distance check
+            current_center = self._get_rotation_center(m_test, mode=rot_center)
+            d = np.sort(np.linalg.norm(m_test.positions - current_center, axis=1))
             if not any(np.allclose(d, pd, atol=0.1) for pd in sampled_coords):
                 rot_vectors.append(vec); sampled_coords.append(d)
         
         candidates = []
+        z_max = self.slab.positions[:, 2].max()
         for idx in self.surface_indices:
             site = self.slab.positions[idx]
             for rv in rot_vectors:
                 m_copy = molecule.copy()
-                m_copy.rotate([0,0,1], rv)
+                # Rotate around chosen center
+                c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
+                m_copy.rotate([0,0,1], rv, center=c_pos_init)
+                
+                # Tag adsorbate for overlap detection
+                for a in m_copy: a.tag = 2
+                
+                # Manual placement: place chosen center at site + height
+                c_pos_rotated = self._get_rotation_center(m_copy, mode=rot_center)
+                target_pos = np.array([site[0], site[1], z_max + height])
+                m_copy.translate(target_pos - c_pos_rotated)
+                
                 slab_copy = self.slab.copy()
-                add_adsorbate(slab_copy, m_copy, height=height, position=(site[0], site[1]))
+                slab_copy += m_copy # Manual addition instead of add_adsorbate
+                
                 if not self.check_overlap(slab_copy, cutoff=1.2):
-                    slab_copy.info['mechanism'] = f"Physisorption on Site {idx}"
+                    slab_copy.info['mechanism'] = f"Physisorption on Site {idx}, center={rot_center}"
                     candidates.append(slab_copy)
         return candidates
+
 
     def get_fragment_indices(self, molecule, start_atom, broken_bond_atom):
         """Find all indices belonging to the fragment after breaking a bond."""
