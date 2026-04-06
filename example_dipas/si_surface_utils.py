@@ -119,16 +119,26 @@ def reconstruct_2x1_buckled(atoms, buckle=0.7, bond_length=2.30, verbose=False):
             atoms.positions[best_idx2] = mid - p12_unit * (bond_length/2.0)
 
             
-            # Bucket: align based on Y coordinate
-            if atoms.positions[idx1][1] > atoms.positions[best_idx2][1]:
-                atoms.positions[idx1][2] = z_max + buckle/2.0
-                atoms.positions[best_idx2][2] = z_max - buckle/2.0
-            else:
-                atoms.positions[idx1][2] = z_max - buckle/2.0
+            # Buckling: align based on the pairing axis direction (PBC robust)
+            # Use the displacement vector D12 (pos2 - pos1) with MIC
+            # Decide which axis to use (dominant component of pref_vec)
+            if abs(pref_vec[1]) > abs(pref_vec[0]): # Y-oriented pairing
+                idx2_is_up = (D12[1] > 0)
+            else: # X-oriented pairing
+                idx2_is_up = (D12[0] > 0)
+                
+            if idx2_is_up:
                 atoms.positions[best_idx2][2] = z_max + buckle/2.0
+                atoms.positions[idx1][2] = z_max - buckle/2.0
+            else:
+                atoms.positions[best_idx2][2] = z_max - buckle/2.0
+                atoms.positions[idx1][2] = z_max + buckle/2.0
                 
             paired.add(best_idx2)
             
+    # Wrap atoms to ensure they are within the unit cell after shifts
+    atoms.wrap()
+    
     if verbose: print(f"  [Reconstruction] Successfully formed and aligned {len(paired)} dimers.")
     # Return list of reconstructed dimer pairs for downstream manager
     dimers, _ = identify_surface_bonds(atoms)
