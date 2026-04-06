@@ -105,8 +105,13 @@ def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_ge
                 score = np.min(dists)
             
             if score > best_score:
-                # Overlap check
-                all_dists = np.linalg.norm(current_atoms.positions - h_pos_candidate, axis=1)
+                # Overlap check using MIC (Periodic Boundary Conditions)
+                # Ensure the new H atom isn't too close to ANY existing atom
+                _, all_dists_list = get_distances(h_pos_candidate, current_atoms.positions, 
+                                                 cell=current_atoms.cell, pbc=current_atoms.pbc)
+                all_dists = all_dists_list[0]
+                
+                # Exclude the parent atom from the overlap check
                 mask = np.ones(len(all_dists), dtype=bool)
                 mask[cand['parent']] = False
                 if np.any(all_dists[mask] < 0.8): continue
@@ -120,6 +125,8 @@ def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_ge
             b_len = 1.48 if 'Si' in cand['type'] else 0.96 if 'O' in cand['type'] else 1.05
             h_pos = current_atoms.positions[cand['parent']] + cand['vector'] * b_len
             current_atoms += Atoms('H', positions=[h_pos])
+            # Ensure the newly added H atom is wrapped correctly within the cell
+            current_atoms.wrap()
             success += 1
         else:
             break
