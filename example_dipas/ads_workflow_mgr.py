@@ -218,7 +218,7 @@ class AdsorptionWorkflowManager:
         return candidates
 
 
-    def discover_ligands(self, molecule, center_symbol='Si', skin=0.2, verbose=None):
+    def discover_ligands(self, molecule, center_target='Si', skin=0.2, verbose=None):
         if verbose is None: verbose = self.verbose
         """
         Discover ligands and their hapticity using graph partitioning.
@@ -228,9 +228,13 @@ class AdsorptionWorkflowManager:
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
         
-        center_indices = [a.index for a in molecule if a.symbol == center_symbol]
-        if not center_indices: return None, []
-        c_idx = center_indices[0]
+        if isinstance(center_target, int):
+            c_idx = center_target
+            if c_idx < 0 or c_idx >= len(molecule): return None, []
+        else:
+            center_indices = [a.index for a in molecule if a.symbol == center_target]
+            if not center_indices: return None, []
+            c_idx = center_indices[0]
         
         n_atoms = len(molecule)
         adj_matrix = np.zeros((n_atoms, n_atoms), dtype=int)
@@ -282,7 +286,7 @@ class AdsorptionWorkflowManager:
 
                 
         if verbose:
-            print(f"Precursor Fragmentation Analysis ({center_symbol} centered):")
+            print(f"Precursor Fragmentation Analysis ({center_target} centered):")
             print(f"  Found {len(ligands)} ligands attached to index {c_idx}.")
             for i, l in enumerate(ligands):
                 print(f"  - Ligand {i}: {l['formula']} (hapticity={l['hapticity']}), atoms: {l['indices']}")
@@ -303,192 +307,7 @@ class AdsorptionWorkflowManager:
         f.translate(placement_pos - f.positions[binding_idx])
         return f
 
-    def generate_chemisorption_candidates(self, molecule, center_symbol='Si', rot_steps=12):
-        """
-        High-fidelity chemisorption generation with rotational steric screening.
-        Focuses on Core+1Ligand pair on a Dimer.
-        """
-        from si_surface_utils import get_dangling_bond_info, reconstruct_2x1_buckled, find_existing_dimers
-        
-        c_idx, ligands = self.discover_ligands(molecule, center_symbol=center_symbol)
-        if not ligands: return []
-        
-        # 1. Identify Dimer pairs for site mapping
-        # Try reconstruction first, then fallback to existing dimer discovery
-        dimers = reconstruct_2x1_buckled(self.slab)
-        if not dimers:
-            dimers = find_existing_dimers(self.slab)
-            
-        if not dimers:
-            print("Warning: No dimers found on surface. Chemisorption requires site pairs.")
-            return []
-        if self.verbose:
-            print(f"Chemisorption Site Analysis: Found {len(dimers)} dimers/pairs for dissociative adsorption.")
-        candidates = []
-        stats = {'attempts': 0, 'overlap': 0, 'deduplicated': 0}
 
-
-
-        
-        # 2. Iterate each dissociation pathway (Cohesive Dissociation)
-        seen_formulas = set()
-        for l_info in ligands:
-            formula = l_info.get('formula', 'Unknown')
-            if formula in seen_formulas: 
-                stats['deduplicated'] += 1
-                continue
-            seen_formulas.add(formula)
-            
-            # Fragment B: The leaving ligand
-
-            indices_b = l_info['indices']
-            frag_b = molecule[indices_b]
-            binding_idx_b = indices_b.index(l_info['binding_atoms'][0])
-            
-            # Fragment A: The Heavy Piece (Everything else including the Center)
-            indices_a = list(set(range(len(molecule))) - set(indices_b))
-            frag_a = molecule[indices_a]
-            # Mapping c_idx to frag_a
-            binding_idx_a = indices_a.index(c_idx)
-            
-            # For each Dimer, try both pairing orientations
-            for (idx1, idx2) in dimers:
-                db1 = get_dangling_bond_info(self.slab, idx1)
-                db2 = get_dangling_bond_info(self.slab, idx2)
-                if not db1 or not db2: continue
-                
-                for s1, s2 in [(db1, db2), (db2, db1)]:
-                    best_pose = None
-                    
-                    # Rotational Screening (Simplified 1D scan for now)
-                    for angle in np.linspace(0, 360, rot_steps, endpoint=False):
-                        # Place Heavy Piece (A) 
-                        # Vector it lost was l_info['bond_vec']
-                        p_a = self._place_at_dangling_bond(frag_a, binding_idx_a, l_info['bond_vec'], 
-                                                           s1['pos'], s1['db_vector'], 2.35, rot_angle=angle)
-                        
-                        # Place Leaving Piece (B)
-                        # Vector it lost was -l_info['bond_vec']
-                        bond_len_b = 1.48 if frag_b.symbols[binding_idx_b] == 'H' else 2.1
-                        p_b = self._place_at_dangling_bond(frag_b, binding_idx_b, -l_info['bond_vec'], 
-                                                           s2['pos'], s2['db_vector'], bond_len_b, rot_angle=0)
-                        
-                        combined = self.slab.copy()
-                        for a in p_a: a.tag = 2
-                        combined += p_a
-                        for a in p_b: a.tag = 3
-                        combined += p_b
-                        
-                        # Check overlap
-                        if not self.check_overlap(combined, cutoff=1.2, verbose=False):
-                            comp_a = "".join(frag_a.symbols)
-                            combined.info['mechanism'] = f"Cohesive Chemisorption: {comp_a} on {s1['index']}, {frag_b.symbols[binding_idx_b]} on {s2['index']}, rot={angle:.1f}"
-                            best_pose = combined
-                            break
-                    
-                    if best_pose:
-                        candidates.append(best_pose)
-                        break
-                    else:
-                        stats['overlap'] += 1
-        
-        if self.verbose:
-            print(f"Chemisorption Search: Generated {len(candidates)} candidates from {stats['attempts']} pathways ({stats['overlap']} blocked by overlap, {stats['deduplicated']} redundant paths skipped).")
-        return candidates
-
-    def generate_h_exchange_candidates(self, molecule, center_symbol='Si', rot_steps=12):
-        """
-        Specialized candidate generator for passivated surfaces.
-        Mechanism: Precursor-L + Surface-H -> Surface-Precursor (Fragment) + L-H (By-product)
-        """
-        from si_surface_utils import get_surface_h_mapping
-        c_idx, ligands = self.discover_ligands(molecule, center_symbol=center_symbol)
-        if not ligands: return []
-        
-        # 1. Identify Surface-H sites
-        h_mapping = get_surface_h_mapping(self.slab)
-        if not h_mapping:
-            print("Warning: No surface-H found. Perhaps the surface is not passivated?")
-            return []
-        
-        candidates = []
-        stats = {'attempts': 0, 'overlap': 0, 'deduplicated': 0}
-        
-        # 2. Iterate each dissociation pathway
-        seen_formulas = set()
-        for l_info in ligands:
-            formula = l_info.get('formula', 'Unknown')
-            if formula in seen_formulas: continue
-            seen_formulas.add(formula)
-            
-            # Piece B: The leaving ligand
-
-            indices_b = l_info['indices']
-            frag_b = molecule[indices_b]
-            binding_idx_b = indices_b.index(l_info['binding_atoms'][0])
-            
-            # Piece A: The Heavy Piece (remaining precursor)
-            indices_a = list(set(range(len(molecule))) - set(indices_b))
-            frag_a = molecule[indices_a]
-            binding_idx_a = indices_a.index(c_idx)
-            
-            # For each available surface-H site
-            for si_idx, h_idx in h_mapping.items():
-                # Define bond vector: From Si to H
-                si_pos = self.slab.positions[si_idx]
-                h_pos = self.slab.positions[h_idx]
-                h_vec = h_pos - si_pos
-                h_vec_norm = h_vec / np.linalg.norm(h_vec)
-                
-                # Active vacancy site is si_idx + h_vec_norm * bond_length
-                
-                # Rotational scan for Fragment A on the surface vacancy
-                for angle in np.linspace(0, 360, rot_steps, endpoint=False):
-                    # Place Fragment A (Si-Si bond)
-                    # Vector it lost was l_info['bond_vec']
-                    p_a = self._place_at_dangling_bond(frag_a, binding_idx_a, l_info['bond_vec'], 
-                                                       si_pos, h_vec_norm, 2.35, rot_angle=angle)
-                    
-                    # Form Fragment B + H (Byproduct)
-                    p_b = self._form_byproduct(frag_b, binding_idx_b, -l_info['bond_vec'])
-                    
-                    # Offset byproduct ~4A above the highest surface atom
-                    z_clearance = np.max(self.slab.positions[:, 2]) + 4.0
-                    p_b.translate([si_pos[0], si_pos[1], z_clearance] - p_b.positions[0])
-                    
-                    # Combine: Surface (without this H) + Fragment A + Byproduct
-                    final = self.slab.copy()
-                    # Assign tags for visualization/analysis
-                    for i_at in range(len(final)): final[i_at].tag = 0 # Surface Si
-                    # Mark the specific H we'll delete (actually just delete it)
-                    
-                    # Instead of deleting from an atoms object while iterating, we reconstruct:
-                    # new_slab = [ slab minus h_idx ]
-                    # This is tricky because indices shift. Safer to zero out H but that's messy.
-                    
-                    # Better: create a list of indices to keep
-                    keep_indices = [i for i in range(len(self.slab)) if i != h_idx]
-                    reduced_slab = self.slab[keep_indices]
-                    
-                    combined = reduced_slab.copy()
-                    for a in p_a: a.tag = 2 # Adsorbed Core
-                    combined += p_a
-                    for a in p_b: a.tag = 3 # Byproduct
-                    combined += p_b
-                    
-                    if not self.check_overlap(combined, cutoff=1.2, verbose=False):
-                        comp_a = "".join(frag_a.symbols)
-                        combined.info['mechanism'] = f"H-Exchange: {comp_a} on Si_{si_idx}, byproduct {frag_b.symbols[binding_idx_b]}-H"
-                        candidates.append(combined)
-                        break
-                    else:
-                        stats['overlap'] += 1
-        
-        if self.verbose:
-            print(f"H-Exchange Search: Generated {len(candidates)} candidates from {len(h_mapping)} sites x {len(seen_formulas)} ligands ({stats['overlap']} overlap clashes, {stats['deduplicated']} redundant fragments skipped).")
-        return candidates
-
-        return candidates
 
     def _form_byproduct(self, fragment, binding_idx, internal_bond_vec):
         """Helper to create a byproduct molecule (Ligand + H)."""
