@@ -450,11 +450,18 @@ def find_existing_dimers(atoms, cutoff=2.6):
     """Find dimers that are already present in the structure."""
     dimers, _ = identify_surface_bonds(atoms, cutoff=cutoff)
     return dimers
-def get_surface_h_mapping(atoms, cutoff=1.8):
+def get_surface_h_mapping(atoms, cutoff=1.8, side='top'):
     """Map each surface H atom to its parent Si atom on a passivated surface."""
     h_indices = np.where(atoms.symbols == 'H')[0]
     si_indices = np.where(atoms.symbols == 'Si')[0]
     if len(h_indices) == 0: return {}
+
+    if side == 'top':
+        z_max = np.max(atoms.positions[:, 2])
+        h_indices = [i for i in h_indices if atoms.positions[i, 2] > z_max - 3.0]
+    elif side == 'bottom':
+        z_min = np.min(atoms.positions[:, 2])
+        h_indices = [i for i in h_indices if atoms.positions[i, 2] < z_min + 3.0]
 
     from ase.geometry import get_distances
     # For each H, find the closest Si

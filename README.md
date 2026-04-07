@@ -10,10 +10,11 @@
 - **그래프 기반 파편화**: RDKit 및 ASE를 활용하여 전구체 내 리간드를 자동으로 탐색합니다.
 - **화학식 기반 그룹화**: 동일한 화학식을 가진 리간드(예: 3개의 H 리간드)를 자동으로 식별하고, 불필요한 반복 계산을 방지하여 탐색 효율을 극대화합니다.
 
-### 2. 메커니즘 중심의 흡착 샘플링
+### 2. 알고리즘 기반 메커니즘 라우팅 (Algorithmic Chemisorption Builder)
+- **표면 반응성 동적 분석**: 기호(Label)에 의존하지 않고, 전달된 기판(Substrate)의 기하학적 구조를 동적으로 분석하여 반응 가능한 노출 다이머(Dimer)와 상단(Top) 표면의 수소 패시베이션 사이트를 찾아냅니다. 
 - **물리 흡착 (Physisorption)**: 전구체 전체에 대한 구형 회전 및 높이별 배치 최적화.
-- **해리형 화학 흡착 (Dissociative Chemisorption)**: 전구체 해리 경로와 표면 사이트 쌍(Dimer 등)을 정밀하게 매핑.
-- **수소 교환 반응 (H-Exchange)**: 패시베이션된 표면에서 발생하는 리간드-수소 교환 구조 자동 생성.
+- **해리형 화학 흡착 (Dissociative Chemisorption)**: 전구체 내 리간드 해리 경로 도출 후 표면 다이머 양 끝단에 자동으로 정밀 맵핑.
+- **수소 교환 반응 (H-Exchange)**: 패시베이션된 표면에서 발생하는 리간드-수소 교환 구조 및 발생하는 가스 부산물(`ex: byproduct=H2`)을 자동 계산하여 반영.
 
 ### 3. 실리콘 표면 엔지니어링 (Si-Specific Utilities)
 - **Si(100) 2x1 Reconstructed**: 버클링(Buckling) 정렬이 포함된 표준 재구성 표면 생성.
@@ -35,8 +36,9 @@
 ## 🏗️ 시스템 아키텍처 (Architecture)
 
 ### Core Libraries
-- `example_dipas/ads_workflow_mgr.py`: 범용 흡착 워크플로우 매니저 클래스 (`AdsorptionWorkflowManager`).
-- `example_dipas/surface_utils.py`: 기하 구조 기반 사이트 식별 및 범용 패시베이션 라이브러리.
+- `example_dipas/ads_workflow_mgr.py`: 범용 흡착 워크플로우를 관장하며 리간드/반응 파편을 생성하는 매니저 클래스 (`AdsorptionWorkflowManager`).
+- `example_dipas/chemisorption_builder.py`: 기하 구조 기반 동적 표면 분석 및 경로/메커니즘 스티어링, 결과 구조 조립을 담당하는 모듈.
+- `example_dipas/surface_utils.py`: 기하 구조 기반 사이트 식별 및 범용 표면 패시베이션 기능을 지원합니다.
 
 ### Specialty Modules
 - `example_dipas/si_surface_utils.py`: 실리콘(Si) 표면 특화 재구성 및 산화/수화 유틸리티.

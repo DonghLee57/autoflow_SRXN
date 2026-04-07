@@ -3,6 +3,7 @@ import numpy as np
 from ase.io import read, write
 from si_surface_utils import generate_standard_surfaces
 from ads_workflow_mgr import AdsorptionWorkflowManager
+from chemisorption_builder import build_chemisorption_structures
 
 def study_dipas_on_multiple_surfaces():
     print("--- Starting Integrated DIPAS Adsorption Study ---")
@@ -48,30 +49,23 @@ def study_dipas_on_multiple_surfaces():
             write(f'cands_{label}_phy_{i:03d}.extxyz', c)
             all_results.append(c)
 
-        # B. Reactive Adsorption
-        # Determine if it's passivated
-        is_h_passivated = 'H_Passivated' in label
+        # B. Reactive Adsorption (Algorithmic Routing)
+        print(f"  Sampling Chemisorption / H-Exchange on {label}...")
+        reactive_cands = build_chemisorption_structures(dipas, center_symbol='Si', surface=slab, rot_steps=8, verbose=True)
+        print(f"    -> Generated {len(reactive_cands)} reactive candidates.")
         
-        if not is_h_passivated:
-            # Clean or Oxidized (unpassivated) -> Chemisorption
-            print(f"  Sampling Chemisorption on {label}...")
-            chem_cands = mgr.generate_chemisorption_candidates(dipas, rot_steps=8)
-            print(f"    -> Generated {len(chem_cands)} chemisorption candidates.")
-            for i, c in enumerate(chem_cands):
-                c.info['surface_state'] = label
-                c.info['mechanism'] = 'chemisorption'
-                write(f'cands_{label}_chem_{i:03d}.extxyz', c)
-                all_results.append(c)
-        else:
-            # H-passivated -> H-Exchange
-            print(f"  Sampling H-Exchange Adsorption on {label}...")
-            hex_cands = mgr.generate_h_exchange_candidates(dipas, rot_steps=8)
-            print(f"    -> Generated {len(hex_cands)} H-exchange candidates.")
-            for i, c in enumerate(hex_cands):
-                c.info['surface_state'] = label
-                c.info['mechanism'] = 'h_exchange'
-                write(f'cands_{label}_hex_{i:03d}.extxyz', c)
-                all_results.append(c)
+        # Separate indexing so we maintain sequence numbers per reaction type
+        type_counters = {'chemisorption': 0, 'h_exchange': 0}
+        
+        for c in reactive_cands:
+            c.info['surface_state'] = label
+            rtype = c.info.get('reaction_type', 'chemisorption')
+            file_type = 'hex' if rtype == 'h_exchange' else 'chem'
+            
+            idx = type_counters[rtype]
+            write(f'cands_{label}_{file_type}_{idx:03d}.extxyz', c)
+            type_counters[rtype] += 1
+            all_results.append(c)
 
     print(f"\n--- Study Complete. Total candidates generated: {len(all_results)} ---")
     print("Structures saved as cands_[Label]_[Mechanism]_[Index].extxyz")
