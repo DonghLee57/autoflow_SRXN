@@ -36,7 +36,6 @@ def run_generic_adsorption_study(config_path='config.yaml'):
     pass_cfg = config.get('passivation', {})
     if pass_cfg.get('enabled', False):
         from surface_utils import passivate_surface_coverage_general
-        from ase.io import write
         
         element = pass_cfg.get('element', 'H')
         side = pass_cfg.get('side', 'bottom')
@@ -101,4 +100,5 @@ def run_generic_adsorption_study(config_path='config.yaml'):
     print(f"\n--- Study Complete. Total candidates: {len(all_results)} ---")
 
 if __name__ == '__main__':
-    run_generic_adsorption_study('config.yaml')
+    c_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
+    run_generic_adsorption_study(c_path)

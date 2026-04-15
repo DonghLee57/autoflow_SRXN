@@ -1,0 +1,21 @@
+ideal_coordination:
+  Ni: 4
+  O: 2
+  Si: 4
+passivation:
+  coverage: 1.0
+  element: H
+  enabled: false
+  output_name: passivated_surface.vasp
+  side: top
+paths:
+  molecule: ../structures/mol.vasp
+  output_prefix: cands_sio2
+  substrate: ../structures/SiO2_substrate.vasp
+settings:
+  center_target: Ni
+  do_chemisorption: true
+  do_physisorption: true
+  max_pair_dist: 5.0
+  rot_steps: 8
+  symprec: 0.2
