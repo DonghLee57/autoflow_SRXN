@@ -1,12 +1,12 @@
 paths:
   substrate: "generated_slab.vasp"
-  inhibitor: "structures/ethanol.vasp"
-  molecule: "dipas_3d.extxyz"
+  inhibitor: "../structures/ethanol.vasp"
+  molecule: "../structures/DIPAS.vasp"
   output_prefix: "si_eth_discov"
 
 substrate_generation:
   run_generation: True
-  bulk_path: "Si.vasp"
+  bulk_path: "../structures/Si_mp149.vasp"
   miller_indices: [1, 0, 0]
   thickness: 12.0
   vacuum: 15.0
