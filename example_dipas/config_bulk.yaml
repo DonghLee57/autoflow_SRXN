@@ -10,10 +10,6 @@ settings:
   do_chemisorption: true
   max_pair_dist: 5.0
 
-ideal_coordination:
-  Si: 4
-  O: 2
-
 # [NEW] Substrate Generation from Bulk
 substrate_generation:
   enabled: true

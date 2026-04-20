@@ -7,20 +7,37 @@ from rdkit.Chem import AllChem
 import os
 import spglib
 from itertools import combinations
+from knowledge_engine import chem_kb
+from logger_utils import get_workflow_logger
 
 class AdsorptionWorkflowManager:
     """
     Generalized Adsorption Manager with Mechanistic Logging and Visual Clarity.
     """
-    def __init__(self, slab, symprec=0.2, verbose=False):
+    def __init__(self, slab, config=None, symprec=0.2, verbose=False):
         self.slab = slab
+        self.config = config if config is not None else {}
         self.verbose = verbose
         self.symprec = symprec
+        self.logger = get_workflow_logger()
+        
         z_max = slab.positions[:, 2].max()
         all_surface = np.where(slab.positions[:, 2] > z_max - 1.5)[0]
         self.surface_indices = self.get_unique_surface_indices(slab, all_surface, symprec=self.symprec)
-        if self.verbose:
-            print(f"Surface Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites.")
+        self.logger.info(f"Surface Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites.")
+    
+    def calculate_molecule_lateral_extent(self, molecule):
+        """
+        Calculates the maximum lateral (XY) span of the molecule to detect potential PBC overlaps.
+        Returns the max distance between any two atoms projected on the XY plane.
+        """
+        pos_xy = molecule.positions[:, :2]
+        if len(pos_xy) < 2: return 0.0
+        
+        # Max distance between any two atoms in XY
+        from scipy.spatial.distance import pdist
+        dists = pdist(pos_xy)
+        return float(np.max(dists))
     
     def _get_rotation_center(self, atoms, mode='com'):
         """Helper to get rotation/placement center."""
@@ -124,60 +141,115 @@ class AdsorptionWorkflowManager:
         except:
             # Fallback if optimization fail (molecule might be too small or complex)
             pass
-        conf = mol.GetConformer()
-        return Atoms([a.GetSymbol() for a in mol.GetAtoms()], positions=conf.GetPositions())
-
-    def align_and_place(self, slab, molecule, reactive_indices, target_positions):
-        m_copy = molecule.copy()
-        m_center = m_copy.positions[reactive_indices[0]]
-        m_copy.translate(target_positions[0] - m_center)
-        if len(reactive_indices) > 1:
-            m_vec = m_copy.positions[reactive_indices[1]] - m_copy.positions[reactive_indices[0]]
-            s_vec = target_positions[1] - target_positions[0]
-            m_copy.rotate(m_vec, s_vec, center=target_positions[0])
-        slab_with_ads = slab.copy()
-        for a in m_copy: a.tag = 2
-        slab_with_ads += m_copy
-        return slab_with_ads
-
-    def check_overlap(self, atoms, cutoff=1.2, verbose=None):
-        if verbose is None: verbose = self.verbose
+    def check_overlap(self, atoms, cutoff=None, verbose=False):
+        """
+        Rigid-body overlap check using a configurable threshold.
+        Supports multi-stage tagging:
+          - Substrate: Tags 0, 1
+          - Adsorbates: Tags >= 2
+        """
         from ase.geometry import get_distances
-        tags = atoms.get_tags()
-        substrate, adsorbate = atoms[tags <= 1], atoms[tags >= 2]
-        if not len(adsorbate): return False
+        import numpy as np
         
-        # 1. Adsorbate vs Substrate
-        indices_ads = np.where(tags >= 2)[0]
-        indices_sub = np.where(tags <= 1)[0]
-        D_sub, d_sub = get_distances(adsorbate.positions, substrate.positions, cell=atoms.cell, pbc=atoms.pbc)
-        # d_sub is (n_ads, n_sub)
-        clashes = np.where(d_sub < cutoff)
-        if len(clashes[0]) > 0:
-            if verbose:
-                for i_a, i_s in zip(clashes[0], clashes[1]):
-                    a_idx, s_idx = indices_ads[i_a], indices_sub[i_s]
-                    print(f"    [Overlap] {atoms.symbols[a_idx]}({a_idx}) - {atoms.symbols[s_idx]}({s_idx}) clash (dist: {d_sub[i_a, i_s]:.2f} A)")
-            return True
+        env_cutoff = self.config.get('adsorbate_generation', {}).get('overlap_cutoff', 2.5)
+        # For substrate, we use a tighter threshold to allow adsorption
+        sub_cutoff = 1.5 
+        
+        if cutoff is not None:
+            # If a local cutoff is provided (e.g. from chemisorption builder), use it for everything
+            env_cutoff = cutoff
+            sub_cutoff = cutoff
             
-        # 2. Adsorbate internal (Core vs Ligand)
-        if len(np.unique(tags[tags >= 2])) > 1:
-            unique_tags = np.sort(np.unique(tags[tags >= 2]))
-            for i_t, t1 in enumerate(unique_tags):
-                for t2 in unique_tags[i_t+1:]:
-                    idx1 = np.where(tags == t1)[0]
-                    idx2 = np.where(tags == t2)[0]
-                    D_int, d_int = get_distances(atoms.positions[idx1], atoms.positions[idx2], cell=atoms.cell, pbc=atoms.pbc)
-                    clashes_int = np.where(d_int < cutoff)
-                    if len(clashes_int[0]) > 0:
-                        if verbose:
-                            for i1, i2 in zip(clashes_int[0], clashes_int[1]):
-                                a1_idx, a2_idx = idx1[i1], idx2[i2]
-                                print(f"    [Overlap] {atoms.symbols[a1_idx]}({a1_idx}) - {atoms.symbols[a2_idx]}({a2_idx}) clash (dist: {d_int[i1, i2]:.2f} A)")
-                        return True
+        pos = atoms.positions
+        cell = atoms.cell
+        pbc = atoms.pbc
+        
+        tags = atoms.get_tags()
+        max_tag = np.max(tags)
+        
+        if max_tag < 2: return False
+            
+        # We only check distance between the atoms added in the CURRENT stage (highest tag)
+        # and all other atoms.
+        new_indices = np.where(tags == max_tag)[0]
+        if len(new_indices) == 0: return False
+        
+        for idx in new_indices:
+            mask = np.ones(len(atoms), dtype=bool)
+            mask[idx] = False
+            mask_indices = np.where(mask)[0]
+            
+            ref_pos = pos[idx]
+            other_pos = pos[mask]
+            other_tags = tags[mask]
+            
+            _, d_list = get_distances(ref_pos, other_pos, cell=cell, pbc=pbc)
+            d_list = d_list.flatten() # Ensure 1D array for zipping
+            
+            for d, o_idx, o_tag in zip(d_list, mask_indices, other_tags):
+                # Threshold depends on whether we are hitting the substrate or another adsorbate
+                threshold = sub_cutoff if o_tag < 2 else env_cutoff
+                if d < threshold:
+                    if verbose:
+                        print(f"  [Overlap] Collision: Atom {idx}(tag {tags[idx]}) and {o_idx}(tag {o_tag}) at {d:.2f} A (Threshold: {threshold} A)")
+                    return True
         return False
 
-    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=16, rot_center='com', config=None):
+    def _get_steric_fitness(self, atoms, cutoff=None):
+        """
+        Calculates a 'fitness' score.
+        Checks for hard collisions and then soft-repulsion.
+        """
+        # 1. Hard Collision Check (using context-aware logic)
+        if self.check_overlap(atoms, cutoff=cutoff, verbose=False):
+            return -1e9 # Overlap
+            
+        # 2. Soft-repulsion score
+        # Calculate distances between NEW atoms and ALL environment atoms
+        from ase.geometry import get_distances
+        tags = atoms.get_tags()
+        max_tag = np.max(tags)
+        new_indices = np.where(tags == max_tag)[0]
+        env_indices = np.where(tags < max_tag)[0]
+        
+        if len(env_indices) == 0: return 0.0
+        
+        _, dists = get_distances(atoms.positions[new_indices], atoms.positions[env_indices], 
+                                 cell=atoms.cell, pbc=atoms.pbc)
+        
+        # Soft-repulsion score: favor larger distances
+        score = -np.sum(1.0 / (dists**6 + 1e-6))
+        return score
+
+    def _get_diverse_top_poses(self, poses, n_out=5, angle_threshold=45.0):
+        """
+        Filters a list of (score, atoms, rotation_vec) to return top N diverse poses.
+        """
+        if not poses: return []
+        # Sort by score descending
+        poses.sort(key=lambda x: x[0], reverse=True)
+        
+        selected = [poses[0]]
+        for p in poses[1:]:
+            if len(selected) >= n_out: break
+            
+            # Check rotation diversity
+            is_diverse = True
+            for s in selected:
+                # Dot product of rotation vectors
+                v1, v2 = p[2], s[2]
+                cos_theta = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
+                angle = np.degrees(np.arccos(np.clip(cos_theta, -1.0, 1.0)))
+                if angle < angle_threshold:
+                    is_diverse = False
+                    break
+            
+            if is_diverse:
+                selected.append(p)
+        
+        return [s[1] for s in selected]
+
+    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=32, rot_center='com', config=None, tag=2):
         from itertools import product
         from surface_utils import identify_protectors, CavityDetector
         phi = np.pi * (3.0 - np.sqrt(5.0))
@@ -214,31 +286,38 @@ class AdsorptionWorkflowManager:
                 site = self.slab.positions[idx]
                 target_centers.append(np.array([site[0], site[1], z_max + height]))
                 
+        # Get global overlap cutoff from config
+        global_overlap = self.config.get('adsorbate_generation', {}).get('overlap_cutoff', 3.0)
+
         for target_pos in target_centers:
+            current_site_poses = []
             for rv in rot_vectors:
                 stats['total'] += 1
                 m_copy = molecule.copy()
-                # Rotate around chosen center
                 c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
                 m_copy.rotate([0,0,1], rv, center=c_pos_init)
                 
-                # Tag adsorbate for overlap detection
-                for a in m_copy: a.tag = 2
-                
-                # Manual placement: place chosen center at target_pos
                 c_pos_rotated = self._get_rotation_center(m_copy, mode=rot_center)
                 m_copy.translate(target_pos - c_pos_rotated)
+
+                combined = self.slab.copy()
+                for a in m_copy: a.tag = tag
+                combined += m_copy
                 
-                slab_copy = self.slab.copy()
-                slab_copy += m_copy # Manual addition instead of add_adsorbate
-                
-                if not self.check_overlap(slab_copy, cutoff=1.2):
-                    slab_copy.info['mechanism'] = f"Physisorption in void, center={rot_center}"
-                    candidates.append(slab_copy)
+                # Use Steric Fitness to evaluate pose
+                score = self._get_steric_fitness(combined, cutoff=global_overlap)
+                if score > -1e8: # Valid pose
+                    combined.info['mechanism'] = f"Physisorption, center={rot_center}, tag={tag}"
+                    current_site_poses.append((score, combined, rv))
                 else:
                     stats['overlap'] += 1
+            
+            # Select Top 5 diverse poses for this site
+            best_poses = self._get_diverse_top_poses(current_site_poses, n_out=5)
+            candidates.extend(best_poses)
+            
         if self.verbose:
-            print(f"Physisorption Search: Generated {len(candidates)} candidates from {stats['total']} attempts ({stats['overlap']} skipped due to overlaps).")
+            print(f"Physisorption Search (tag={tag}): Generated {len(candidates)} candidates from {len(target_centers)} sites ({stats['total']} total orientation attempts, {stats['overlap']} skipped).")
         return candidates
 
     def discover_ligands(self, molecule, center_target='Si', skin=0.2, verbose=None):

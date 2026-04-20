@@ -1,0 +1,43 @@
+paths:
+  substrate: "generated_slab.vasp"
+  inhibitor: "structures/ethanol.vasp"
+  molecule: "dipas_3d.extxyz"
+  output_prefix: "si_eth_discov"
+
+substrate_generation:
+  run_generation: True
+  bulk_path: "Si.vasp"
+  miller_indices: [1, 0, 0]
+  thickness: 12.0
+  vacuum: 15.0
+  target_area: 500.0
+
+passivation:
+  run_passivation: True
+  element: "H"
+  side: "bottom"
+  coverage: 1.0
+
+adsorbate_generation:
+  run_pre_inhibition: True  # Step 1: Search for Ethanol poses
+  branching_limit: 1        # Only top inhibitor pose for speed
+  overlap_cutoff: 1.5       # Permissive 1.5A for crowded cells
+  run_physisorption: True
+  run_chemisorption: True
+  inhibitor_center: 1       # Index 1 of Ethanol (Carbon next to Oxygen)
+  precursor_center: "Si"    # Center Si for DIPAS
+  rot_steps: 8              # Better sampling
+  symprec: 0.2
+  log_path: "eth_workflow.log"
+
+ideal_coordination:
+  Si: 4
+  O: 2
+  N: 3
+  C: 4
+  H: 1
+
+protector:
+  enabled: True
+  heuristic: "graph"
+  inhibitor_elements: ["C", "H", "O"] # Helps identify Ethanol fragments correctly

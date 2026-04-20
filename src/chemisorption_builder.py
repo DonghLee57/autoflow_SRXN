@@ -1,13 +1,14 @@
 import numpy as np
 from ase import Atoms
 from ads_workflow_mgr import AdsorptionWorkflowManager
+from knowledge_engine import chem_kb
+
 def analyze_surface_reactivity(surface, config, verbose=True):
     from ase.neighborlist import neighbor_list
     import numpy as np
     from ase.data import covalent_radii
     from surface_utils import identify_protectors
     
-    ideal_coord = config.get('ideal_coordination', {})
     max_pair_dist = config.get('settings', {}).get('max_pair_dist', 5.0)
     
     sub_idx, prot_idx = identify_protectors(surface, config, verbose=False)
@@ -46,8 +47,6 @@ def analyze_surface_reactivity(surface, config, verbose=True):
                     })
             continue
             
-        if sym not in ideal_coord: continue
-        
         neighbors = []
         for n_i, n_j, dist in zip(i_list, j_list, d_list):
             if n_i == idx:
@@ -56,7 +55,7 @@ def analyze_surface_reactivity(surface, config, verbose=True):
                     neighbors.append(n_j)
                     
         actual_coord = len(neighbors)
-        expected = ideal_coord[sym]
+        expected = chem_kb.get_ideal_coordination(sym, config)
         
         if actual_coord < expected:
             from surface_utils import generate_vsepr_vectors
@@ -124,6 +123,150 @@ def analyze_surface_reactivity(surface, config, verbose=True):
             
     results['pairs'] = list(unique_pairs.values())
     
+    # [3] Search for Multi-Site (Chelating) Archetypes
+    # Find sets of 3+ sites that form a compact cluster
+    # This can be expanded in the future for complex clusters
+    
+    if verbose:
+        print(f"  [Generic Reactivity] Formed {pair_count} active site pairs -> Symmetry reduced to {len(results['pairs'])} unique pairs.")
+        
+    return results
+
+
+def analyze_molecule_ligands(molecule, center_target='Si', verbose=True):
+    """
+    Algorithmically fragments the precursor molecule to identify reactive ligands.
+    Uses AdsorptionWorkflowManager implicitly for the heavy lifting.
+    """
+import numpy as np
+from ase import Atoms
+from ads_workflow_mgr import AdsorptionWorkflowManager
+from knowledge_engine import chem_kb
+
+def analyze_surface_reactivity(surface, config, verbose=True):
+    from ase.neighborlist import neighbor_list
+    import numpy as np
+    from ase.data import covalent_radii
+    from surface_utils import identify_protectors
+    
+    max_pair_dist = config.get('settings', {}).get('max_pair_dist', 5.0)
+    
+    sub_idx, prot_idx = identify_protectors(surface, config, verbose=False)
+    
+    i_list, j_list, D_list = neighbor_list('ijD', surface, cutoff=3.0) 
+    d_list = np.linalg.norm(D_list, axis=1)
+    
+    dangling_sites = []
+    exchange_sites = []
+    
+    z_max = max(surface.positions[:, 2])
+    z_sub_max = max(surface.positions[sub_idx, 2]) if len(sub_idx) else z_max
+    
+    for idx in range(len(surface)):
+        if idx in sub_idx and surface.positions[idx, 2] < z_sub_max - 2.5: continue
+        sym = surface.symbols[idx]
+        
+        if idx in prot_idx:
+            reactive_leaves = config.get('protector', {}).get('reactive_leaves', [])
+            if sym in reactive_leaves:
+                neighbors = []
+                for n_i, n_j, dist, vec in zip(i_list, j_list, d_list, D_list):
+                    if n_i == idx and dist > 0.1 and dist < 2.0:
+                        neighbors.append((n_j, vec))
+                if len(neighbors) == 1:
+                    db_vec = -neighbors[0][1]
+                    db_vec = db_vec / np.linalg.norm(db_vec)
+                    exchange_sites.append({
+                        'index': idx,
+                        'backbone_idx': neighbors[0][0],
+                        'sym': sym,
+                        'pos': surface.positions[neighbors[0][0]],
+                        'leaf_pos': surface.positions[idx],
+                        'db_vector': db_vec,
+                        'missing_bonds': 1
+                    })
+            continue
+            
+        neighbors = []
+        for n_i, n_j, dist in zip(i_list, j_list, d_list):
+            if n_i == idx:
+                cutoff_val = covalent_radii[surface.numbers[n_i]] + covalent_radii[surface.numbers[n_j]] + 0.3
+                if dist < cutoff_val and dist > 0.1:
+                    neighbors.append(n_j)
+                    
+        actual_coord = len(neighbors)
+        expected = chem_kb.get_ideal_coordination(sym, config)
+        
+        if actual_coord < expected:
+            from surface_utils import generate_vsepr_vectors
+            vecs = generate_vsepr_vectors(surface, idx, neighbor_data=(i_list, j_list, D_list))
+            for db_vec in vecs:
+                db_vec = db_vec / np.linalg.norm(db_vec)
+                hit = False
+                if len(prot_idx) > 0:
+                    for p in prot_idx:
+                        p_vec = surface.positions[p] - surface.positions[idx]
+                        proj = np.dot(p_vec, db_vec)
+                        if proj > 0.5:
+                            dist_to_ray = np.linalg.norm(p_vec - proj*db_vec)
+                            if dist_to_ray < 1.5:
+                                hit = True
+                                break
+                if not hit:
+                    dangling_sites.append({
+                        'index': idx,
+                        'sym': sym,
+                        'pos': surface.positions[idx],
+                        'db_vector': db_vec,
+                        'missing_bonds': expected - actual_coord
+                    })
+                    break 
+            
+    if verbose:
+        print(f"  [Generic Reactivity] Identified {len(dangling_sites)} undercoordinated surface sites and {len(exchange_sites)} protector exchange sites.")
+        
+    results = {'single': dangling_sites, 'pairs': [], 'exchange': exchange_sites}
+    
+    # Analyze Symmetry to reduce pair redundancies
+    import spglib
+    lattice = surface.get_cell()
+    pos = surface.get_scaled_positions()
+    nums = surface.get_atomic_numbers()
+    symprec = config.get('settings', {}).get('symprec', 0.2)
+    
+    equiv_atoms = np.arange(len(surface))
+    for prec in [symprec, 0.5]:
+        try:
+            dataset = spglib.get_symmetry_dataset((lattice, pos, nums), symprec=prec)
+            if dataset:
+                equiv_atoms = dataset.equivalent_atoms if hasattr(dataset, 'equivalent_atoms') else dataset['equivalent_atoms']
+                if len(np.unique(equiv_atoms)) < len(surface) or prec == 0.5:
+                    break
+        except Exception:
+            pass
+            
+    from itertools import combinations
+    unique_pairs = {}
+    pair_count = 0
+    
+    for s1, s2 in combinations(dangling_sites, 2):
+        dist = np.linalg.norm(s1['pos'] - s2['pos'])
+        if dist <= max_pair_dist:
+            pair_count += 1
+            # Pair signature: sorted tuple of symmetry classes + rounded distance
+            c1 = equiv_atoms[s1['index']]
+            c2 = equiv_atoms[s2['index']]
+            sig = tuple(sorted([c1, c2])) + (round(dist, 1),)
+            
+            if sig not in unique_pairs:
+                unique_pairs[sig] = (s1, s2)
+            
+    results['pairs'] = list(unique_pairs.values())
+    
+    # [3] Search for Multi-Site (Chelating) Archetypes
+    # Find sets of 3+ sites that form a compact cluster
+    # This can be expanded in the future for complex clusters
+    
     if verbose:
         print(f"  [Generic Reactivity] Formed {pair_count} active site pairs -> Symmetry reduced to {len(results['pairs'])} unique pairs.")
         
@@ -141,13 +284,13 @@ def analyze_molecule_ligands(molecule, center_target='Si', verbose=True):
     return c_idx, ligands
 
 
-def build_chemisorption_structures(molecule, center_target='Si', surface=None, rot_steps=8, config=None, verbose=True):
+def build_chemisorption_structures(molecule, center_target='Si', surface=None, rot_steps=8, config=None, verbose=True, tag=2):
     """
     Entry point for algorithmic chemisorption generation based on input molecule and surface.
     Identifies valid mechanisms based on available surface sites.
     """
     if verbose:
-        print("\n--- Starting Algorithmic Chemisorption Routing ---")
+        print(f"\n--- Starting Algorithmic Chemisorption Routing (tag={tag}) ---")
         
     if config is None: config = {}
     sites = analyze_surface_reactivity(surface, config, verbose=verbose)
@@ -160,20 +303,18 @@ def build_chemisorption_structures(molecule, center_target='Si', surface=None, r
         return candidates
         
     # We instantiate a manager scoped to the current surface for coordinate placement/overlap tests
-    mgr = AdsorptionWorkflowManager(surface, verbose=verbose)
+    mgr = AdsorptionWorkflowManager(surface, config=config, verbose=verbose)
     
     # Generic Cohesive Dissociation on active site pairs
     if sites.get('pairs'):
-        if verbose: print("  -> Routing to Generic Dissociative Chemisorption on Pairs...")
-        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites['pairs'], rot_steps)
+        if verbose: print(f"  -> Routing to Generic Dissociative Chemisorption on {len(sites['pairs'])} Pairs...")
+        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites['pairs'], rot_steps, tag=tag)
         candidates.extend(d_cands)
         
     if sites.get('exchange'):
-        if verbose: print("  -> Routing to Protector Exchange Chemisorption...")
-        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites['exchange'], rot_steps)
+        if verbose: print(f"  -> Routing to Protector Exchange Chemisorption on {len(sites['exchange'])} Sites...")
+        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites['exchange'], rot_steps, tag=tag)
         candidates.extend(x_cands)
-        
-    # We can also add Single-site generic additions if do_chemisorption includes it.
         
     if verbose:
         print(f"--- Finished Chemisorption Builder. Total Generated: {len(candidates)} ---\n")
@@ -181,10 +322,10 @@ def build_chemisorption_structures(molecule, center_target='Si', surface=None, r
     return candidates
 
 
-def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps):
+def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2):
     """ Internal subroutine to execute Generic Single Site Addition/Exchange """
     candidates = []
-    stats = {'overlap': 0, 'deduplicated': 0}
+    stats = {'overlap': 0, 'deduplicated': 0, 'total_tries': 0}
     seen_formulas = set()
     
     for l_info in ligands:
@@ -207,6 +348,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
             h_vec_norm = s['db_vector']
             
             for angle in np.linspace(0, 360, rot_steps, endpoint=False):
+                stats['total_tries'] += 1
                 p_a = mgr._place_at_dangling_bond(frag_a, binding_idx_a, l_info['bond_vec'], 
                                                    si_pos, h_vec_norm, 2.35, rot_angle=angle)
                 
@@ -215,10 +357,8 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                 p_b.translate([si_pos[0], si_pos[1], z_clearance] - p_b.positions[0])
                 p_b.center(vacuum=5.0) # Isolate byproduct in vacuum
                 
-                # Here we DO NOT drop any atom because this is addition.
                 combined = mgr.slab.copy()
-                
-                for a in p_a: a.tag = 2
+                for a in p_a: a.tag = tag
                 combined += p_a
                 
                 if not mgr.check_overlap(combined, cutoff=1.2, verbose=False):
@@ -226,7 +366,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                     comp_b = "".join(p_b.symbols)
                     if comp_b == "HH": comp_b = "H2" # Make it more readable
                     
-                    combined.info['mechanism'] = f"Generic Single-Site: {comp_a} on {s['index']}, byproduct={comp_b}, rot={angle:.1f}"
+                    combined.info['mechanism'] = f"Generic Single-Site: {comp_a} on {s['index']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
                     combined.info['reaction_type'] = 'h_exchange'
                     combined.info['isolated_byproduct'] = p_b
                     candidates.append(combined)
@@ -237,10 +377,10 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     return candidates
 
 
-def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps):
+def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps, tag=2):
     """ Internal subroutine to execute Generic Dissociative Chemisorption on pairs of dangling bonds """
     candidates = []
-    stats = {'overlap': 0, 'deduplicated': 0}
+    stats = {'overlap': 0, 'deduplicated': 0, 'total_tries': 0}
     seen_formulas = set()
     
     for l_info in ligands:
@@ -262,6 +402,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
             for active_1, active_2 in [(s1, s2), (s2, s1)]:
                 best_pose = None
                 for angle in np.linspace(0, 360, rot_steps, endpoint=False):
+                    stats['total_tries'] += 1
                     p_a = mgr._place_at_dangling_bond(frag_a, binding_idx_a, l_info['bond_vec'], 
                                                        active_1['pos'], active_1['db_vector'], 2.35, rot_angle=angle)
                     
@@ -270,31 +411,34 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                                                        active_2['pos'], active_2['db_vector'], bond_len_b, rot_angle=0)
                     
                     combined = mgr.slab.copy()
-                    for a in p_a: a.tag = 2
+                    for a in p_a: a.tag = tag
                     combined += p_a
-                    for a in p_b: a.tag = 3
+                    for a in p_b: a.tag = tag # Same tag for same stage
                     combined += p_b
                     
-                    if not mgr.check_overlap(combined, cutoff=1.2, verbose=False):
+                    if not mgr.check_overlap(combined, cutoff=1.2, verbose=mgr.verbose):
                         comp_a = "".join(frag_a.symbols)
-                        combined.info['mechanism'] = f"Generic Chemisorption: {comp_a} on {active_1['index']}, {frag_b.symbols[binding_idx_b]} on {active_2['index']}, rot={angle:.1f}"
+                        combined.info['mechanism'] = f"Generic Chemisorption: {comp_a} on {active_1['index']}, {frag_b.symbols[binding_idx_b]} on {active_2['index']}, tag={tag}, rot={angle:.1f}"
                         combined.info['reaction_type'] = 'chemisorption'
                         best_pose = combined
                         break
+                    else:
+                        stats['overlap'] += 1
                 
                 if best_pose:
                     candidates.append(best_pose)
                     break
-                else:
-                    stats['overlap'] += 1
+    
+    if mgr.verbose and stats['total_tries'] > 0:
+        print(f"  [Dissociation Stats] Tried {stats['total_tries']} poses, {stats['overlap']} failed overlap check.")
                     
     return candidates
 
-def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps):
+def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3):
     """ Internal subroutine to execute Ligand Exchange with Protector leaves """
     from ase import Atoms
     candidates = []
-    stats = {'overlap': 0, 'deduplicated': 0}
+    stats = {'overlap': 0, 'deduplicated': 0, 'total_tries': 0}
     seen_formulas = set()
     
     for l_info in ligands:
@@ -317,6 +461,7 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
             h_vec_norm = s['db_vector'] # points AWAY from surface
             
             for angle in np.linspace(0, 360, rot_steps, endpoint=False):
+                stats['total_tries'] += 1
                 p_a = mgr._place_at_dangling_bond(frag_a, binding_idx_a, l_info['bond_vec'], 
                                                    backbone_pos, h_vec_norm, 1.8, rot_angle=angle) # 1.8A generic bond
                 
@@ -331,13 +476,13 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                 combined = mgr.slab.copy()
                 del combined[s['index']] # delete the leaf atom
                 
-                for a in p_a: a.tag = 2
+                for a in p_a: a.tag = tag
                 combined += p_a
                 
-                if not mgr.check_overlap(combined, cutoff=1.2, verbose=False):
+                if not mgr.check_overlap(combined, cutoff=1.2, verbose=mgr.verbose):
                     comp_a = "".join(frag_a.symbols)
                     comp_b = "".join(byproduct.symbols)
-                    combined.info['mechanism'] = f"Protector Exchange: {comp_a} on backbone {s['backbone_idx']}, byproduct={comp_b}, rot={angle:.1f}"
+                    combined.info['mechanism'] = f"Protector Exchange: {comp_a} on backbone {s['backbone_idx']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
                     combined.info['reaction_type'] = 'protector_exchange'
                     combined.info['isolated_byproduct'] = byproduct
                     candidates.append(combined)

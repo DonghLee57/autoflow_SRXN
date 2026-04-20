@@ -3,6 +3,7 @@ from ase import Atoms
 from ase.build import surface, make_supercell
 from ase.io import read
 import math
+from knowledge_engine import chem_kb
 
 def find_surface_indices(atoms, side='top', threshold=1.0, species=None):
     """Find indices of atoms at the top or bottom surface based on Z-coordinates."""
@@ -120,7 +121,7 @@ def get_all_dangling_bonds_general(atoms, valence_map, vector_generator=None, cu
     all_bonds = []
     for idx in surface_indices:
         sym = atoms.symbols[idx]
-        target_val = valence_map(sym) if callable(valence_map) else valence_map.get(sym, 0)
+        target_val = chem_kb.get_ideal_coordination(sym, config=valence_map if isinstance(valence_map, dict) else None)
         if target_val <= 0: continue
 
         mask = (i_list == idx)
@@ -223,14 +224,13 @@ def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_ge
 def identify_protectors(atoms, config, verbose=False):
     """
     Infers which atoms belong to the protector layer vs the base substrate.
-    Based on Z-height and molecular connectivity.
+    Enhanced with element-based filtering for robust identification in Case B.
     """
     import numpy as np
-    protector_cfg = config.get('protector', {})
-    if not protector_cfg.get('enabled', False):
-        return np.arange(len(atoms)), np.array([], dtype=int)
-        
+    protector_cfg = config.get('adsorbate_generation', config.get('protector', {}))
+    
     heuristic = protector_cfg.get('heuristic', 'graph')
+    inhibitor_elements = protector_cfg.get('inhibitor_elements', [])
     
     if heuristic == 'tag':
         target_tags = protector_cfg.get('target_tags', [4, 5])
@@ -240,7 +240,6 @@ def identify_protectors(atoms, config, verbose=False):
         return np.where(s_mask)[0], np.where(p_mask)[0]
         
     elif heuristic in ['z_height', 'graph']:
-        # Simple heuristic: trace graph
         from scipy.sparse.csgraph import connected_components
         from scipy.sparse import csr_matrix
         from ase.data import covalent_radii
@@ -260,17 +259,39 @@ def identify_protectors(atoms, config, verbose=False):
         graph = csr_matrix(adj)
         n_comp, labels = connected_components(csgraph=graph, directed=False)
         
-        # Base substrate is usually the largest connected component
         comp_sizes = np.bincount(labels)
         substrate_comp = np.argmax(comp_sizes)
         
-        s_mask = labels == substrate_comp
-        p_mask = labels != substrate_comp
+        s_indices = np.where(labels == substrate_comp)[0]
+        p_indices = []
         
-        if verbose:
-            print(f"  [Protector Inference] Identified {np.sum(p_mask)} protector atoms and {np.sum(s_mask)} substrate atoms.")
+        for c in range(n_comp):
+            if c == substrate_comp: continue
             
-        return np.where(s_mask)[0], np.where(p_mask)[0]
+            cluster_indices = np.where(labels == c)[0]
+            cluster_symbols = set(atoms.symbols[cluster_indices])
+            
+            # If inhibitor_elements is provided, only treat it as protector 
+            # if it matches the elements. Otherwise it's part of substrate or noise.
+            if inhibitor_elements:
+                if any(sym in inhibitor_elements for sym in cluster_symbols):
+                    p_indices.extend(cluster_indices)
+                else:
+                    # Treat as substrate if it doesn't match inhibitor profile
+                    # (e.g. surface reconstructions or native oxides)
+                    pass
+            else:
+                # Default: all non-substrate clusters are protectors
+                p_indices.extend(cluster_indices)
+        
+        p_indices = np.array(p_indices, dtype=int)
+        s_mask = np.ones(n_atoms, dtype=bool)
+        s_mask[p_indices] = False
+        
+        if verbose and len(p_indices) > 0:
+            print(f"  [Protector Inference] Identified {len(p_indices)} protector atoms across {n_comp-1} clusters.")
+            
+        return np.where(s_mask)[0], p_indices
         
     return np.arange(len(atoms)), np.array([], dtype=int)
     
@@ -286,12 +307,19 @@ class CavityDetector:
     def find_void_centers(self, top_clearance=4.0):
         import numpy as np
         if len(self.prot_idx) == 0:
+            # If no protectors, generate a grid across the entire cell surface
             z_max = np.max(self.slab.positions[self.sub_idx, 2]) if len(self.sub_idx) else np.max(self.slab.positions[:, 2])
-            return [np.array([
-                self.slab.cell[0,0]*0.5, 
-                self.slab.cell[1,1]*0.5, 
-                z_max + top_clearance
-            ])]
+            nx = int(np.ceil(self.slab.cell[0,0] / 5.0)) # ~5A spacing for sites
+            ny = int(np.ceil(self.slab.cell[1,1] / 5.0))
+            grid_centers = []
+            for i in range(nx):
+                for j in range(ny):
+                    grid_centers.append(np.array([
+                        (i + 0.5) * (self.slab.cell[0,0] / nx),
+                        (j + 0.5) * (self.slab.cell[1,1] / ny),
+                        z_max + top_clearance
+                    ]))
+            return grid_centers
             
         from ase.data import vdw_radii
         from scipy.ndimage import distance_transform_edt
@@ -385,39 +413,95 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
     if d_hkl < 0.1: d_hkl = 2.0 
     num_layers = int(math.ceil(thickness / d_hkl))
     
-    # 2. Handle Termination
-    work_bulk = bulk_atoms.copy()
-    if termination == "symmetric":
-        if verbose: print("  [Substrate Factory] Searching for symmetric termination...")
-        # Try shifting the bulk along the normal to find a symmetric slab
-        best_shift = 0
-        min_diff = 1e9
+    # 2. Handle Termination & Slicing (Layer-Wise Engine)
+    if termination in ["symmetric", "uniform"]:
+        mode_label = termination
+        if verbose: print(f"  [Substrate Factory] Executing Layer-Wise {mode_label} Discovery...")
         
-        # Grid search along the normal axis (approx. first lattice vector of the surface basis)
-        # But easier: surface() uses the bulk cell to determine the cut. 
-        # We can shift the bulk atoms in their own fractional coords.
-        for shift in np.linspace(0, 1.0, 20, endpoint=False):
-            test_bulk = bulk_atoms.copy()
-            test_bulk.set_scaled_positions(test_bulk.get_scaled_positions() + [0, 0, shift])
-            test_bulk.wrap()
+        # Create a sufficiently thick base slab to find matching layers
+        # layers=num_layers*2 ensuring we have at least 2 full unit cells to pick from
+        test_slab = surface(bulk_atoms, miller_indices, layers=num_layers * 2, vacuum=0)
+        test_slab.wrap()
+        
+        # [Step 1] Identify Atomic Planes via Z-Clustering
+        z_coords = test_slab.positions[:, 2]
+        sorted_indices = np.argsort(z_coords)
+        sorted_z = z_coords[sorted_indices]
+        
+        # Simple clustering: points within 0.5A belong to the same plane
+        planes = []
+        if len(sorted_z) > 0:
+            current_plane = [sorted_indices[0]]
+            for i in range(1, len(sorted_z)):
+                if sorted_z[i] - sorted_z[i-1] < 0.5:
+                    current_plane.append(sorted_indices[i])
+                else:
+                    planes.append(current_plane)
+                    current_plane = [sorted_indices[i]]
+            planes.append(current_plane)
             
-            test_slab = surface(test_bulk, miller_indices, layers=num_layers)
+        # [Step 2] Fingerprint Planes
+        plane_data = []
+        for p_idx, p_atoms in enumerate(planes):
+            syms = sorted(test_slab.symbols[p_atoms])
+            elem_set = set(syms)
+            z_avg = np.mean(test_slab.positions[p_atoms, 2])
+            plane_data.append({
+                'idx': p_idx,
+                'atom_indices': p_atoms,
+                'elements': elem_set,
+                'sym_list': syms,
+                'z': z_avg
+            })
             
-            # Simple symmetry check: count elements at top and bottom
-            z_coords = test_slab.positions[:, 2]
-            top_mask = z_coords > np.max(z_coords) - 0.5
-            bot_mask = z_coords < np.min(z_coords) + 0.5
-            
-            top_syms = sorted(test_slab.symbols[top_mask])
-            bot_syms = sorted(test_slab.symbols[bot_mask])
-            
-            if top_syms == bot_syms:
-                work_bulk = test_bulk
-                if verbose: print(f"  [Substrate Factory] Found symmetric termination at shift {shift:.2f}")
-                break
-    
-    # 3. Extract primitive slab
-    slab = surface(work_bulk, miller_indices, layers=num_layers, vacuum=vacuum)
+        # [Step 3] Combinatorial Search for Matching Planes
+        best_pair = None
+        best_score = -1e9
+        
+        for i in range(len(plane_data)):
+            for j in range(i + 1, len(plane_data)):
+                p1, p2 = plane_data[i], plane_data[j]
+                
+                # Criterion 1: Termination Match
+                species_match = (p1['elements'] == p2['elements'])
+                count_match = (p1['sym_list'] == p2['sym_list'])
+                
+                # Criterion 2: Thickness Proximity
+                dist = p2['z'] - p1['z']
+                thickness_err = abs(dist - thickness)
+                
+                # Scoring: Species match is high priority, then count match, then thickness
+                score = 0
+                if species_match: score += 1000
+                if count_match: score += 500
+                
+                # Favor O-termination for oxides if available
+                if species_match and 'O' in p1['elements'] and len(p1['elements']) == 1:
+                    score += 200
+                
+                score -= thickness_err * 10 # Penalty for deviating from target thickness
+                
+                if score > best_score:
+                    best_score = score
+                    best_pair = (p1, p2)
+        
+        if best_pair:
+            p1, p2 = best_pair
+            # Extraction: All atoms between these planes (inclusive)
+            mask = (z_coords >= p1['z'] - 0.1) & (z_coords <= p2['z'] + 0.1)
+            slab = test_slab[mask]
+            if verbose:
+                print(f"  [Substrate Factory] Selected planes {p1['idx']} and {p2['idx']}.")
+                print(f"  [Substrate Factory] Terminal Species: {p1['elements']}, Thickness: {p2['z']-p1['z']:.2f} A")
+        else:
+            if verbose: print("  [Substrate Factory] Warning: No matching layers found. Falling back.")
+            slab = surface(bulk_atoms, miller_indices, layers=num_layers, vacuum=0)
+    else:
+        # Default cut
+        slab = surface(bulk_atoms, miller_indices, layers=num_layers, vacuum=0)
+
+    # Add vacuum and center
+    slab.center(vacuum=vacuum, axis=2)
     
     # 3. Supercell Expansion
     if supercell_matrix is not None:

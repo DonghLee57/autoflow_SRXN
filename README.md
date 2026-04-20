@@ -34,15 +34,21 @@ The framework automates the transition from bulk crystals to surface slabs throu
 - **Symmetric Termination Search**: Performs a fractional coordinate grid search along the surface normal to identify stoichiometric or chemically symmetric termination planes.
 - **Lattice Vector Alignment**: Automatically rotates the generated supercell to align the primary lattice vector with the X-axis $(1, 0, 0)$ for standardized coordinate management.
 
+### 1.6 Stage-Wise Surface Evolution & Competitive Adsorption
+The framework supports sequential discovery stages to model complex surface phenomena such as competitive inhibition or multi-step ALD/ALE processes.
+- **Dynamic Branching Workflow**: Top-ranked inhibited geomorphologies from Stage 1 (e.g., Inhibitors/SAMs) are automatically promoted as substrate templates for Stage 2 (e.g., Precursors), enabling the exploration of cooperative or resistive site-blocking effects.
+- **Context-Aware Steric Filtering**: Implements a tiered distance-threshold kernel $K(\delta)$ based on atomic tags:
+  - **Molecule-Substrate $(\delta \approx 1.5\,\text{\AA})$**: Permissive threshold ensuring molecules can reach the surface potential wells.
+  - **Inter-Molecular $(\delta \approx 2.0-2.5\,\text{\AA})$**: Configurable threshold (typically $\approx \text{Sum of VdW Radii}$) to prevent non-physical clashing in crowded interfacial environments.
+
 ---
 
 ## 2. Strategic Objectives
 - **High-Throughput Exploration**: Rational search of the potential energy surface (PES) for complex surface-molecule interactions.
-- **Automated Dataset Generation**: Systematic generation of unique structural configurations for training Machine Learning Interatomic Potentials (MLIPs).
-- **Generic Surface Passivation**: Config-driven passivation of top/bottom surfaces with arbitrary elements (H, F, Cl) prior to sampling.
-- **Automated Substrate Factory**: Direct generation of slabs from bulk structures with integrated thickness, area, and termination control.
-- **Surface Protector Modeling**: Automated handling of Self-Assembled Monolayers (SAMs), localized void space analysis, and protector ligand exchange.
-- **Thermodynamic Feasibility Analysis**: Quantifying spontaneous reaction pathways through temperature-dependent free energy landscapes.
+- **Multi-Stage Discovery & Branching**: Systematic exploration of precursor adsorption on inhibited or pre-functionalized surface templates.
+- **Automated Dataset Generation**: Generation of unique structural configurations for training Machine Learning Interatomic Potentials (MLIPs).
+- **Geometric Coordination Logic**: Config-driven surface passivation and reactive center targeting (e.g., O-adjacent Carbon, Si-centered precursor).
+- **Context-Aware Overlap Control**: Precise steric management for high-density interfacial modeling.
 
 ---
 
@@ -52,23 +58,27 @@ The framework automates the transition from bulk crystals to surface slabs throu
 ```mermaid
 graph TD
     A[config.yaml] --> B(Structure Generation Interface)
-    subgraph autoflow_SRXN/src [Core Logic]
+    subgraph src [Core Algorithmic Engines]
         B --> P[Unified Passivation Engine]
         P -->|CIF/VASP Export| PA[passivated_surface.vasp]
         B --> C[AdsorptionWorkflowManager]
         PA -.-> C
         C --> D[ChemisorptionBuilder]
         D -->|VSEPR Heuristics| E[surface_utils]
-        C -->|spglib| F((Symmetry Edge Reduction))
+        
+        subgraph MS [Multi-Stage Discovery]
+            C -->|Stage 1| S1((Inhibitor Discovery))
+            S1 -->|Tag = 2| B1{Branching Limit}
+            B1 -->|Template Evolution| S2((Precursor Discovery))
+            S2 -->|Tag = 3| F
+        end
+        
+        MS -->|Context-Aware Check| CO[Tiered Overlap Kernel]
+        F((Symmetry Edge Reduction))
     end
     
     subgraph Output
         F --> G[.extxyz Candidates]
-    end
-    
-    subgraph Thermodynamics
-        H[phonopy.yaml] --> I[ThermoCalculator]
-        I --> J[Phase-specific Gibbs Analysis]
     end
 ```
 

@@ -1,0 +1,27 @@
+adsorbate_generation:
+  center_target: Si
+  max_pair_dist: 5.0
+  rot_steps: 32
+  run_chemisorption: true
+  run_physisorption: true
+  symprec: 0.2
+passivation:
+  coverage: 1.0
+  element: H
+  output_name: passivated_sio2_dipas.vasp
+  run_passivation: true
+  side: bottom
+paths:
+  molecule: ../structures/DIPAS.vasp
+  output_prefix: cands_sio2_dipas
+substrate_generation:
+  bulk_path: ../structures/SiO2_mp-546794.vasp
+  miller_indices:
+  - 1
+  - 0
+  - 0
+  run_generation: true
+  target_area: 140.0
+  termination: symmetric
+  thickness: 15.0
+  vacuum: 10.0
