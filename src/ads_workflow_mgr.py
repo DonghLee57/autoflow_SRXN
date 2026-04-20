@@ -7,8 +7,8 @@ from rdkit.Chem import AllChem
 import os
 import spglib
 from itertools import combinations
-from .knowledge_engine import chem_kb
-from .logger_utils import get_workflow_logger
+from knowledge_engine import chem_kb
+from logger_utils import get_workflow_logger
 
 class AdsorptionWorkflowManager:
     """

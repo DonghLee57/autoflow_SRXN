@@ -1,13 +1,13 @@
 import numpy as np
 from ase import Atoms
-from .ads_workflow_mgr import AdsorptionWorkflowManager
-from .knowledge_engine import chem_kb
+from ads_workflow_mgr import AdsorptionWorkflowManager
+from knowledge_engine import chem_kb
 
 def analyze_surface_reactivity(surface, config, verbose=True):
     from ase.neighborlist import neighbor_list
     import numpy as np
     from ase.data import covalent_radii
-    from .surface_utils import identify_protectors
+    from surface_utils import identify_protectors
     
     max_pair_dist = config.get('settings', {}).get('max_pair_dist', 5.0)
     
@@ -58,7 +58,7 @@ def analyze_surface_reactivity(surface, config, verbose=True):
         expected = chem_kb.get_ideal_coordination(sym, config)
         
         if actual_coord < expected:
-            from .surface_utils import generate_vsepr_vectors
+            from surface_utils import generate_vsepr_vectors
             vecs = generate_vsepr_vectors(surface, idx, neighbor_data=(i_list, j_list, D_list))
             for db_vec in vecs:
                 db_vec = db_vec / np.linalg.norm(db_vec)

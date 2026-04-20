@@ -8,8 +8,8 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/code4simulation/autoflow_SRXN",
-    package_dir={"": "src"},
-    packages=find_packages(where="src"),
+    package_dir={"autoflow_srxn": "src"},
+    packages=["autoflow_srxn"],
     include_package_data=True,
     package_data={
         "autoflow_srxn": ["*.json"],
