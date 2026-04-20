@@ -5,6 +5,22 @@ from ase.io import read
 import math
 from knowledge_engine import chem_kb
 
+def standardize_vasp_atoms(atoms, z_min_offset=0.5):
+    """
+    Standardize Atoms object for VASP export:
+    1. Sort by atomic number (element).
+    2. Align minimum Z-coordinate to z_min_offset.
+    Returns: Sorted and translated Atoms copy.
+    """
+    # 1. Sort by atomic number
+    sorted_atoms = atoms[atoms.numbers.argsort()]
+    
+    # 2. Align Z-min
+    z_min = sorted_atoms.positions[:, 2].min()
+    sorted_atoms.translate([0, 0, z_min_offset - z_min])
+    
+    return sorted_atoms
+
 def find_surface_indices(atoms, side='top', threshold=1.0, species=None):
     """Find indices of atoms at the top or bottom surface based on Z-coordinates."""
     if species:

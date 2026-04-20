@@ -41,13 +41,19 @@ The framework supports sequential discovery stages to model complex surface phen
   - **Molecule-Substrate $(\delta \approx 1.5\,\text{\AA})$**: Permissive threshold ensuring molecules can reach the surface potential wells.
   - **Inter-Molecular $(\delta \approx 2.0-2.5\,\text{\AA})$**: Configurable threshold (typically $\approx \text{Sum of VdW Radii}$) to prevent non-physical clashing in crowded interfacial environments.
 
+### 1.7 MACE-MP-0 Relaxation Engine
+The framework integrates the **MACE (Multi-ACE)** foundation models for high-fidelity structural relaxation and energy extraction.
+- **Foundation Model Support**: Utilizes the `mace_mp` medium model by default, providing near-DFT accuracy for arbitrary chemical species.
+- **Converged Geometry Optimization**: Implements an automated relaxation loop using ASE optimizers (BFGS/FIRE) with a force convergence criterion (default $0.05\,\text{eV/\AA}$).
+- **Lazy Loading Implementation**: Optimized for Windows environments to resolve DLL initialization issues, ensuring seamless MLIP execution.
+
 ---
 
 ## 2. Strategic Objectives
 - **High-Throughput Exploration**: Rational search of the potential energy surface (PES) for complex surface-molecule interactions.
+- **MLIP-Driven Structural Optimization**: High-fidelity relaxation of adsorption candidates using MACE-MP-0 models.
 - **Multi-Stage Discovery & Branching**: Systematic exploration of precursor adsorption on inhibited or pre-functionalized surface templates.
-- **Automated Dataset Generation**: Generation of unique structural configurations for training Machine Learning Interatomic Potentials (MLIPs).
-- **Geometric Coordination Logic**: Config-driven surface passivation and reactive center targeting (e.g., O-adjacent Carbon, Si-centered precursor).
+- **Standardized VASP Export**: Automated Z-alignment ($z_{min}=0.5\,\text{\AA}$) and atomic sorting for all structural outputs.
 - **Context-Aware Overlap Control**: Precise steric management for high-density interfacial modeling.
 
 ---

@@ -119,6 +119,12 @@ def run_generic_adsorption_study(config_path='config.yaml'):
                 valence_map=config.get('ideal_coordination', {}),
                 element=pass_cfg.get('element', 'H'), side=s, verbose=verbose
             )
+            
+        # Final formatting and export of the passivated substrate
+        from surface_utils import standardize_vasp_atoms
+        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
+        write('passivated.vasp', slab)
+        logger.info("Saved standardized substrate to 'passivated.vasp' (Sorted, z_min=0.5A).")
     
     # --- STAGE 1: Dynamic Inhibitor Discovery (Branching) ---
     base_slabs = [slab]
