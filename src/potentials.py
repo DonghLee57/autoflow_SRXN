@@ -28,8 +28,8 @@ class LammpsMLIAPEngine:
         species = sorted(list(set(atoms.get_chemical_symbols())), key=lambda x: atomic_numbers[x])
         species_str = " ".join(species)
         
-        # Determine atom_style (full is safer for molecular systems)
-        atom_style = "full" 
+        # Determine atom_style (atomic is default for many ML-IAPs)
+        atom_style = "atomic" 
         write(data_file, atoms, format='lammps-data', atom_style=atom_style)
         
         lines = [
