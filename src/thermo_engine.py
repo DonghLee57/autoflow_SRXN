@@ -28,9 +28,28 @@ class ThermoCalculator:
         """
         Args:
             frequencies_thz: List of vibrational frequencies in THz. 
-                            Zero and imaginary modes are automatically filtered out.
         """
-        self.freqs = np.array([f for f in frequencies_thz if f > 0])
+        self.raw_freqs = np.array(frequencies_thz)
+        self.freqs = np.array([f for f in frequencies_thz if f > 0.05]) # Real modes (>0.05 THz)
+        self.imag_freqs = np.array([f for f in frequencies_thz if f < -0.05]) # Imaginary modes
+        
+    def assess_stability(self) -> Dict[str, Union[str, int]]:
+        """
+        Assess structural stability based on the number of imaginary frequencies.
+        """
+        n_imag = len(self.imag_freqs)
+        if n_imag == 0:
+            status = "Stable Local Minimum"
+        elif n_imag == 1:
+            status = "1st-Order Saddle Point (Transition State)"
+        else:
+            status = f"{n_imag}th-Order Saddle Point (Highly Unstable)"
+            
+        return {
+            "status": status,
+            "n_imag": n_imag,
+            "imag_modes": self.imag_freqs.tolist()
+        }
         
     def calculate_zpe(self) -> float:
         """

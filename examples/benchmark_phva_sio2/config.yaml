@@ -1,0 +1,21 @@
+# PHVA vs FHVA Benchmark Configuration
+# System: DIPAS on SiO2(001) Surface
+
+simulation:
+  model_type: "mace0"
+  device: "cpu"
+
+benchmark:
+  structure: "SiO2_DIPAS_adsorbed.vasp"
+  displacement: 0.01
+  temperature: 298.15
+  
+  # PHVA Settings: Active atoms (Adsorbate atoms + top layer atoms)
+  # For the purpose of the benchmark, this list will be handled 
+  # by the script based on the specific geometry index.
+  active_layer_thickness: 5.0 # A (Distance from adsorbate to include as active)
+
+thermochemistry:
+  electronic_energy: -150.0  # eV (Dummy reference)
+  mode: "adsorbent"
+  temperature_range: [298.15, 400.0, 500.0, 600.0, 700.0, 800.0]

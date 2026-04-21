@@ -4,62 +4,57 @@ from phonopy import Phonopy
 from phonopy.structure.atoms import PhonopyAtoms
 from logger_utils import get_workflow_logger
 
+from ase.vibrations import Vibrations
+import shutil
+
 class VibrationalAnalyzer:
     """
-    Handles vibrational frequency analysis using Phonopy and a SimulationEngine.
+    Handles vibrational frequency analysis using ASE Vibrations (supporting PHVA) 
+    or Phonopy.
     """
-    def __init__(self, atoms, engine, displacement=0.01, is_symmetry=True, symprec=1e-5):
+    def __init__(self, atoms, engine, indices=None, displacement=0.01, name="vib_analysis"):
+        """
+        Args:
+            atoms: ASE Atoms object.
+            engine: SimulationEngine (ASE-compatible).
+            indices: List of atomic indices to include in the Partial Hessian. 
+                     If None, all atoms are treated as active (Full Hessian).
+            displacement: Finite difference displacement (A).
+            name: Name for the vibration log directory.
+        """
         self.atoms = atoms
         self.engine = engine
+        self.indices = indices
         self.displacement = displacement
+        self.name = name
         self.logger = get_workflow_logger()
         
-        # Initialize Phonopy
-        unitcell = PhonopyAtoms(
-            symbols=atoms.get_chemical_symbols(),
-            scaled_positions=atoms.get_scaled_positions(),
-            cell=atoms.get_cell()
-        )
-        self.phonopy = Phonopy(
-            unitcell, 
-            supercell_matrix=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-            is_symmetry=is_symmetry, 
-            symprec=symprec
-        )
+        # Attach calculator
+        self.atoms.calc = self.engine.get_calculator()
         
     def run_analysis(self):
-        """Generates displacements, calculates forces, and extracts frequencies."""
-        self.logger.info(f"  [VibAnalyzer] Starting vibrational analysis (u={self.displacement} A).")
+        """
+        Performs (Partial) Hessian Vibrational Analysis using ASE Vibrations.
+        Returns:
+            frequencies_cm_inv: List of frequencies in cm^-1.
+            eigenvectors: Placeholder/None for now (ASE Vibrations handles this differently).
+        """
+        self.logger.info(f"  [VibAnalyzer] Starting PHVA/FHVA (active atoms: {len(self.indices) if self.indices else len(self.atoms)}).")
         
-        self.phonopy.generate_displacements(distance=self.displacement)
-        supercells = self.phonopy.supercells_with_displacements
-        
-        all_forces = []
-        for i, sc in enumerate(supercells):
-            # Convert PhonopyAtoms back to ASE Atoms
-            from ase import Atoms
-            ase_sc = Atoms(
-                symbols=sc.symbols,
-                positions=sc.positions,
-                cell=sc.cell,
-                pbc=True
-            )
+        if os.path.exists(self.name):
+            shutil.rmtree(self.name)
             
-            # Compute forces using the engine
-            forces = self.engine.get_forces(ase_sc)
-            all_forces.append(forces)
-            
-        self.phonopy.forces = all_forces
-        self.phonopy.produce_force_constants()
+        vib = Vibrations(self.atoms, indices=self.indices, name=self.name, delta=self.displacement)
+        vib.run()
         
-        # Mesh analysis for Gamma point (molecule)
-        self.phonopy.run_mesh([1, 1, 1], with_eigenvectors=True)
-        mesh_dict = self.phonopy.get_mesh_dict()
+        # Get frequencies in cm^-1
+        frequencies = vib.get_frequencies()
         
-        frequencies = mesh_dict['frequencies'][0] # Frequencies at q=0
-        eigenvectors = mesh_dict['eigenvectors'][0] # Eigenvectors at q=0
+        # Log basic summary
+        n_imag = sum(1 for f in frequencies if (hasattr(f, "imag") and f.imag != 0) or f < 0)
+        self.logger.info(f"  [VibAnalyzer] Analysis complete. Total modes: {len(frequencies)}, Imaginary: {n_imag}")
         
-        return frequencies, eigenvectors
+        return frequencies
 
     def generate_qpoints_file(self, filename='qpoints.yaml'):
         """Runs the analysis pipeline and outputs qpoints.yaml including eigenvectors."""
