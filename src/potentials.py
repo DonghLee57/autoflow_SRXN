@@ -3,6 +3,7 @@ import sys
 import subprocess
 import numpy as np
 from ase.optimize import BFGS, FIRE
+from ase.optimize.sciopt import SciPyFminCG
 from ase.calculators.emt import EMT
 from ase.io import write, read
 
@@ -198,9 +199,24 @@ class SimulationEngine:
         
         calc = self.get_calculator()
         atoms.calc = calc
-        opt_class = BFGS if optimizer.upper() == 'BFGS' else FIRE
-        dyn = opt_class(atoms, logfile=sys.stdout if verbose else None)
-        dyn.run(fmax=fmax, steps=steps)
+        
+        if optimizer.upper() == 'CG_FIRE':
+            # Stage 1: Conjugate Gradient for initial descent (looser threshold)
+            # SciPyFminCG follows slightly different signature but works with run(fmax)
+            fmax_cg = max(fmax * 10, 0.05)
+            if verbose: print(f"  [Relax] Stage 1: SciPyFminCG (fmax={fmax_cg})")
+            dyn_cg = SciPyFminCG(atoms, logfile=sys.stdout if verbose else None)
+            dyn_cg.run(fmax=fmax_cg, steps=steps // 2)
+            
+            # Stage 2: FIRE for tight convergence
+            if verbose: print(f"  [Relax] Stage 2: FIRE (fmax={fmax})")
+            dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None)
+            dyn_fire.run(fmax=fmax, steps=steps)
+        else:
+            opt_class = BFGS if optimizer.upper() == 'BFGS' else FIRE
+            dyn = opt_class(atoms, logfile=sys.stdout if verbose else None)
+            dyn.run(fmax=fmax, steps=steps)
+            
         return atoms.get_potential_energy()
 
     def get_forces(self, atoms):

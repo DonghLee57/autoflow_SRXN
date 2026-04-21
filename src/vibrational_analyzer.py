@@ -185,7 +185,7 @@ class MultiModeFollower:
         write(file_path, frames, format='extxyz')
         self.logger.info(f"  [Visualization] Saved mode animation to {file_path}")
 
-    def optimize(self, atoms):
+    def optimize(self, atoms, **kwargs):
         """Sequential multi-mode refinement."""
         qpath = self.config.get('qpoints_path', 'qpoints.yaml')
         if not os.path.exists(qpath):
@@ -232,7 +232,12 @@ class MultiModeFollower:
 
             # Apply displacement and perform relaxation
             current_atoms.positions += raw_displacement
-            self.engine.relax(current_atoms, fmax=self.config.get('fmax', 0.05))
+            
+            # Use provided kwargs or fallback to config fmax
+            relax_kwargs = {'fmax': self.config.get('fmax', 0.05)}
+            relax_kwargs.update(kwargs)
+            self.engine.relax(current_atoms, **relax_kwargs)
+            
             self.logger.info(f"  [MultiMode] Iteration {i+1} relaxation complete.")
             
         return current_atoms

@@ -5,7 +5,7 @@ import numpy as np
 from ase.io import read, write
 
 # Add the src directory to Python path for local development
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
 try:
     from autoflow_srxn.ads_workflow_mgr import AdsorptionWorkflowManager
@@ -161,5 +161,7 @@ def run_generic_adsorption_study(config_path='config.yaml'):
     logger.info(f"--- Study Complete. Total Unique Candidates: {len(all_final_results)} ---")
 
 if __name__ == '__main__':
-    c_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
+    # Default to config.yaml in the script's directory if not provided
+    default_config = os.path.join(os.path.dirname(__file__), 'config.yaml')
+    c_path = sys.argv[1] if len(sys.argv) > 1 else default_config
     run_generic_adsorption_study(c_path)

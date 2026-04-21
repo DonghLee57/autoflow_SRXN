@@ -1,0 +1,42 @@
+# Example: DIPAS Precursor Stability Analysis
+# This example demonstrates vibrational analysis (Phonopy) and 
+# automated mode-following structural refinement using the MACE MLIP.
+
+paths:
+  molecule: "../../structures/DIPAS.vasp"
+  output_prefix: "dipas_stability"
+
+potentials:
+  model_type: "mace0"  # Using MACE-MP-0 foundation model
+  device: "cpu"        # Set to "cuda" if GPU is available
+  fmax: 0.05
+  steps: 200
+
+vibrational_analysis:
+  fmax: 0.001                       # Ultra-tight threshold for phonon calculations
+  max_iter: 10                      # Increased cycles for thorough refinement
+  stability_threshold: -0.1         # Goal: All modes above this frequency (THz)
+  phonopy_displacement: 0.01        # Default finite difference displacement (A)
+  
+  # STEP 1: Selection
+  selection:
+    freq_threshold: -0.1            # THz (Only refine modes below this)
+    max_modes: 3                    # Refine top 3 most unstable modes
+    
+  # STEP 3: Constraints (Safety)
+  constraints:
+    max_displacement: 0.3           # Max movement per atom (A)
+    # Stagnation Handling: alpha will be reduced if improvement < epsilon
+    stagnation_factor: 0.5          
+    stagnation_epsilon: 0.05        # THz improvement needed to maintain alpha
+    
+  # STEP 4: Visualization
+  visualization:
+    save_trajectory: True           # Generate mode animation extxyz
+    n_frames: 10
+    output_dir: "mode_animations"
+    
+  # STEP 5: Symmetry
+  symmetry:
+    enabled: True
+    symprec: 1.0e-5

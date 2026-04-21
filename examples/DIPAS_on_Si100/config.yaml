@@ -1,0 +1,51 @@
+# Example: DIPAS Physisorption and Chemisorption on Si(100)
+# This example demonstrates Stage 0 (Surface construction), Stage 1 (Ethanol inhibitor), 
+# and Stage 2 (DIPAS precursor) adsorption logic.
+
+paths:
+  substrate: "../../structures/Si_mp149.vasp"
+  inhibitor: "../../structures/ethanol.vasp"
+  molecule: "../../structures/DIPAS.vasp"
+  output_prefix: "dipas_on_si100_results"
+
+substrate_generation:
+  run_generation: True
+  bulk_path: "../../structures/Si_mp149.vasp"
+  miller_indices: [1, 0, 0]
+  thickness: 12.0
+  vacuum: 15.0
+  target_area: 500.0
+  top_termination: "Si"
+  bottom_termination: "Si"
+
+passivation:
+  run_passivation: True
+  element: "H"
+  side: "bottom"
+  coverage: 1.0
+
+adsorbate_generation:
+  run_pre_inhibition: True
+  inhibitor_center: 1
+  branching_limit: 1
+  overlap_cutoff: 1.5
+  physisorption_height: 3.5
+  run_physisorption: True
+  run_chemisorption: True
+  rot_steps: 8
+  symprec: 0.2
+  precursor_center: "Si"
+  verbose: True
+  log_path: "workflow.log"
+
+ideal_coordination:
+  Si: 4
+  C: 4
+  O: 2
+  N: 3
+
+potentials:
+  model_type: "mace0"
+  device: "cpu"
+  fmax: 0.05
+  steps: 200
