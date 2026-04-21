@@ -1,0 +1,11 @@
+# Thermochemistry config for H2 (Ideal Gas)
+thermochemistry:
+  qpoints_file: "sample_data/qpoints_H2.yaml"
+  electronic_energy: -6.772 # eV (MACE-MP-0 energy for H2)
+  mode: "gas"
+  temperature_range: [298.15, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0]
+  
+  gas_properties:
+    mass: 2.016         # amu
+    sigma: 2            # Symmetry number for D_inf_h
+    moments: [0.280]    # amu*A^2 (Linear molecule needs 1 moment)

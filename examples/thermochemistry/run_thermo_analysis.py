@@ -80,38 +80,75 @@ def print_table(results, title="Thermochemistry"):
         print(f"{r['T']:8.2f} | {r['S']:12.4f} | {r['G_kJ_mol']:12.4f} | {r['G_eV']:12.6f}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Calculate Gibbs Free Energy from qpoints.yaml")
-    parser.add_argument("yaml", help="qpoints.yaml file from AutoFlow-SRXN or Phonopy")
-    parser.add_argument("--energy", type=float, default=0.0, help="Electronic energy E_elec (eV)")
-    parser.add_argument("--mode", choices=['gas', 'adsorbent', 'substrate'], default='adsorbent', 
-                        help="Calculation mode")
-    parser.add_argument("--mass", type=float, help="Molecular mass (amu) - required for gas mode")
-    parser.add_argument("--sigma", type=int, default=1, help="Symmetry number for gas mode")
-    parser.add_argument("--moments", type=float, nargs='+', help="Moments of inertia for gas mode")
-    parser.add_argument("--temps", type=float, nargs='+', default=[298.15, 400, 500, 600, 700, 800],
-                        help="Temperatures to evaluate (K)")
+    parser = argparse.ArgumentParser(description="Calculate Gibbs Free Energy from qpoints.yaml or config.yaml")
+    parser.add_argument("input", help="qpoints.yaml or config.yaml file")
+    parser.add_argument("--energy", type=float, help="Electronic energy E_elec (eV)")
+    parser.add_argument("--mode", choices=['gas', 'adsorbent', 'substrate'], help="Calculation mode")
+    parser.add_argument("--mass", type=float, help="Molecular mass (amu)")
+    parser.add_argument("--sigma", type=int, help="Symmetry number")
+    parser.add_argument("--moments", type=float, nargs='+', help="Moments of inertia")
+    parser.add_argument("--temps", type=float, nargs='+', help="Temperatures to evaluate (K)")
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.yaml):
-        print(f"Error: File {args.yaml} not found.")
+    if not os.path.exists(args.input):
+        print(f"Error: File {args.input} not found.")
         return
 
-    analyzer = AnalyzeThermo(args.yaml, args.energy)
+    # Default settings
+    qpoints_file = args.input
+    e_elec = args.energy if args.energy is not None else 0.0
+    mode = args.mode if args.mode is not None else 'adsorbent'
+    mass = args.mass
+    sigma = args.sigma if args.sigma is not None else 1
+    moments = args.moments
+    temps = args.temps if args.temps is not None else [298.15, 400, 500, 600, 700, 800]
+
+    # Check if input is a config.yaml (contains 'thermochemistry' key)
+    if args.input.endswith('.yaml'):
+        with open(args.input, 'r') as f:
+            raw_data = yaml.safe_load(f)
+            if raw_data and 'thermochemistry' in raw_data:
+                cfg = raw_data['thermochemistry']
+                print(f"Loading settings from config: {args.input}")
+                
+                # Resolve paths relative to config file location
+                base_dir = os.path.dirname(os.path.abspath(args.input))
+                q_raw = cfg.get('qpoints_file', 'qpoints.yaml')
+                qpoints_file = os.path.normpath(os.path.join(base_dir, q_raw))
+                
+                e_elec = cfg.get('electronic_energy', e_elec)
+                mode = cfg.get('mode', mode)
+                temps = cfg.get('temperature_range', temps)
+                
+                if 'gas_properties' in cfg:
+                    g_cfg = cfg['gas_properties']
+                    mass = g_cfg.get('mass', mass)
+                    sigma = g_cfg.get('sigma', sigma)
+                    moments = g_cfg.get('moments', moments)
+
+    if not os.path.exists(qpoints_file):
+        print(f"Error: qpoints file {qpoints_file} not found.")
+        return
+
+    analyzer = AnalyzeThermo(qpoints_file, e_elec)
     
-    print(f"Analyzing {args.yaml}...")
-    print(f"  Mode: {args.mode}")
-    print(f"  E_elec: {args.energy:.6f} eV")
+    print(f"Calculation Context:")
+    print(f"  Input YAML: {qpoints_file}")
+    print(f"  Mode: {mode}")
+    print(f"  E_elec: {e_elec:.6f} eV")
+    if mode == 'gas':
+        print(f"  Gas Prop: mass={mass}, sigma={sigma}, moments={moments}")
     
     try:
         results = analyzer.run_analysis(
-            T_range=args.temps,
-            mode=args.mode,
-            mass_amu=args.mass,
-            sigma=args.sigma,
-            moments=args.moments
+            T_range=temps,
+            mode=mode,
+            mass_amu=mass,
+            sigma=sigma,
+            moments=moments
         )
-        print_table(results, title=f"Results ({args.mode})")
+        print_table(results, title=f"Results ({mode})")
     except Exception as e:
         print(f"Error during analysis: {e}")
 

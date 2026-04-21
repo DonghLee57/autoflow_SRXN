@@ -1,0 +1,11 @@
+# Thermochemistry config for O2 (Ideal Gas)
+thermochemistry:
+  qpoints_file: "sample_data/qpoints_O2.yaml"
+  electronic_energy: -9.854 # eV
+  mode: "gas"
+  temperature_range: [298.15, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0]
+  
+  gas_properties:
+    mass: 31.998        # amu
+    sigma: 2            # Symmetry number for D_inf_h
+    moments: [11.62]    # amu*A^2
