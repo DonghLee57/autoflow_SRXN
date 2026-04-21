@@ -33,9 +33,14 @@ To ensure the system reaches the deepest part of the local potential well, we im
 - **Convergence Criterion**: $f_{max} < 0.001 \text{ eV/Å}$.
 
 ### C. Mode-Following Perturbation
-For each identified imaginary mode with $\nu < -0.1 \text{ THz}$, the atomic positions $\mathbf{R}$ are updated:
+Stability refinement is achieved by updating the atomic coordinates $\mathbf{R}$ through a controlled displacement along the unstable normal modes:
+
 $$\mathbf{R}_{\text{new}} = \mathbf{R}_{\text{old}} + \alpha \cdot \mathbf{e}_{\text{imag}}$$
-where $\alpha$ is the perturbation scale (initially $0.1$ Å) and $\mathbf{e}_{\text{imag}}$ is the normalized eigenvector of the unstable mode.
+
+The criteria and parameters for this perturbation are defined as follows:
+- **Identification Threshold**: Modes are selected for refinement if the frequency $\nu$ is less than $-0.1$ THz.
+- **Perturbation Scale ($\alpha$)**: An initial displacement factor of $0.1$ Å is applied to move the system away from the saddle point.
+- **Directional Vector ($\mathbf{e}_{\text{imag}}$)**: The normalized eigenvector associated with the specific imaginary frequency.
 
 ## 3. Simulation Results and Analysis
 
