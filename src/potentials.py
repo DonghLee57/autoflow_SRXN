@@ -21,8 +21,8 @@ class LammpsMLIAPEngine:
         self.parallel = parallel
         self.nmpl = nmpl
         
-    def _create_input_script(self, atoms, input_file, data_file, log_file):
-        """Generates LAMMPS input script for ML-IAP + D3 overlay."""
+    def _create_input_script(self, atoms, input_file, data_file, log_file, mode='static', fmax=0.05, steps=200):
+        """Generates LAMMPS input script for ML-IAP + D3 overlay (Static or Relax)."""
         # Species must be sorted by atomic number for consistent LAMMPS typing if required,
         # but primarily to match the user's provided logic for SevenNet.
         species = sorted(list(set(atoms.get_chemical_symbols())), key=lambda x: atomic_numbers[x])
@@ -74,16 +74,25 @@ class LammpsMLIAPEngine:
             lines.append(f"pair_style d3 {d3['s6']} {d3['s8']} {d3['damping']} {d3['functional']}")
             lines.append(f"pair_coeff * * d3 {species_str}")
             
-        lines.extend([
-            "",
-            "neighbor 1.0 bin",
-            "neigh_modify delay 0 every 1 check yes",
-            "thermo 1",
-            "thermo_style custom step potential",
-            "dump 1 all custom 1 dump.forces id fx fy fz",
-            "dump_modify 1 sort id",
-            "run 0"
-        ])
+        lines.append("")
+        lines.append("neighbor 1.0 bin")
+        lines.append("neigh_modify delay 0 every 1 check yes")
+            
+        if mode == 'static':
+            lines.extend([
+                "thermo 1",
+                "thermo_style custom step potential",
+                "dump 1 all custom 1 dump.forces id fx fy fz",
+                "dump_modify 1 sort id",
+                "run 0"
+            ])
+        elif mode == 'relax':
+            lines.extend([
+                "thermo 10",
+                "thermo_style custom step potential fmax",
+                f"minimize 0.0 {fmax} {steps} {steps*10}",
+                f"write_data {data_file}.relaxed"
+            ])
         
         with open(input_file, 'w') as f:
             f.write("\n".join(lines))
@@ -138,49 +147,17 @@ class LammpsMLIAPEngine:
         
         input_file = os.path.join(wd, "in.lammps")
         data_file = os.path.join(wd, "data.lammps")
+        log_file = os.path.join(wd, "log.lammps")
         
-        species = list(set(atoms.get_chemical_symbols()))
-        species_str = " ".join(species)
-        atom_style = "full"
-        write(data_file, atoms, format='lammps-data', atom_style=atom_style)
-        
-        lines = [
-            "units metal",
-            "boundary p p p",
-            f"atom_style {atom_style}",
-            "newton on",
-            f"read_data {data_file}",
-            ""
-        ]
-        
-        if self.d3_params:
-            d3 = self.d3_params
-            lines.append(f"pair_style hybrid/overlay mliap unified {self.model_path} 0 d3 {d3['s6']} {d3['s8']} {d3['damping']} {d3['functional']}")
-            lines.append(f"pair_coeff * * mliap SevenNet {species_str}")
-            lines.append(f"pair_coeff * * d3 {species_str}")
-        else:
-            lines.append(f"pair_style mliap unified {self.model_path} 0")
-            lines.append(f"pair_coeff * * SevenNet {species_str}")
-            
-        lines.extend([
-            "",
-            "neighbor 1.0 bin",
-            "neigh_modify delay 0 every 1 check yes",
-            f"minimize 0.0 {fmax} {steps} {steps*10}",
-            f"write_data {data_file}.relaxed"
-        ])
-        
-        with open(input_file, 'w') as f:
-            f.write("\n".join(lines))
+        self._create_input_script(atoms, input_file, data_file, log_file, mode='relax', fmax=fmax, steps=steps)
             
         cmd = [self.binary_path, "-in", "in.lammps", "-log", "log.lammps"]
         subprocess.run(cmd, cwd=wd, check=True, capture_output=True)
         
-        # Load relaxed geometry
-        relaxed_atoms = read(os.path.join(wd, f"{data_file}.relaxed"), format='lammps-data', style=atom_style)
-        # Update original atoms positions
+        # Load relaxed geometry (using atomic style consistently)
+        relaxed_atoms = read(os.path.join(wd, f"{data_file}.relaxed"), format='lammps-data', style="atomic")
         atoms.positions = relaxed_atoms.positions
-        return 0.0 # Energy parsing omitted for brevity
+        return 0.0 # Placeholder
 
 class SimulationEngine:
     """
@@ -198,7 +175,9 @@ class SimulationEngine:
                 binary_path=self.config.get('lammps', {}).get('binary_path'),
                 model_path=self.config.get('lammps', {}).get('model_path'),
                 potential_type='sevennet',
-                d3_params=self.config.get('lammps', {}).get('d3')
+                d3_params=self.config.get('lammps', {}).get('d3'),
+                parallel=self.config.get('lammps', {}).get('parallel', False),
+                nmpl=self.config.get('lammps', {}).get('nmpl', 1)
             )
 
     def get_calculator(self):
