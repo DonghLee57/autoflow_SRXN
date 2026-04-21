@@ -7,16 +7,10 @@ from ase.io import read, write
 # Add the src directory to Python path for local development
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
-try:
-    from autoflow_srxn.ads_workflow_mgr import AdsorptionWorkflowManager
-    from autoflow_srxn.chemisorption_builder import build_chemisorption_structures
-    from autoflow_srxn.logger_utils import setup_logger
-    from autoflow_srxn.surface_utils import create_slab_from_bulk, standardize_vasp_atoms, passivate_surface_coverage_general
-except ImportError:
-    from ads_workflow_mgr import AdsorptionWorkflowManager
-    from chemisorption_builder import build_chemisorption_structures
-    from logger_utils import setup_logger
-    from surface_utils import create_slab_from_bulk, standardize_vasp_atoms, passivate_surface_coverage_general
+from ads_workflow_mgr import AdsorptionWorkflowManager
+from chemisorption_builder import build_chemisorption_structures
+from logger_utils import setup_logger
+from surface_utils import create_slab_from_bulk, standardize_vasp_atoms, passivate_surface_coverage_general
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
