@@ -1,6 +1,6 @@
 # AutoFlow-SRXN: Automated Surface Reaction Workflow
 
-**AutoFlow-SRXN** is a high-fidelity, fully-automated framework designed for high-throughput exploration and generation of adsorption and reaction structures between arbitrary precursors and substrates. It leverages geometric coordination principles and statistical mechanics to predict thermodynamic stability and reaction pathways at material interfaces.
+**AutoFlow-SRXN** is a high-fidelity, fully-automated framework designed for high-throughput exploration and generation of adsorption and reaction structures between arbitrary precursors and substrates. It leverages geometric coordination principles, machine learning interatomic potentials (MLIPs), and statistical mechanics to predict thermodynamic stability and reaction kinetics at material interfaces.
 
 ---
 
@@ -11,50 +11,33 @@ The framework utilizes a generalized, valence shell electron pair repulsion (VSE
 
 For a surface atom $i$ with $n$ existing covalent neighbors and a target valence $V_{target}$, the engine identifies $m = V_{target} - n$ dangling bonds. The 3D orientation of these vectors is determined algorithmically:
 - **Singular Bonds ($m=1$)**: Points exactly opposite to the normalized sum of existing neighbor vectors.
-- **Dual Bonds ($m=2, n=2$)**: Optimized for tetrahedral/square-planar environments (e.g., Si(100) dimers), spreading vectors according to $AX_2E_2$ VSEPR geometry.
+- **Dual Bonds ($m=2$)**: Optimized for tetrahedral/square-planar environments (e.g., Si(100) dimers), spreading vectors according to $AX_2E_2$ VSEPR geometry.
 - **Surface Saturation ($m \ge 3$)**: Distributes vectors in a symmetric conical spread around the primary vacuum-pointing axis.
 
-### 1.2 Multi-Element Passivation
-Beyond hydrogen, the engine support arbitrary passivation elements (F, Cl, O, etc.). Bond lengths are dynamically determined using the sum of covalent radii:
-$$ d_{ij} = r_{cov, i} + r_{cov, j} $$
+### 1.2 Asymmetric Substrate Factory
+The framework automates the generation of complex surface models with precise termination control.
+- **Asymmetric Termination**: Supports separate atomic plane constraints for top and bottom surfaces (e.g., Silanol-terminated top vs. Oxygen-terminated bottom).
+- **Side-Specific Passivation**: Enables independent passivation coverage for different sides of the slab, critical for modeling realistic asymmetric experimental conditions.
+- **Steric-Constraint Expansion**: Autonomously expands the supercell to satisfy a `target_area` constraint, ensuring periodic boundary stability for large adsorbates like DIPAS.
 
-### 1.3 Thermodynamics & Gibbs Free Energy
-The engine integrates vibrational data from Phonopy to calculate finite-temperature thermodynamic properties.
-... (equations unchanged) ...
+### 1.3 Partial Hessian Vibrational Analysis (PHVA)
+To accelerate thermodynamic calculations and kinetic modeling, the framework implements **Partial Hessian Vibrational Analysis**.
+For a system with $N_{total}$ atoms, the full Hessian matrix $H \in \mathbb{R}^{3N \times 3N}$ is approximated by a submatrix $H_{active} \in \mathbb{R}^{3N_{active} \times 3N_{active}}$:
+$$ H_{ij} \approx 0 \quad \text{if } i \text{ or } j \notin \text{Active Set} $$
+The **Active Set** is dynamically defined as the adsorbate plus all substrate atoms within a user-defined cutoff radius $R_{phva}$ (default 3.5 Å), significantly reducing the number of force calls required for frequency extraction.
 
-### 1.4 Surface Protector Interaction Model
-The framework employs a spatial and heuristic engine to model surface interactions in the presence of protective layers (e.g., SAMs).
-- **Void-Space Penetration**: Uses a 3D Distance Transform Voxel Grid to autonomously locate steric cavities (voids) within dense protector canopies, enabling targeted physisorption and accessibility-filtered chemisorption deep on the base substrate.
-- **Protector Ligand Exchange**: Simulates direct reactions with the protector layer by algorithmically identifying reactive leaves (e.g., `-OH`, `-Cl`) and performing substituent exchange. Stoichiometric byproducts (e.g., $HCl$) are automatically isolated into an independent simulation cell.
-
-### 1.5 Automated Substrate Factory
-The framework automates the transition from bulk crystals to surface slabs through integrated geometric calculations.
-- **Miller-to-Slab Calculation**: Generates oriented slabs from arbitrary $(h, k, l)$ Miller indices, automatically calculating layer requirements to satisfy a target physical thickness.
-- **Steric-Constraint Expansion**: Autonomously expands the surface area to satisfy a `target_area` constraint (e.g., $160 \, \text{\AA}^2$) while maximizing lattice squareness to optimize periodic boundary interaction.
-- **Symmetric Termination Search**: Performs a fractional coordinate grid search along the surface normal to identify stoichiometric or chemically symmetric termination planes.
-- **Lattice Vector Alignment**: Automatically rotates the generated supercell to align the primary lattice vector with the X-axis $(1, 0, 0)$ for standardized coordinate management.
-
-### 1.6 Stage-Wise Surface Evolution & Competitive Adsorption
-The framework supports sequential discovery stages to model complex surface phenomena such as competitive inhibition or multi-step ALD/ALE processes.
-- **Dynamic Branching Workflow**: Top-ranked inhibited geomorphologies from Stage 1 (e.g., Inhibitors/SAMs) are automatically promoted as substrate templates for Stage 2 (e.g., Precursors), enabling the exploration of cooperative or resistive site-blocking effects.
-- **Context-Aware Steric Filtering**: Implements a tiered distance-threshold kernel $K(\delta)$ based on atomic tags:
-  - **Molecule-Substrate $(\delta \approx 1.5\,\text{\AA})$**: Permissive threshold ensuring molecules can reach the surface potential wells.
-  - **Inter-Molecular $(\delta \approx 2.0-2.5\,\text{\AA})$**: Configurable threshold (typically $\approx \text{Sum of VdW Radii}$) to prevent non-physical clashing in crowded interfacial environments.
-
-### 1.7 MACE-MP-0 Relaxation Engine
-The framework integrates the **MACE (Multi-ACE)** foundation models for high-fidelity structural relaxation and energy extraction.
-- **Foundation Model Support**: Utilizes the `mace_mp` medium model by default, providing near-DFT accuracy for arbitrary chemical species.
-- **Converged Geometry Optimization**: Implements an automated relaxation loop using ASE optimizers (BFGS/FIRE) with a force convergence criterion (default $0.05\,\text{eV/\AA}$).
-- **Lazy Loading Implementation**: Optimized for Windows environments to resolve DLL initialization issues, ensuring seamless MLIP execution.
+### 1.4 Thermodynamics & Gibbs Free Energy
+The engine integrates vibrational data to calculate finite-temperature thermodynamic properties using the Harmonic approximation.
+- **Vibrational Partition Function**: $Z_{vib} = \prod_i \frac{e^{-\beta \hbar \omega_i / 2}}{1 - e^{-\beta \hbar \omega_i}}$
+- **Gibbs Free Energy**: $G(T) = E_{pot} + ZPE + \int C_p dT - TS$
 
 ---
 
 ## 2. Strategic Objectives
-- **High-Throughput Exploration**: Rational search of the potential energy surface (PES) for complex surface-molecule interactions.
-- **MLIP-Driven Structural Optimization**: High-fidelity relaxation of adsorption candidates using MACE-MP-0 models.
-- **Multi-Stage Discovery & Branching**: Systematic exploration of precursor adsorption on inhibited or pre-functionalized surface templates.
-- **Standardized VASP Export**: Automated Z-alignment ($z_{min}=0.5\,\text{\AA}$) and atomic sorting for all structural outputs.
-- **Context-Aware Overlap Control**: Precise steric management for high-density interfacial modeling.
+- **High-Throughput Exploration**: Rational search of the potential energy surface (PES) using symmetry-aware site identification.
+- **MLIP-Driven Accuracy**: High-fidelity relaxation and frequency calculations using **MACE-MP-0** foundation models.
+- **PHVA/FHVA Benchmarking**: Systematic validation of partial Hessian approximations against full Hessian references.
+- **Standardized Data Export**: Generation of human-readable `qpoint.yaml` files and `all_relaxed_candidates.extxyz` for visualization.
 
 ---
 
@@ -66,101 +49,96 @@ graph TD
     A[config.yaml] --> B(Structure Generation Interface)
     subgraph pkg [autoflow_srxn Package]
         B --> P[Surface Utils]
-        P -->|CIF/VASP Export| PA[Standardized Substrate]
+        P -->|Asymmetric Control| PA[Standardized Substrate]
         B --> C[AdsorptionWorkflowManager]
         PA -.-> C
         C --> D[ChemisorptionBuilder]
         D -->|VSEPR Heuristics| SY[Symmetry Engine]
         
-        subgraph MS [Multi-Stage Discovery]
-            C -->|Stage 1| S1((Inhibitor Discovery))
-            S1 -->|Tag = 2| B1{Branching Limit}
-            B1 -->|Template Evolution| S2((Precursor Discovery))
-            S2 -->|Tag = 3| F
+        subgraph VIB [Vibrational Engine]
+            C --> VA[VibrationalAnalyzer]
+            VA -->|Full Hessian| FH[FHVA]
+            VA -->|Partial Hessian| PH[PHVA]
+            FH & PH --> TC[ThermoCalculator]
         end
-        
-        MS -->|Context-Aware Check| CO[Tiered Overlap Kernel]
-        F((Symmetry Edge Reduction))
     end
     
     subgraph Output
-        F --> G[.extxyz Candidates]
-        PA --> H[generated_substrate.vasp]
+        SY --> G[all_relaxed_candidates.extxyz]
+        TC --> Q[qpoint.yaml]
     end
 ```
 
-### 3.2 Directory Structure
-- `src/autoflow_srxn/`: Core package logic (Coordination, collision, MLIP potentials).
-- `setup.py` / `pyproject.toml`: Package installation and dependency management.
-- `free_energy/`: Statistical mechanics engine for thermodynamic property parsing.
-- `example_dipas/`: Executable sandbox for Si(100) surface manipulation and validation.
-- `structures/`: Storage for precursor and substrate base configurations.
+### 3.2 Simulation Backend Design
+
+All relaxation and force calculations are routed through `SimulationEngine` (`src/potentials.py`), which selects a backend based on `model_type` in `config.yaml`.
+
+| Backend | Model | Runtime | Interface |
+| :--- | :--- | :--- | :--- |
+| **ASE** | MACE-MP-0 | In-process Python | `mace.calculators.mace_mp` |
+| **LAMMPS** | SevenNet (7net) | External binary | `pair_style e3gnn[/parallel]` |
+
+**MACE** is loaded as an ASE calculator and runs entirely within the Python process. ASE constraints (e.g. `FixAtoms`) are handled natively.
+
+**SevenNet** is driven through an external LAMMPS binary via `LammpsMLIAPEngine`. The engine automatically generates LAMMPS input scripts at runtime, including:
+- `pair_style e3gnn` (serial) or `e3gnn/parallel` (MPI) for the base potential.
+- `hybrid/overlay e3gnn[/parallel] zbl/pair` when ZBL is enabled (`use_zbl: true`), with per-pair cutoffs derived from reference POSCAR dimers in `zbl_db_path` or ASE covalent radii as fallback.
+- `region rFIX block ... / fix setforce 0 0 0` when ASE `FixAtoms` constraints are present on the atoms object, mirroring the `ex/fixed_z_ex_script.txt` pattern.
+
+**Configuration:**
+```yaml
+potentials:
+  model_type: "mace"       # ASE path — uses MACE-MP-0 in-process
+  # model_type: "sevennet" # LAMMPS path — requires lammps binary + 7net model
+
+lammps:                    # Only used when model_type: "sevennet"
+  binary_path: /usr/bin/lammps
+  model_path:  /models/7net.pt
+  parallel:    false
+  use_zbl:     false
+  zbl_db_path: null        # Path to {elem1}-{elem2}/POSCAR reference dimers
+```
+
+### 3.3 Directory Structure
+- `src/`: Core package logic (surface utils, adsorption managers, vibration analysis).
+- `examples/`:
+    - `benchmark_phva_sio2/`: Standardization and validation of PHVA on SiO2(001).
+    - `example_dipas/`: Si(100) surface reaction stage-wise discovery.
+- `structures/`: Base crystal and precursor configurations.
 
 ---
 
 ## 4. Operational Harness
 
 ### 4.1 Installation
-The framework is now structured as a standard Python package. It is recommended to use a virtual environment.
-
-**Step 1: Environment Setup**
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # 或 .venv\Scripts\activate (Windows)
+pip install -e .
+pip install ".[mace]" # For MLIP support
 ```
 
-**Step 2: Install Package**
+### 4.2 Running PHVA Benchmark
+To run the standardized PHVA vs FHVA benchmark on a silanol-terminated SiO2 surface:
 ```bash
-# Basic installation (dependencies only)
-pip install .
-
-# Installation with MACE-MP support (torch/MLIP)
-pip install ".[mace]"
+cd examples/benchmark_phva_sio2
+python run_autoflow_benchmark.py
 ```
-
-### 4.2 Standard Workflow (example_dipas)
-To execute the multi-stage reaction simulation on the Si(100) surface:
-
-1. **Configure**: Edit `example_dipas/config_full.yaml` to set your physical parameters (termination, thickness, etc.).
-2. **Execute**:
-   ```bash
-   cd example_dipas
-   python run.py
-   ```
-3. **Verify Stages**:
-   - **Stage 0**: Raw substrate is generated and saved as `generated_substrate.vasp`.
-   - **Stage 1**: Surface is passivated/inhibited and saved as `passivated.vasp`.
-   - **Stage 2**: Adsorption candidates for the precursor are generated in `.extxyz` format. 
-
-### 4.3 Thermodynamic Post-Processing
-To calculate the Gibbs Free Energy at $T=298.15K$:
-```bash
-cd free_energy
-python analyze_thermo.py phonopy.yaml --energy -14.50 --mode gas --mass 18.02
-```
-
-### 4.3 Thermodynamic Post-Processing
-To calculate the Gibbs Free Energy at $T=298.15K$:
-```bash
-cd free_energy
-python analyze_thermo.py phonopy.yaml --energy -14.50 --mode gas --mass 18.02
-```
+This script will:
+1. Generate an asymmetric SiO2 slab.
+2. Perform MD equilibration at 500K.
+3. Automatically search for DIPAS adsorption sites.
+4. Execute both FHVA and PHVA and generate a comparative `qpoint.yaml`.
 
 ---
 
 ## 5. Physical Standards
 
-| Property | Standard Unit | Alternative/Scale |
+| Property | Standard Unit | Reference |
 | :--- | :--- | :--- |
-| **Energy** | Electronvolt (eV) | kJ/mol, Hartree |
-| **Length** | Angstrom (Å) | Bohr |
-| **Temperature** | Kelvin (K) | - |
-| **Mass** | Atomic Mass Unit (amu) | kg |
-| **Frequency** | Terahertz (THz) | wavenumber (cm⁻¹) |
-| **Pressure** | Pascal (Pa) | atm (101325 Pa) |
+| **Energy** | Electronvolt (eV) | - |
+| **Frequency** | Wavenumber (cm⁻¹) | 1 THz $\approx$ 33.356 cm⁻¹ |
+| **Distance** | Angstrom (Å) | - |
+| **Temperature**| Kelvin (K) | Default: 298.15 K |
 
-**Physical Constants (CODATA 2018):**
-- Boltzmann Constant ($k_B$): $1.380649 \times 10^{-23}$ J/K
-- Planck Constant ($h$): $6.62607015 \times 10^{-34}$ J·s
-- Gas Constant ($R$): $8.314462618$ J/(mol·K)
-- Avogadro Number ($N_A$): $6.02214076 \times 10^{23}$ mol⁻¹
+**DOIs & References:**
+- MACE Potential: [10.48550/arXiv.2206.07697]
+- ASE Framework: [10.1088/1361-648X/aa680e]

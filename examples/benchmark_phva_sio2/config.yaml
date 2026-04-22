@@ -1,21 +1,46 @@
-# PHVA vs FHVA Benchmark Configuration
-# System: DIPAS on SiO2(001) Surface
+# PHVA vs FHVA Benchmark Configuration: SiO2(001) + DIPAS
+# Asymmetric Termination: O-terminated (Top/Bottom), H-passivated (Bottom only)
 
-simulation:
-  model_type: "mace0"
+paths:
+  bulk_substrate: "../../structures/SiO2_mp-546794.vasp"
+  adsorbate: "../../structures/DIPAS.vasp"
+  output_dir: "results"
+
+substrate_generation:
+  miller_indices: [0, 0, 1]
+  thickness: 15.0
+  vacuum: 15.0
+  target_area: 200.0  # ~15x13 A
+  top_termination: "O"
+  bottom_termination: "O"
+  verbose: True
+
+passivation:
+  run_passivation: True
+  element: "H"
+  side: "bottom"
+  coverage: 1.0
+
+equilibration:
+  temp_K: 500
+  md_steps: 2000  # 2ps for faster verification
+  fixed_z_threshold: 5.5
+
+adsorption:
+  sampling_rotations: 16
+  physisorption_height: 3.5
+  precursor_center: "Si"
+  overlap_cutoff: 1.5
+
+potentials:
+  model_type: "mace"
   device: "cpu"
 
-benchmark:
-  structure: "SiO2_DIPAS_adsorbed.vasp"
-  displacement: 0.01
-  temperature: 298.15
-  
-  # PHVA Settings: Active atoms (Adsorbate atoms + top layer atoms)
-  # For the purpose of the benchmark, this list will be handled 
-  # by the script based on the specific geometry index.
-  active_layer_thickness: 5.0 # A (Distance from adsorbate to include as active)
+relaxation:
+  fmax: 0.05
+  steps: 200
+  optimizer: "BFGS"
 
-thermochemistry:
-  electronic_energy: -150.0  # eV (Dummy reference)
-  mode: "adsorbent"
-  temperature_range: [298.15, 400.0, 500.0, 600.0, 700.0, 800.0]
+thermo:
+  temperature_K: 298.15
+  phva_cutoff_dist: 3.5

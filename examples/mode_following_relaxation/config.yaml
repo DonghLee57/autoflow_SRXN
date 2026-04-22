@@ -9,8 +9,11 @@ paths:
 potentials:
   model_type: "mace0"  # Using MACE-MP-0 foundation model
   device: "cpu"        # Set to "cuda" if GPU is available
-  fmax: 0.001
+
+relaxation:
+  fmax: 0.001   # ultra-tight for stability analysis
   steps: 200
+  optimizer: "CG_FIRE"
 
 vibrational_analysis:
   max_iter: 10                      # Increased cycles for thorough refinement

@@ -42,9 +42,10 @@ def run_enhanced_phonon_refinement(config_path='config.yaml', displacement=None)
     
     # 4. Perform Initial Relaxation
     logger.info(f"Performing initial relaxation with {config['potentials']['model_type']} (ultra-tight CG+FIRE)...")
-    target_fmax = config['potentials'].get('fmax', 0.001)
-    target_steps = config['potentials'].get('steps', 200)
-    engine.relax(current_atoms, fmax=target_fmax, steps=target_steps, optimizer='CG_FIRE')
+    target_fmax = config['relaxation'].get('fmax', 0.001)
+    target_steps = config['relaxation'].get('steps', 200)
+    optimizer = config['relaxation'].get('optimizer', 'CG_FIRE')
+    engine.relax(current_atoms, fmax=target_fmax, steps=target_steps, optimizer=optimizer)
     
     # 5. Iterative Stability Loop with Adaptive Control
     max_iter = vib_cfg.get('max_iter', 10)

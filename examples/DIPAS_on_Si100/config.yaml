@@ -47,5 +47,8 @@ ideal_coordination:
 potentials:
   model_type: "mace0"
   device: "cpu"
+
+relaxation:
   fmax: 0.05
   steps: 200
+  optimizer: "BFGS"

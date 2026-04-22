@@ -1,19 +1,22 @@
 import os
 import sys
+import itertools
 import subprocess
 import numpy as np
 from ase.optimize import BFGS, FIRE
 from ase.optimize.sciopt import SciPyFminCG
 from ase.calculators.emt import EMT
 from ase.io import write, read
-from ase.data import atomic_numbers, atomic_masses
+from ase.data import atomic_numbers, atomic_masses, covalent_radii
+from logger_utils import get_workflow_logger
 
 class LammpsMLIAPEngine:
     """
     Interface for calling an external LAMMPS binary with ML-IAP (SevenNet/MACE) 
     and custom D3 dispersion overlay.
     """
-    def __init__(self, binary_path, model_path, potential_type='sevennet', d3_params=None, parallel=False, nmpl=1):
+    def __init__(self, binary_path, model_path, potential_type='sevennet', d3_params=None, parallel=False, nmpl=1,
+                 use_zbl=False, zbl_db_path=None):
         self.binary_path = binary_path
         self.model_path = model_path
         self.potential_type = potential_type.lower()
@@ -21,9 +24,46 @@ class LammpsMLIAPEngine:
         self.parallel = parallel
         self.nmpl = nmpl
         self.atom_style = "atomic" # Default for ML-IAPs
+        self.use_zbl = use_zbl
+        # zbl_db_path: root containing {elem1}-{elem2}/POSCAR reference dimers
+        self.zbl_db_path = zbl_db_path
         
+    def _get_fixed_atom_indices(self, atoms):
+        """Extract indices of all atoms held fixed by ASE FixAtoms constraints."""
+        from ase.constraints import FixAtoms
+        fixed = []
+        for c in atoms.constraints:
+            if isinstance(c, FixAtoms):
+                fixed.extend(c.index.tolist())
+        return fixed
+
+    def _get_zbl_cutoff(self, elem1, elem2):
+        """Return (inner, outer) ZBL cutoffs for an element pair.
+
+        If zbl_db_path is set, reads {db_path}/{elem1}-{elem2}/POSCAR (logic from ex/zbl_example.py)
+        and computes 0.70*d_eq / 0.90*d_eq. Falls back to ASE covalent_radii when file is absent.
+        """
+        # Normalise order by atomic number (matches zbl_example.py sort)
+        if atomic_numbers[elem1] > atomic_numbers[elem2]:
+            elem1, elem2 = elem2, elem1
+
+        if self.zbl_db_path:
+            poscar = os.path.join(self.zbl_db_path, f"{elem1}-{elem2}", "POSCAR")
+            if os.path.isfile(poscar):
+                ref = read(poscar)
+                d_eq = ref.get_distance(0, 1, mic=True)
+                return (0.70 * d_eq, 0.90 * d_eq)
+            get_workflow_logger().warning(
+                f"ZBL: no reference POSCAR found for {elem1}-{elem2} at '{poscar}'. "
+                f"Add {elem1}-{elem2}/POSCAR to zbl_db_path for accurate cutoffs. "
+                f"Falling back to ASE covalent_radii."
+            )
+
+        d_eq = covalent_radii[atomic_numbers[elem1]] + covalent_radii[atomic_numbers[elem2]]
+        return (0.70 * d_eq, 0.90 * d_eq)
+
     def _create_input_script(self, atoms, input_file, data_file, log_file, mode='static', fmax=0.05, steps=200):
-        """Generates LAMMPS input script for ML-IAP + D3 overlay (Static or Relax)."""
+        """Generates LAMMPS input script for ML-IAP + optional ZBL/D3 overlay (Static or Relax)."""
         # Species must be sorted by atomic number for consistent LAMMPS typing if required,
         # but primarily to match the user's provided logic for SevenNet.
         species = sorted(list(set(atoms.get_chemical_symbols())), key=lambda x: atomic_numbers[x])
@@ -49,30 +89,49 @@ class LammpsMLIAPEngine:
         lines.append("")
 
         if self.potential_type == 'sevennet':
-            if not self.parallel:
-                lines.append(f"pair_style e3gnn")
-                lines.append(f"pair_coeff * * {self.model_path} {species_str}")
+            sevennet_style = 'e3gnn/parallel' if self.parallel else 'e3gnn'
+
+            # Collect overlay sub-styles
+            overlays = []
+            if self.use_zbl:
+                overlays.append('zbl/pair')
+            if self.d3_params:
+                d3 = self.d3_params
+                overlays.append(f"d3 {d3['s6']} {d3['s8']} {d3['damping']} {d3['functional']}")
+
+            if overlays:
+                lines.append(f"pair_style hybrid/overlay {sevennet_style} {' '.join(overlays)}")
+                # In hybrid/overlay, pair_coeff must name the sub-style explicitly
+                if self.parallel:
+                    lines.append(f"pair_coeff * * {sevennet_style} {self.nmpl} {self.model_path} {species_str}")
+                else:
+                    lines.append(f"pair_coeff * * {sevennet_style} {self.model_path} {species_str}")
             else:
-                lines.append(f"pair_style e3gnn/parallel")
-                lines.append(f"pair_coeff * * {self.nmpl} {self.model_path} {species_str}")
+                lines.append(f"pair_style {sevennet_style}")
+                if self.parallel:
+                    lines.append(f"pair_coeff * * {self.nmpl} {self.model_path} {species_str}")
+                else:
+                    lines.append(f"pair_coeff * * {self.model_path} {species_str}")
+
+            # ZBL pair_coeff — one line per element pair (ex/zbl_example.py logic)
+            if self.use_zbl:
+                for elem1, elem2 in itertools.combinations_with_replacement(species, 2):
+                    i = species.index(elem1) + 1
+                    j = species.index(elem2) + 1
+                    z1, z2 = atomic_numbers[elem1], atomic_numbers[elem2]
+                    inner, outer = self._get_zbl_cutoff(elem1, elem2)
+                    lines.append(f"pair_coeff {i} {j} zbl/pair {z1} {z2} {inner:.4f} {outer:.4f}")
+
+            if self.d3_params:
+                lines.append(f"pair_coeff * * d3 {species_str}")
+
         elif self.potential_type == 'mace':
-            # Keep existing logic or update if MACE also needs special handling.
-            # Assuming mliap unified was previously used for MACE-like interfaces
             lines.append(f"pair_style mliap unified {self.model_path} 0")
             lines.append(f"pair_coeff * * MACE {species_str}")
         else:
             # Fallback
             lines.append(f"pair_style mliap unified {self.model_path} 0")
             lines.append(f"pair_coeff * * {self.potential_type} {species_str}")
-
-        if self.d3_params:
-            # Note: hybrid/overlay logic for e3gnn would need careful handling.
-            # Currently assuming the user's snippet is the priority for the base style.
-            # If d3 is needed as overlay:
-            d3 = self.d3_params
-            lines.insert(-2, f"pair_style hybrid/overlay {lines.pop(-2)}") # wrap existing style
-            lines.append(f"pair_style d3 {d3['s6']} {d3['s8']} {d3['damping']} {d3['functional']}")
-            lines.append(f"pair_coeff * * d3 {species_str}")
             
         lines.append("")
         lines.append("neighbor 1.0 bin")
@@ -87,12 +146,20 @@ class LammpsMLIAPEngine:
                 "run 0"
             ])
         elif mode == 'relax':
-            lines.extend([
-                "thermo 10",
-                "thermo_style custom step potential fmax",
-                f"minimize 0.0 {fmax} {steps} {steps*10}",
-                f"write_data {data_file}.relaxed"
-            ])
+            lines.append("thermo 10")
+            lines.append("thermo_style custom step potential fmax")
+
+            # Translate ASE FixAtoms constraints → LAMMPS region + setforce 0 0 0
+            # Mirrors the pattern in ex/fixed_z_ex_script.txt
+            fixed_indices = self._get_fixed_atom_indices(atoms)
+            if fixed_indices:
+                z_max_fixed = atoms.positions[fixed_indices, 2].max()
+                lines.append(f"region rFIX block INF INF INF INF INF {z_max_fixed:.4f}")
+                lines.append("group gFIX region rFIX")
+                lines.append("fix 1 gFIX setforce 0 0 0")
+
+            lines.append(f"minimize 0.0 {fmax} {steps} {steps*10}")
+            lines.append(f"write_data {data_file}.relaxed")
         
         with open(input_file, 'w') as f:
             f.write("\n".join(lines))
@@ -171,13 +238,16 @@ class SimulationEngine:
         self._lammps_engine = None
 
         if self.model_type in ['sevennet_mliap', 'sevennet']:
+            lammps_cfg = self.config.get('lammps', {})
             self._lammps_engine = LammpsMLIAPEngine(
-                binary_path=self.config.get('lammps', {}).get('binary_path'),
-                model_path=self.config.get('lammps', {}).get('model_path'),
+                binary_path=lammps_cfg.get('binary_path'),
+                model_path=lammps_cfg.get('model_path'),
                 potential_type='sevennet',
-                d3_params=self.config.get('lammps', {}).get('d3'),
-                parallel=self.config.get('lammps', {}).get('parallel', False),
-                nmpl=self.config.get('lammps', {}).get('nmpl', 1)
+                d3_params=lammps_cfg.get('d3'),
+                parallel=lammps_cfg.get('parallel', False),
+                nmpl=lammps_cfg.get('nmpl', 1),
+                use_zbl=lammps_cfg.get('use_zbl', False),
+                zbl_db_path=lammps_cfg.get('zbl_db_path', None)
             )
 
     def get_calculator(self):

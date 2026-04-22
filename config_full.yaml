@@ -1,0 +1,225 @@
+# =============================================================================
+# AutoFlow-SRXN  —  Full Configuration Reference
+# =============================================================================
+# 모든 섹션과 파라미터의 설명·기본값·형식을 담은 템플릿입니다.
+# 실제 워크플로우에서는 필요한 섹션만 발췌하여 사용하세요.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# 파일/디렉토리 경로
+# -----------------------------------------------------------------------------
+paths:
+  bulk_substrate: "../../structures/SiO2_mp-546794.vasp"  # 벌크 기판 구조 파일 (VASP 형식)
+  adsorbate:      "../../structures/DIPAS.vasp"            # 흡착 분자 구조 파일
+  molecule:       "../../structures/DIPAS.vasp"            # 분자 구조 (run_adsorption.py 호환)
+  substrate:      "../../structures/Si_mp149.vasp"         # 슬랩 기판 (사전 생성된 경우)
+  inhibitor:      null                                     # 억제제 구조 (2단계 워크플로우용, null 가능)
+  output_prefix:  "results"                                # 출력 파일명 접두어 (str)
+  output_dir:     "results"                                # 출력 디렉토리 경로 (str)
+
+
+# -----------------------------------------------------------------------------
+# 기판 슬랩 생성
+# -----------------------------------------------------------------------------
+substrate_generation:
+  run_generation:    true             # 슬랩을 새로 생성할지 여부 (bool, 기본: false)
+  bulk_path:         "../../structures/SiO2_mp-546794.vasp"  # 벌크 POSCAR 경로
+  miller_indices:    [0, 0, 1]        # 밀러 지수 [h, k, l] (list[int])
+  thickness:         15.0             # 슬랩 두께 (Å, float)
+  vacuum:            15.0             # 진공층 두께 (Å, float)
+  target_area:       200.0            # 목표 수퍼셀 면적 (Å², float). null이면 최소 단위셀 사용
+  top_termination:   "O"              # 상단 표면 종단 원소 ("O", "Si", "H" 등, str)
+  bottom_termination: "O"             # 하단 표면 종단 원소 (str)
+  supercell_matrix:  null             # 수퍼셀 행렬 [[a,b],[c,d]] 직접 지정 시 사용 (null 가능)
+  termination:       null             # top/bottom 동일 종단 (null이면 top/bottom 개별 지정)
+  verbose:           true             # 상세 출력 여부 (bool)
+
+
+# -----------------------------------------------------------------------------
+# 표면 패시베이션 (수소화 등)
+# -----------------------------------------------------------------------------
+passivation:
+  run_passivation: true   # 패시베이션 실행 여부 (bool)
+  element:         "H"    # 패시베이션 원소 (str, 기본: "H")
+  side:            "bottom"  # 패시베이션 면: "top" / "bottom" / "both" (str)
+  coverage:        1.0    # 패시베이션 커버리지 비율 (0.0–1.0, float)
+
+
+# -----------------------------------------------------------------------------
+# 기판 평형화 (MD)
+# -----------------------------------------------------------------------------
+equilibration:
+  temp_K:             500    # MD 온도 (K, float)
+  md_steps:           2000   # MD 스텝 수 (int). 1 step = 1 fs → 2000 = 2 ps
+  fixed_z_threshold:  5.5    # 하단으로부터 이 값(Å) 이하의 원자를 고정 (float)
+                             # ASE FixAtoms → LAMMPS region rFIX + setforce 0 0 0 으로 자동 번역
+
+
+# -----------------------------------------------------------------------------
+# 구조 완화 (Relaxation)
+# fmax와 steps는 완화 프로세스에 속하므로 이 섹션에서 정의합니다.
+# potentials 섹션에 두지 않습니다.
+# -----------------------------------------------------------------------------
+relaxation:
+  fmax:      0.05   # 수렴 기준: 최대 원자력 (eV/Å, float). 엄격도: 0.001–0.1
+  steps:     200    # 최대 최적화 스텝 수 (int)
+  optimizer: "BFGS" # 최적화 알고리즘: "BFGS" / "FIRE" / "CG_FIRE" (str)
+                    # CG_FIRE: 1단계 SciPyFminCG → 2단계 FIRE 2-stage 완화
+
+
+# -----------------------------------------------------------------------------
+# 시뮬레이션 포텐셜 / 백엔드
+# model_type에 따라 ASE(MACE) 또는 LAMMPS(SevenNet) 백엔드가 선택됩니다.
+# fmax / steps / optimizer 는 relaxation 섹션에서 설정하세요.
+# -----------------------------------------------------------------------------
+potentials:
+  model_type: "mace"   # 백엔드 선택 (str)
+                       #   "mace"        → ASE 인-프로세스, MACE-MP-0 사용
+                       #   "sevennet"    → LAMMPS 외부 바이너리, e3gnn pair_style 사용
+                       #   "emt"         → ASE EMT (테스트/데모용)
+  device:     "cpu"    # 연산 장치: "cpu" / "cuda" (str, MACE 전용)
+
+  # LAMMPS 백엔드 설정 (model_type: "sevennet" 일 때만 사용)
+  lammps:
+    binary_path:  "/usr/bin/lammps"    # LAMMPS 실행 파일 경로 (str)
+    model_path:   "/models/7net.pt"    # SevenNet 모델 파일 경로 (.pt, str)
+    parallel:     false                # e3gnn/parallel 사용 여부 (bool)
+    nmpl:         1                    # MPI 프로세스 수 (int, parallel: true 일 때 유효)
+
+    # ZBL (Ziegler-Biersack-Littmark) 단거리 척력 오버레이
+    use_zbl:      false                # ZBL 활성화 (bool)
+                                       # true → pair_style hybrid/overlay e3gnn[/parallel] zbl/pair
+    zbl_db_path:  null                 # 원소쌍 POSCAR DB 루트 경로 (str 또는 null)
+                                       # 구조: {zbl_db_path}/{elem1}-{elem2}/POSCAR
+                                       # null이면 ASE covalent_radii로 자동 계산 (fallback)
+
+    # D3 분산 보정 오버레이 (선택 사항)
+    d3:           null                 # null이면 비활성. 활성화 예시:
+                                       #   s6: 1.0
+                                       #   s8: 1.6
+                                       #   damping: "damp_bj"
+                                       #   functional: "pbe"
+
+
+# -----------------------------------------------------------------------------
+# 흡착질 생성 (Adsorbate Generation)
+# -----------------------------------------------------------------------------
+adsorbate_generation:
+  run_physisorption:   true    # 물리흡착 구조 탐색 여부 (bool)
+  run_chemisorption:   true    # 화학흡착 구조 탐색 여부 (bool)
+  run_pre_inhibition:  false   # 억제제 사전 처리 여부 (bool)
+  overlap_cutoff:      2.5     # 원자 겹침 판정 거리 (Å, float). 이 거리 이하 → 겹침으로 간주
+  physisorption_height: 3.5    # 물리흡착 배치 높이 (표면 위 Å, float)
+  rot_steps:           8       # 회전 샘플링 수 (int). 많을수록 탐색 범위 증가
+  symprec:             0.2     # 대칭성 분석 정밀도 (Å, float)
+  inhibitor_center:    "O"     # 억제제 결합 중심 원소 또는 인덱스 (str / int)
+  branching_limit:     5       # 억제제 분기 최대 수 (int)
+  precursor_center:    "Si"    # 전구체 결합 중심 원소 (str)
+  verbose:             true    # 상세 출력 (bool)
+  log_path:            "workflow.log"  # 로그 파일 경로 (str)
+
+
+# -----------------------------------------------------------------------------
+# 흡착 탐색 (benchmark 전용)
+# -----------------------------------------------------------------------------
+adsorption:
+  sampling_rotations:   16     # 방향 샘플링 수 (int). 피보나치 구면 분포 사용
+  physisorption_height: 3.5    # 물리흡착 초기 배치 높이 (표면 위 Å, float)
+  precursor_center:     "Si"   # 전구체 결합 중심 원소 (str)
+  overlap_cutoff:       1.5    # 겹침 판정 거리 (Å, float)
+
+
+# -----------------------------------------------------------------------------
+# 진동 분석 (Vibrational Analysis / Mode Following)
+# -----------------------------------------------------------------------------
+vibrational_analysis:
+  max_iter:              10     # 모드 추적 최대 반복 횟수 (int)
+  stability_threshold:  -0.1   # 안정성 판정 기준 주파수 (THz, float). 이 값 이상이면 안정
+  phonopy_displacement:  0.01  # 유한 차분 변위 (Å, float)
+  qpoints_path:          "qpoints.yaml"  # 외부 qpoints YAML 경로 (str)
+  fmax:                  0.05  # 모드 추적 중 중간 완화에 사용되는 수렴 기준 (eV/Å, float)
+                               # ※ 일반 구조 완화의 fmax는 relaxation.fmax 에서 설정
+
+  # 모드 선택 기준
+  selection:
+    freq_threshold: -0.1   # 이 값(THz) 이하의 모드만 추적 (float)
+    max_modes:      3       # 추적할 최대 모드 수 (int)
+
+  # 변위 섭동 파라미터
+  perturbation:
+    alpha: 0.1   # 섭동 스케일 팩터 (Å, float). 고유벡터에 곱해 적용
+
+  # 변위 안전 제약
+  constraints:
+    max_displacement:  0.3    # 원자당 최대 이동 거리 (Å, float)
+    stagnation_factor: 0.5    # 수렴 정체 시 alpha 감소 비율 (0–1, float)
+    stagnation_epsilon: 0.05  # 정체 판정 주파수 개선 임계값 (THz, float)
+
+  # 모드 시각화
+  visualization:
+    save_trajectory: true          # 모드 애니메이션 extxyz 저장 여부 (bool)
+    n_frames:        10            # 애니메이션 프레임 수 (int)
+    output_dir:      "mode_anims"  # 출력 디렉토리 (str)
+
+  # 대칭성 분석
+  symmetry:
+    enabled: true    # 대칭 분석 사용 여부 (bool)
+    symprec: 1.0e-5  # 대칭 정밀도 (float)
+
+
+# -----------------------------------------------------------------------------
+# 열화학 (Thermochemistry)
+# PHVA 결과로부터 G(T) 계산
+# -----------------------------------------------------------------------------
+thermo:
+  temperature_K:    298.15  # 열역학 계산 온도 (K, float)
+  phva_cutoff_dist: 3.5     # PHVA 활성 원자 탐색 반경 (Å, float)
+                            # 흡착질 + 이 거리 이내의 기판 원자 → Active Set
+
+
+# -----------------------------------------------------------------------------
+# 기체 열화학 (Gas Thermochemistry, run_thermo_analysis.py 전용)
+# -----------------------------------------------------------------------------
+thermochemistry:
+  qpoints_file:       "sample_data/qpoints.yaml"  # 진동 데이터 YAML 경로 (str)
+  electronic_energy:  0.0     # 전자 에너지 (eV, float). MLIP 계산값 입력
+  mode:               "gas"   # 계산 모드: "gas" (이상기체) / "adsorbent" (흡착) (str)
+  temperature_range:  [298.15, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0]
+                              # 계산할 온도 목록 (list[float], K)
+
+  # 기체 분자 물성 (mode: "gas" 일 때 필요)
+  gas_properties:
+    mass:    2.016     # 분자 질량 (amu, float)
+    sigma:   2         # 회전 대칭수 (int). 선형: D∞h→2, 비대칭: 1
+    moments: [0.280]   # 관성 모멘트 (amu·Å², list[float]). 선형 분자: 1개, 비선형: 3개
+
+
+# -----------------------------------------------------------------------------
+# 이상 배위수 (Ideal Coordination Numbers)
+# VSEPR 댕글링 본드 검출에 사용
+# -----------------------------------------------------------------------------
+ideal_coordination:
+  Si: 4   # 실리콘 (int)
+  O:  2   # 산소 (int)
+  C:  4   # 탄소 (int)
+  N:  3   # 질소 (int)
+  H:  1   # 수소 (int)
+
+
+# -----------------------------------------------------------------------------
+# 보호층 (Protector Layer) 설정
+# 리간드 교환 흡착 메커니즘에서 사용
+# -----------------------------------------------------------------------------
+protector:
+  enabled:          false   # 보호층 기반 공동(cavity) 탐색 활성화 (bool)
+  grid_resolution:  0.2     # 공동 탐색 그리드 해상도 (Å, float). 작을수록 정밀
+  reactive_leaves:  []      # 교환 가능한 리간드 화학식 목록 (list[str], 예: ["CH3", "H"])
+
+
+# -----------------------------------------------------------------------------
+# 일반 설정 (chemisorption_builder.py)
+# -----------------------------------------------------------------------------
+settings:
+  max_pair_dist: 5.0   # 해리 흡착 사이트 쌍 탐색 최대 거리 (Å, float)
+  symprec:       0.2   # 대칭성 분석 정밀도 (Å, float)
