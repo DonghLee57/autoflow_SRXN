@@ -19,26 +19,24 @@ class TestVibrationViz(unittest.TestCase):
             os.makedirs(cls.output_dir)
             
         cls.config = {
-            'vibrational_analysis': {
-                'qpoints_path': 'test_qpoints.yaml',
-                'fmax': 0.1,
-                'selection': {
-                    'freq_threshold': 100.0, # Catch all modes for testing
-                    'max_modes': 2
-                },
-                'perturbation': {
-                    'alpha': 0.2
-                },
-                'constraints': {
-                    'max_displacement': 0.5
-                },
-                'visualization': {
-                    'save_trajectory': True,
-                    'n_frames': 5,
-                    'output_dir': cls.output_dir
-                },
-                'symmetry': {
-                    'enabled': False # Quick test
+            'engine': {
+                'potential': {'backend': 'emt'},
+            },
+            'analysis': {
+                'vibrational': {
+                    'qpoints_file': 'test_qpoints.yaml',
+                    'mode_refinement': {
+                        'fmax': 0.1,
+                        'freq_threshold_thz': 100.0,  # Catch all modes for testing
+                        'max_modes': 2,
+                        'perturbation_alpha': 0.2,
+                        'max_displacement': 0.5,
+                    },
+                    'visualization': {
+                        'enabled': True,
+                        'n_frames': 5,
+                        'output_dir': cls.output_dir,
+                    }
                 }
             }
         }
@@ -50,8 +48,8 @@ class TestVibrationViz(unittest.TestCase):
         atoms.set_cell([10, 10, 10])
         atoms.center()
         
-        engine = SimulationEngine(model_type='emt', config=self.config)
-        analyzer = VibrationalAnalyzer(atoms, engine, is_symmetry=False)
+        engine = SimulationEngine(config=self.config)
+        analyzer = VibrationalAnalyzer(atoms, engine)
         analyzer.generate_qpoints_file(filename='test_qpoints.yaml')
         
         self.assertTrue(os.path.exists('test_qpoints.yaml'))

@@ -9,8 +9,8 @@ def analyze_surface_reactivity(surface, config, verbose=True):
     from ase.data import covalent_radii
     from surface_utils import identify_protectors
     
-    max_pair_dist = config.get('settings', {}).get('max_pair_dist', 5.0)
-    
+    max_pair_dist = config.get('reaction_search', {}).get('candidate_filter', {}).get('max_pair_dist', 5.0)
+
     sub_idx, prot_idx = identify_protectors(surface, config, verbose=False)
     
     i_list, j_list, D_list = neighbor_list('ijD', surface, cutoff=3.0) 
@@ -27,7 +27,9 @@ def analyze_surface_reactivity(surface, config, verbose=True):
         sym = surface.symbols[idx]
         
         if idx in prot_idx:
-            reactive_leaves = config.get('protector', {}).get('reactive_leaves', [])
+            _protex = config.get('reaction_search', {}).get('mechanisms', {}).get(
+                'protector_exchange', config.get('protector', {}))
+            reactive_leaves = _protex.get('reactive_leaves', [])
             if sym in reactive_leaves:
                 neighbors = []
                 for n_i, n_j, dist, vec in zip(i_list, j_list, d_list, D_list):
@@ -55,7 +57,8 @@ def analyze_surface_reactivity(surface, config, verbose=True):
                     neighbors.append(n_j)
                     
         actual_coord = len(neighbors)
-        expected = chem_kb.get_ideal_coordination(sym, config)
+        _ideal_coord = config.get('surface_prep', {}).get('surface_analysis', {}).get('ideal_coordination', {})
+        expected = chem_kb.get_ideal_coordination(sym, _ideal_coord)
         
         if actual_coord < expected:
             from surface_utils import generate_vsepr_vectors
@@ -92,7 +95,7 @@ def analyze_surface_reactivity(surface, config, verbose=True):
     lattice = surface.get_cell()
     pos = surface.get_scaled_positions()
     nums = surface.get_atomic_numbers()
-    symprec = config.get('settings', {}).get('symprec', 0.2)
+    symprec = config.get('reaction_search', {}).get('candidate_filter', {}).get('symprec', 0.2)
     
     equiv_atoms = np.arange(len(surface))
     for prec in [symprec, 0.5]:

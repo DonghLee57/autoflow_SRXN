@@ -21,6 +21,15 @@ def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     
     return sorted_atoms
 
+def write_standardized_vasp(filepath, atoms, z_min_offset=0.5):
+    """
+    Standardizes the atoms object (sort by element, align z_min) and saves it to a VASP file.
+    This provides a common routine for VASP structure generation.
+    """
+    from ase.io import write
+    standardized = standardize_vasp_atoms(atoms, z_min_offset=z_min_offset)
+    write(filepath, standardized, format='vasp')
+
 def find_surface_indices(atoms, side='top', threshold=1.0, species=None):
     """Find indices of atoms at the top or bottom surface based on Z-coordinates."""
     if species:
@@ -243,8 +252,9 @@ def identify_protectors(atoms, config, verbose=False):
     Enhanced with element-based filtering for robust identification in Case B.
     """
     import numpy as np
-    # Priority: config['protector'] > config['adsorbate_generation']['protector'] > default
-    protector_cfg = config.get('protector', config.get('adsorbate_generation', {}).get('protector', config.get('adsorbate_generation', {})))
+    # Priority: inline 'protector' key (legacy) > reaction_search.mechanisms.protector_exchange > {}
+    protector_cfg = config.get('protector',
+                    config.get('reaction_search', {}).get('mechanisms', {}).get('protector_exchange', {}))
     
     heuristic = protector_cfg.get('heuristic', 'graph')
     inhibitor_elements = protector_cfg.get('inhibitor_elements', [])

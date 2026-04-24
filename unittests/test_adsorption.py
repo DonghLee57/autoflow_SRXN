@@ -17,14 +17,25 @@ class TestAdsorption(unittest.TestCase):
         cls.bulk_si = bulk('Si', 'diamond', a=5.431)
         cls.dipas_smiles = "CC(C)N(C(C)C)[SiH3]"
         cls.config = {
-            'settings': {'max_pair_dist': 5.0, 'symprec': 0.2},
-            'adsorbate_generation': {'overlap_cutoff': 1.2},
-            'protector': {
-                'enabled': True,
-                'species': ['H'],
-                'reactive_leaves': ['H'],
-                'heuristic': 'tag',
-                'target_tags': [2, 10]
+            'reaction_search': {
+                'candidate_filter': {
+                    'overlap_cutoff': 1.2,
+                    'symprec': 0.2,
+                    'max_pair_dist': 5.0,
+                },
+                'mechanisms': {
+                    'protector_exchange': {
+                        'enabled': True,
+                        'reactive_leaves': ['H'],
+                        'heuristic': 'tag',
+                        'target_tags': [2, 10],
+                    }
+                }
+            },
+            'surface_prep': {
+                'surface_analysis': {
+                    'ideal_coordination': {'Si': 4, 'H': 1},
+                }
             }
         }
 

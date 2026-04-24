@@ -1,8 +1,8 @@
 import logging
 import sys
-import os
 
-def setup_logger(log_path="workflow.log", verbose=False):
+
+def setup_logger(log_path="workflow.log", verbose=False, mode='a'):
     """
     Sets up a logger that outputs to both a file and the console.
     """
@@ -21,7 +21,7 @@ def setup_logger(log_path="workflow.log", verbose=False):
 
     # File Handler
     try:
-        file_handler = logging.FileHandler(log_path, mode='w')
+        file_handler = logging.FileHandler(log_path, mode=mode, encoding='utf-8')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:

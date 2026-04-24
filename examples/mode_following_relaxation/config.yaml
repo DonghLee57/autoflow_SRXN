@@ -1,44 +1,51 @@
 # Example: DIPAS Precursor Stability Analysis
-# This example demonstrates vibrational analysis (Phonopy) and 
-# automated mode-following structural refinement using the MACE MLIP.
+# Vibrational analysis and automated mode-following structural refinement.
 
 paths:
-  molecule: "../../structures/DIPAS.vasp"
-  output_prefix: "dipas_stability"
+  adsorbate:      "../../structures/DIPAS.vasp"
+  output_prefix:  "dipas_stability"
 
-potentials:
-  model_type: "mace0"  # Using MACE-MP-0 foundation model
-  device: "cpu"        # Set to "cuda" if GPU is available
+engine:
+  potential:
+    backend: "mace"
+    device:  "cpu"
+    dtype:   "float64"
+    model:   null     # null → mace-mp "medium"
+    d3:      false
 
-relaxation:
-  fmax: 0.001   # ultra-tight for stability analysis
-  steps: 200
-  optimizer: "CG_FIRE"
+  relaxation:
+    fmax:      0.001
+    steps:     200
+    optimizer: "CG_FIRE"
 
-vibrational_analysis:
-  max_iter: 10                      # Increased cycles for thorough refinement
-  stability_threshold: -0.1         # Goal: All modes above this frequency (THz)
-  phonopy_displacement: 0.01        # Default finite difference displacement (A)
-  
-  # STEP 1: Selection
-  selection:
-    freq_threshold: -0.1            # THz (Only refine modes below this)
-    max_modes: 3                    # Refine top 3 most unstable modes
-    
-  # STEP 3: Constraints (Safety)
-  constraints:
-    max_displacement: 0.3           # Max movement per atom (A)
-    # Stagnation Handling: alpha will be reduced if improvement < epsilon
-    stagnation_factor: 0.5          
-    stagnation_epsilon: 0.05        # THz improvement needed to maintain alpha
-    
-  # STEP 4: Visualization
-  visualization:
-    save_trajectory: True           # Generate mode animation extxyz
-    n_frames: 10
-    output_dir: "mode_animations"
-    
-  # STEP 5: Symmetry
-  symmetry:
-    enabled: True
-    symprec: 1.0e-5
+  md:
+    temperature_K: 300
+    md_steps:      1000
+    damping:       100.0
+
+analysis:
+  vibrational:
+    displacement_ang: 0.01
+    phva_radius_ang:  12.0
+    qpoints_file:     null
+
+    mode_refinement:
+      enabled:            true
+      max_iter:           10
+      fmax:               0.001
+      steps:              200
+      freq_threshold_thz: -0.1
+      max_modes:          3
+      perturbation_alpha: 0.1
+      max_displacement:   0.3
+      stagnation_factor:  0.5
+      stagnation_epsilon: 0.05
+
+    visualization:
+      enabled:    true
+      n_frames:   10
+      output_dir: "mode_animations"
+
+    symmetry:
+      enabled: true
+      symprec: 1.0e-5

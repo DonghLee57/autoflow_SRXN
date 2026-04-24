@@ -1,6 +1,10 @@
 import numpy as np
 from typing import List, Optional, Dict, Union
 from scipy import constants as const
+try:
+    import spglib as _spglib
+except ImportError:
+    _spglib = None
 
 # Physical constants (Reference: SciPy Constants / CODATA)
 kB = const.k            # Boltzmann constant [J/K]
@@ -95,6 +99,69 @@ class ThermoCalculator:
         s_vib = self.calculate_vib_entropy(T)
         return zpe + u_vib - T * s_vib
 
+def _is_centrosymmetric(atoms) -> bool:
+    """Return True if every atom has an inversion-related partner (used for D∞h detection)."""
+    pos     = atoms.positions - atoms.get_center_of_mass()
+    numbers = atoms.get_atomic_numbers()
+    tol     = 0.15  # Å
+    for i, (p, z) in enumerate(zip(pos, numbers)):
+        paired = any(
+            j != i and numbers[j] == z and np.linalg.norm(p + pos[j]) < tol
+            for j in range(len(atoms))
+        )
+        if not paired:
+            return False
+    return True
+
+
+def _compute_sigma_from_atoms(atoms) -> int:
+    """Estimate the rotational symmetry number σ via spglib point-group analysis.
+
+    Algorithm
+    ---------
+    Linear molecules (one principal moment ≈ 0):
+        D∞h (H₂, N₂, CO₂ …) → σ = 2   (inversion-symmetric)
+        C∞v (HCl, CO …)      → σ = 1
+
+    Non-linear molecules:
+        Count proper rotation operations (det R = +1) found by spglib.
+        This equals the order of the rotational subgroup, which is σ by definition.
+        Examples: C₂v → 2, C₃v → 3, Td → 12, Oh → 24.
+
+    Returns 1 (C₁) on any failure or when spglib is not installed.
+    """
+    if _spglib is None:
+        return 1
+
+    mol = atoms.copy()
+    mol.pbc = [False, False, False]
+    mol.translate(-mol.get_center_of_mass())
+
+    moments = mol.get_moments_of_inertia()
+    # Linear test: smallest moment < 0.1 % of largest
+    if min(moments) < 1e-3 * max(moments):
+        return 2 if _is_centrosymmetric(mol) else 1
+
+    # Non-linear: embed in a large box so spglib treats it as a crystal point group
+    span   = float(np.ptp(mol.positions)) if len(mol) > 1 else 1.0
+    box    = max(span * 3, 20.0)
+    mol.translate([box / 2] * 3)
+    mol.cell = [box, box, box]
+
+    try:
+        sym = _spglib.get_symmetry(
+            (mol.cell[:], mol.get_scaled_positions(), mol.get_atomic_numbers()),
+            symprec=0.1,
+        )
+        if sym is None or 'rotations' not in sym:
+            return 1
+        # det(R) = +1 → proper rotation; det(R) = −1 → improper (reflection / inversion / Sn)
+        n_proper = sum(1 for R in sym['rotations'] if abs(np.linalg.det(R) - 1.0) < 0.1)
+        return max(1, n_proper)
+    except Exception:
+        return 1
+
+
 class GasThermo:
     """
     Statistical mechanics utilities for ideal gas translational and rotational contributions.
@@ -148,3 +215,36 @@ class GasThermo:
             s_rot = R * (np.log(term1 * term2 * np.sqrt(product_I)) + 1.5)
             
         return s_rot
+
+    @staticmethod
+    def from_atoms(atoms):
+        """Derive gas-phase properties from an ASE Atoms object.
+
+        Returns
+        -------
+        dict
+            mass      : float  — molecular mass (amu)
+            moments   : list   — principal moments of inertia (amu·Å²)
+                                 one element for linear, three for nonlinear
+            symmetry  : str    — 'linear' or 'nonlinear'
+            sigma     : int    — rotational symmetry number (auto-detected via spglib)
+        """
+        mass    = float(np.sum(atoms.get_masses()))
+        moments = [float(m) for m in atoms.get_moments_of_inertia()]
+
+        # Linear test: ASE returns moments sorted ascending; [0] ≈ 0 means linear
+        if moments[0] < 1e-4:
+            symmetry         = 'linear'
+            moments_filtered = [moments[1]]   # I₂ = I₃ for linear; keep one
+        else:
+            symmetry         = 'nonlinear'
+            moments_filtered = moments
+
+        sigma = _compute_sigma_from_atoms(atoms)
+
+        return {
+            'mass':     mass,
+            'moments':  moments_filtered,
+            'symmetry': symmetry,
+            'sigma':    sigma,
+        }

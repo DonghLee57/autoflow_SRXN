@@ -157,9 +157,10 @@ class AdsorptionWorkflowManager:
         from ase.geometry import get_distances
         import numpy as np
         
-        env_cutoff = self.config.get('adsorbate_generation', {}).get('overlap_cutoff', 2.5)
-        # For substrate, we use a tighter threshold to allow adsorption
-        sub_cutoff = 1.5 
+        cand_filter = self.config.get('reaction_search', {}).get('candidate_filter', {})
+        env_cutoff  = cand_filter.get('overlap_cutoff', 2.5)
+        # Tighter threshold for substrate-adsorbate contacts (allows bonding proximity)
+        sub_cutoff  = 1.5
         
         if cutoff is not None:
             # If a local cutoff is provided (e.g. from chemisorption builder), use it for everything
@@ -182,7 +183,7 @@ class AdsorptionWorkflowManager:
         
         for idx in new_indices:
             mask = np.ones(len(atoms), dtype=bool)
-            mask[idx] = False
+            mask[tags == max_tag] = False # Skip internal checks
             mask_indices = np.where(mask)[0]
             
             ref_pos = pos[idx]
@@ -281,9 +282,12 @@ class AdsorptionWorkflowManager:
         stats = {'total': 0, 'overlap': 0}
         
         target_centers = []
-        if config and config.get('protector', {}).get('enabled', False):
+        conf = config if config is not None else self.config
+        _protex = conf.get('reaction_search', {}).get('mechanisms', {}).get(
+            'protector_exchange', conf.get('protector', {}))
+        if conf and _protex.get('enabled', False):
             sub_idx, prot_idx = identify_protectors(self.slab, config, verbose=self.verbose)
-            grid_res = config.get('protector', {}).get('grid_resolution', 0.2)
+            grid_res = _protex.get('cavity_grid_ang', _protex.get('grid_resolution', 0.2))
             detector = CavityDetector(self.slab, sub_idx, prot_idx, grid_res=grid_res, verbose=self.verbose)
             target_centers = detector.find_void_centers(top_clearance=height)
         else:
@@ -293,7 +297,7 @@ class AdsorptionWorkflowManager:
                 target_centers.append(np.array([site[0], site[1], z_max + height]))
                 
         # Get global overlap cutoff from config
-        global_overlap = self.config.get('adsorbate_generation', {}).get('overlap_cutoff', 3.0)
+        global_overlap = self.config.get('reaction_search', {}).get('candidate_filter', {}).get('overlap_cutoff', 2.0)
 
         for target_pos in target_centers:
             current_site_poses = []

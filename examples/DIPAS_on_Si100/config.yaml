@@ -1,54 +1,72 @@
 # Example: DIPAS Physisorption and Chemisorption on Si(100)
-# This example demonstrates Stage 0 (Surface construction), Stage 1 (Ethanol inhibitor), 
-# and Stage 2 (DIPAS precursor) adsorption logic.
+# Geometry-only workflow: slab generation, passivation, and candidate search.
+# No potential required for these stages; slab_relaxation and equilibration disabled.
 
 paths:
-  substrate: "../../structures/Si_mp149.vasp"
-  inhibitor: "../../structures/ethanol.vasp"
-  molecule: "../../structures/DIPAS.vasp"
-  output_prefix: "dipas_on_si100_results"
+  substrate_bulk:  "../../structures/Si_mp149.vasp"
+  substrate_slab:  null
+  adsorbate:       "../../structures/DIPAS.vasp"
+  inhibitor:       "../../structures/ethanol.vasp"
+  output_dir:      "results"
+  output_prefix:   "dipas_on_si100_results"
 
-substrate_generation:
-  run_generation: True
-  bulk_path: "../../structures/Si_mp149.vasp"
-  miller_indices: [1, 0, 0]
-  thickness: 12.0
-  vacuum: 15.0
-  target_area: 500.0
-  top_termination: "Si"
-  bottom_termination: "Si"
+surface_prep:
+  slab_generation:
+    enabled:            true
+    miller:             [1, 0, 0]
+    thickness_ang:      12.0
+    vacuum_ang:         15.0
+    target_area_ang2:   500.0
+    top_termination:    "Si"
+    bottom_termination: "Si"
+    supercell_matrix:   null
 
-passivation:
-  run_passivation: True
-  element: "H"
-  side: "bottom"
-  coverage: 1.0
+  passivation:
+    enabled:   true
+    element:   "H"
+    side:      "bottom"
+    coverage:  1.0
 
-adsorbate_generation:
-  run_pre_inhibition: True
-  inhibitor_center: 1
-  branching_limit: 1
-  overlap_cutoff: 1.5
-  physisorption_height: 3.5
-  run_physisorption: True
-  run_chemisorption: True
-  rot_steps: 8
-  symprec: 0.2
-  precursor_center: "Si"
-  verbose: True
-  log_path: "workflow.log"
+  surface_analysis:
+    symprec: 0.2
+    ideal_coordination:
+      Si: 4
+      C:  4
+      O:  2
+      N:  3
+      H:  1
 
-ideal_coordination:
-  Si: 4
-  C: 4
-  O: 2
-  N: 3
+  slab_relaxation:
+    enabled: false   # No potential configured for this geometry-only example
 
-potentials:
-  model_type: "mace0"
-  device: "cpu"
+  equilibration:
+    enabled: false   # No potential configured for this geometry-only example
 
-relaxation:
-  fmax: 0.05
-  steps: 200
-  optimizer: "BFGS"
+reaction_search:
+  mechanisms:
+    physisorption:
+      enabled:          true
+      placement_height: 3.5
+      rot_steps:        8
+
+    chemisorption:
+      enabled:          true
+      precursor_center: "Si"
+      rot_steps:        8
+
+    inhibition:
+      enabled:          true
+      inhibitor_center: 1    # Binding atom index on inhibitor (int or element str)
+      branching_limit:  1
+
+    protector_exchange:
+      enabled:         false
+      reactive_leaves: []
+      cavity_grid_ang: 0.2
+
+  candidate_filter:
+    overlap_cutoff: 1.5
+    symprec:        0.2
+
+  candidate_relaxation:
+    enabled: false   # No potential configured for this geometry-only example

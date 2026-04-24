@@ -31,6 +31,11 @@ The engine integrates vibrational data to calculate finite-temperature thermodyn
 - **Vibrational Partition Function**: $Z_{vib} = \prod_i \frac{e^{-\beta \hbar \omega_i / 2}}{1 - e^{-\beta \hbar \omega_i}}$
 - **Gibbs Free Energy**: $G(T) = E_{pot} + ZPE + \int C_p dT - TS$
 
+### 1.5 Iterative Mode-Following Refinement
+To ensure all generated structures represent true local minima, the framework implements an iterative mode-following algorithm. If a relaxed structure contains imaginary vibrational modes (frequency < -0.1 THz), the system is autonomously perturbed along the Cartesian displacement vector $\mathbf{u}_k$ of the most unstable mode:
+$$ \mathbf{R}_{new} = \mathbf{R}_{old} + \alpha \frac{\mathbf{u}_k}{\|\mathbf{u}_k\|} $$
+where $\mathbf{u}_{k,i} = \mathbf{e}_{k,i} / \sqrt{m_i}$ is derived from the mass-weighted eigenvector $\mathbf{e}_k$. The process repeats until all significant imaginary frequencies are eliminated.
+
 ---
 
 ## 2. Strategic Objectives
@@ -60,51 +65,51 @@ graph TD
             VA -->|Full Hessian| FH[FHVA]
             VA -->|Partial Hessian| PH[PHVA]
             FH & PH --> TC[ThermoCalculator]
+            VA -->|Imaginary Modes| MF[MultiModeFollower]
+            MF -->|Perturbed Structure| C
         end
     end
     
     subgraph Output
         SY --> G[all_relaxed_candidates.extxyz]
-        TC --> Q[qpoint.yaml]
+        TC --> Q[qpoints.yaml]
     end
 ```
 
 ### 3.2 Simulation Backend Design
 
-All relaxation and force calculations are routed through `SimulationEngine` (`src/potentials.py`), which selects a backend based on `model_type` in `config.yaml`.
+All relaxation and force calculations are routed through `SimulationEngine` (`src/potentials.py`), which selects an ASE-compatible backend based on `engine.potential.backend` in the configuration. The framework follows a **pure ASE (In-process) architecture**, eliminating external binary dependencies (like LAMMPS) for improved portability and stability.
 
 | Backend | Model | Runtime | Interface |
 | :--- | :--- | :--- | :--- |
-| **ASE** | MACE-MP-0 | In-process Python | `mace.calculators.mace_mp` |
-| **LAMMPS** | SevenNet (7net) | External binary | `pair_style e3gnn[/parallel]` |
+| **MACE** | MACE-MP-0 | In-process Python | `mace.calculators.mace_mp` |
+| **SevenNet** | 7net-0 / multifidelity | In-process Python | `sevenn.calculator.SevenNetCalculator` |
+| **EMT** | Standard EMT | In-process Python | `ase.calculators.emt.EMT` |
 
-**MACE** is loaded as an ASE calculator and runs entirely within the Python process. ASE constraints (e.g. `FixAtoms`) are handled natively.
+**MACE** is loaded as an ASE calculator and runs entirely within the Python process. It supports both `float32` (for fast MD) and `float64` (for precise vibrations).
 
-**SevenNet** is driven through an external LAMMPS binary via `LammpsMLIAPEngine`. The engine automatically generates LAMMPS input scripts at runtime, including:
-- `pair_style e3gnn` (serial) or `e3gnn/parallel` (MPI) for the base potential.
-- `hybrid/overlay e3gnn[/parallel] zbl/pair` when ZBL is enabled (`use_zbl: true`), with per-pair cutoffs derived from reference POSCAR dimers in `zbl_db_path` or ASE covalent radii as fallback.
-- `region rFIX block ... / fix setforce 0 0 0` when ASE `FixAtoms` constraints are present on the atoms object, mirroring the `ex/fixed_z_ex_script.txt` pattern.
+**SevenNet** is driven through the `sevenn` ASE interface. It supports optional D3 dispersion corrections via `SevenNetD3Calculator`.
 
 **Configuration:**
 ```yaml
-potentials:
-  model_type: "mace"       # ASE path — uses MACE-MP-0 in-process
-  # model_type: "sevennet" # LAMMPS path — requires lammps binary + 7net model
-
-lammps:                    # Only used when model_type: "sevennet"
-  binary_path: /usr/bin/lammps
-  model_path:  /models/7net.pt
-  parallel:    false
-  use_zbl:     false
-  zbl_db_path: null        # Path to {elem1}-{elem2}/POSCAR reference dimers
+engine:
+  potential:
+    backend: "mace"      # "mace" | "sevennet" | "emt"
+    device:  "cpu"       # "cpu" | "cuda"
+    model:   null        # null -> use default foundation model
+    modal:   null        # multi-fidelity modality (SevenNet only)
+    d3:      false       # true -> enable D3 (SevenNet only)
+    enable_cueq:  false  # enable cuEquivariance (SevenNet only)
+    enable_flash: false  # enable FlashAttention (SevenNet only)
 ```
 
 ### 3.3 Directory Structure
 - `src/`: Core package logic (surface utils, adsorption managers, vibration analysis).
 - `examples/`:
-    - `benchmark_phva_sio2/`: Standardization and validation of PHVA on SiO2(001).
+    - `partial_hamiltonian_vibrational_analysis/`: Full PHVA vs FHVA benchmark on SiO2(001) + DIPAS.
+    - `mode_following_relaxation/`: Automated stability refinement of the DIPAS precursor.
     - `example_dipas/`: Si(100) surface reaction stage-wise discovery.
-- `structures/`: Base crystal and precursor configurations.
+- `structures/`: Base crystal and precursor configurations (VASP format).
 
 ---
 
@@ -117,16 +122,19 @@ pip install ".[mace]" # For MLIP support
 ```
 
 ### 4.2 Running PHVA Benchmark
-To run the standardized PHVA vs FHVA benchmark on a silanol-terminated SiO2 surface:
+To run the PHVA vs FHVA free-energy benchmark on a silanol-terminated SiO2 surface:
 ```bash
-cd examples/benchmark_phva_sio2
-python run_autoflow_benchmark.py
+cd examples/partial_hamiltonian_vibrational_analysis
+python run_phva_benchmark.py
 ```
 This script will:
-1. Generate an asymmetric SiO2 slab.
-2. Perform MD equilibration at 500K.
-3. Automatically search for DIPAS adsorption sites.
-4. Execute both FHVA and PHVA and generate a comparative `qpoint.yaml`.
+1. Generate an asymmetric SiO2(001) slab and equilibrate with MD at 500 K.
+2. Relax the gas-phase DIPAS molecule in isolation.
+3. Search for physisorption sites, relax the top 8 candidates, and select the lowest-energy structure.
+4. Run FHVA (full Hessian) on the gas molecule and adsorbed system.
+5. Run PHVA (partial Hessian, active set = adsorbate + slab atoms within 3.5 Å) on the adsorbed system.
+6. Save individual `qpoint.yaml` files for each system in `vibrations/`.
+7. Compute ΔG_rxn(FHVA) and ΔG_rxn(PHVA) via the harmonic-oscillator approximation and write `results/phva_fhva_comparison.yaml`.
 
 ---
 

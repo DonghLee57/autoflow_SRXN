@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:mace-docs.readthedocs.io)",
+      "WebFetch(domain:docs.lammps.org)",
+      "WebFetch(domain:matsci.org)",
+      "Bash(find \"C:\\\\Users\\\\user\\\\Downloads\\\\dev_w_antigravity\\\\auto_surface_reaction\\\\autoflow_SRXN\" -name \"*.py\" -type f -exec grep -l \"run_md\\\\|md_steps\\\\|temperature\" {} \\\\;)",
+      "Bash(python -c ' *)",
+      "Bash(sort -t. -k2 -n)",
+      "WebFetch(domain:phonopy.github.io)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

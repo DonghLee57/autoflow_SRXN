@@ -1,0 +1,28 @@
+temperature_K: 298.15
+approximation: rigid-slab
+potential_energy:
+  E_slab_eV: -1847.664306640625
+  E_gas_eV: -130.0291748046875
+  E_adsorbed_eV: -1979.7415771484375
+  dE_ads_eV: -2.048095703125
+vibrational_free_energy_eV:
+  G_vib_gas_fhva: 5.4205794896419635
+  G_vib_adsorbed_fhva: 26.19761318475377
+  G_vib_adsorbed_phva: 5.37558897007498
+zpe_correction_eV:
+  dZPE_fhva: 26.382530251944523
+  dZPE_phva: 0.42186538147788877
+reaction_free_energy:
+  dG_vib_correction_fhva_eV: 20.777033695111808
+  dG_vib_correction_phva_eV: -0.04499051956698352
+  dG_rxn_fhva_eV: 18.728937991986808
+  dG_rxn_phva_eV: -2.0930862226919835
+  ddG_phva_minus_fhva_eV: -20.82202421467879
+  ddG_phva_minus_fhva_meV: -20822.02421467879
+phva_efficiency:
+  cutoff_dist_A: 3.5
+  n_total_atoms: 277
+  n_active_atoms: 31
+  n_adsorbate_atoms: 25
+  n_slab_active: 6
+  force_call_reduction_pct: 88.8086642599278

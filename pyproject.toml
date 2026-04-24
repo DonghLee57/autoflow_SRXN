@@ -25,3 +25,7 @@ mace = [
     "torch-geometric",
     "mace-torch"
 ]
+sevennet = [
+    "sevenn"
+]
+
