@@ -5,6 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autoflow-srxn"
 version = "0.1.0"
+authors = [
+  { name="Dongheon" },
+]
+description = "Automated Surface Reaction (SRXN) Modeling Framework"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "ase",
     "pymatgen",
@@ -28,4 +42,11 @@ mace = [
 sevennet = [
     "sevenn"
 ]
+
+[tool.setuptools]
+package-dir = {"autoflow_srxn" = "src"}
+packages = ["autoflow_srxn"]
+
+[tool.setuptools.package-data]
+autoflow_srxn = ["*.json"]
 
