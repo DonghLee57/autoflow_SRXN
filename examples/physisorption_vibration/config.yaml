@@ -1,0 +1,38 @@
+# Physisorption Vibration Analysis: DIPAS on SiO2(001)
+# Standardized Example Configuration
+
+paths:
+  substrate_bulk: "../../structures/SiO2_mp-546794.vasp"
+  adsorbate:      "../../structures/DIPAS.vasp"
+  output_dir:     "results"
+
+engine:
+  potential:
+    backend: "mace"
+    device:  "cpu"
+    dtype:   "float64"
+    model:   "small"  # For faster execution during test
+  relaxation:
+    fmax:      0.01
+    steps:     500
+    optimizer: "BFGS"
+
+surface_prep:
+  slab_generation:
+    miller:             [0, 0, 1]
+    thickness_ang:      10.0
+    vacuum_ang:         15.0
+    target_area_ang2:   100.0
+    top_termination:    "O"
+    bottom_termination: "O"
+  passivation:
+    coverage:  1.0
+    side:      "both"  # H-passivation on both sides as requested
+  equilibration:
+    frozen_z_ang: 3.0
+
+analysis:
+  vibrational:
+    displacement_ang: 0.01
+    phva_radius_ang:  6.0
+    name: "vib_analysis"

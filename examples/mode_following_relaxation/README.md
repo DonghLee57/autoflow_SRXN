@@ -44,19 +44,33 @@ The criteria and parameters for this perturbation are defined as follows:
 
 ## 3. Simulation Results and Analysis
 
-Experimental runs for the DIPAS (Diisopropylaminosilane) molecule yielded the following results after 10 refinement cycles:
+Recent experimental runs for the DIPAS (Diisopropylaminosilane) molecule using the refined workflow (linear combination of modes) yielded the following convergence behavior:
 
-| Displacement $u$ (Å) | Initial $\nu_{min}$ (THz) | Final $\nu_{min}$ (THz) | Energy Change (eV) | Result |
+| Cycle | Energy (eV) | Min Freq (THz) | Alpha (Ang) | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| 0.010 | -1.0310 | -0.1943 | -0.0075 | Stabilized |
-| 0.005 | -0.9541 | -0.1417 | -0.0072 | Stabilized |
-| 0.001 | -0.9480 | -0.1225 | -0.0073 | **Converged** |
+| 0 (Initial) | -130.453484 | -1.0071 | 0.000 | Unstable |
+| 1 | -130.461327 | -0.1372 | 0.500 | Refined |
+| 2 | -130.463844 | -0.1258 | 0.500 | Refined |
+| 3 | -130.464692 | -0.1050 | 0.250 | Near Target |
+| **4 (Final)** | **-130.464943** | **-0.0921** | **0.125** | **Converged** |
 
-### Data Interpretation
-- **Numerical vs. Physical instability**: Reducing $u$ from $0.01$ to $0.001$ resulted in a nearly identical initial $\nu_{min}$ (~ -0.95 THz). This confirms that the imaginary mode is **physically grounded in the MACE potential field** and not a numerical artifact of the finite difference step.
-- **Convergence Limit**: Under ultra-tight relaxation, all cases converged to a small residual negative curvature (~ -0.12 THz). This suggests that the MACE-MP-0 model possesses a systematic slight instability region for certain gas-phase rotational modes of DIPAS, representing the fundamental resolution limit of the potential model.
+- **Effect of Mode Following**: The transition from Cycle 0 (-1.0071 THz) to Cycle 1 (-0.1372 THz) demonstrates the power of the "Perturb-and-Relax" strategy. A single coordinated displacement along unstable modes moved the system out of a significant saddle point region.
+- **Initial Relaxation Sensitivity**: The initial frequency is highly dependent on the number of relaxation steps. Increasing `steps` from 200 to 1000 in `config.yaml` can improve the starting frequency to approximately -0.1074 THz even before mode following, highlighting the importance of thorough local optimization.
 
-## 4. Usage Instructions
+## 4. Physical Interpretation of Zero-Frequency Modes
+
+During analysis, you will notice exactly **6 modes** with frequencies very close to zero (typically within $\pm 0.05$ THz). This is a physically expected result for an isolated molecular system.
+
+### A. Degrees of Freedom
+For a non-linear molecule with $N$ atoms, the $3N$ total degrees of freedom are partitioned as:
+1.  **3 Translational Modes**: Global movement of the molecule along the $x, y, z$ axes.
+2.  **3 Rotational Modes**: Global rotation of the molecule around the $x, y, z$ axes.
+3.  **$3N - 6$ Vibrational Modes**: Internal relative motions of the atoms.
+
+### B. Symmetry and Invariance
+The potential energy surface $V(\mathbf{R})$ of an isolated molecule is invariant under global translation and rotation. Consequently, the Hessian matrix possesses 6 eigenvectors with zero eigenvalues, corresponding to these infinitesimal symmetry operations. In solids (periodic systems), rotational symmetry is broken by the lattice, leaving only 3 translational (acoustic) zero modes.
+
+## 5. Usage Instructions
 
 To execute the refinement study:
 
@@ -70,7 +84,7 @@ The script will generate:
 - `refined_u[u]_final.vasp`: The optimized stable structure.
 - `mode_anims/`: Animation files (`.extxyz`) showing the direction of the followed modes.
 
-## 5. Implementation Credits & References
+## 6. Implementation Credits & References
 - **Potential Model**: MACE-MP-0 (Materials Project Foundation Model).
 - **Phonon Engine**: Phonopy.
 - **Optimizer**: ASE (Atomic Simulation Environment).

@@ -9,42 +9,34 @@ engine:
   potential:
     backend: "mace"
     device:  "cpu"
-    dtype:   "float64"
+    dtype:   "float32"
     model:   null     # null → mace-mp "medium"
-    d3:      false
 
   relaxation:
-    fmax:      0.001
-    steps:     200
     optimizer: "CG_FIRE"
-
-  md:
-    temperature_K: 300
-    md_steps:      1000
-    damping:       100.0
 
 analysis:
   vibrational:
-    displacement_ang: 0.01
-    phva_radius_ang:  12.0
+    displacement_ang: 0.005
+    phva_radius_ang:  15.0
     qpoints_file:     null
 
     mode_refinement:
       enabled:            true
-      max_iter:           10
+      max_iter:           5
       fmax:               0.001
-      steps:              200
+      steps:               500
       freq_threshold_thz: -0.1
       max_modes:          3
-      perturbation_alpha: 0.1
-      max_displacement:   0.3
+      perturbation_alpha: 0.5
+      max_displacement:   1.0
       stagnation_factor:  0.5
       stagnation_epsilon: 0.05
 
     visualization:
-      enabled:    true
-      n_frames:   10
-      output_dir: "mode_animations"
+      enabled:     true
+      n_frames:    10
+      output_traj: "relaxation.extxyz"
 
     symmetry:
       enabled: true

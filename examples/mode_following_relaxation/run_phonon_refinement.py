@@ -21,7 +21,7 @@ from logger_utils import setup_logger
 
 def run_enhanced_phonon_refinement(config_path='config.yaml', displacement=None):
     # ── Config ─────────────────────────────────────────────────────────────────
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
     vib_cfg     = config['analysis']['vibrational']
@@ -57,62 +57,88 @@ def run_enhanced_phonon_refinement(config_path='config.yaml', displacement=None)
     current_atoms = atoms.copy()
     engine.relax(current_atoms, fmax=target_fmax, steps=target_steps, optimizer=optimizer)
 
-    # ── Iterative stability loop ────────────────────────────────────────────────
+    # ── Iterative stability loop initialization ────────────────────────────────
     current_alpha = init_alpha
     history       = []
 
-    logger.info(f"\nGoal: min_freq >= {stability_goal} THz | alpha={current_alpha} Ang | u={u} Ang")
+    # ── Cycle 0: Initial Analysis ─────────────────────────────────────────────
+    logger.info(f"\n{'='*20} INITIAL ANALYSIS (CYCLE 0) {'='*20}")
+    
+    analyzer = VibrationalAnalyzer(atoms=current_atoms, engine=engine, displacement=u)
+    qpath    = vib_cfg.get('qpoints_file') or 'qpoints.yaml'
+    analyzer.generate_qpoints_file(filename=qpath)
 
+    # Parse results from YAML
+    from qpoint_handler import QPointParser
+    parser    = QPointParser(qpath)
+    all_freqs = [b['frequency'] for phon in parser.data['phonon'] for b in phon['band']]
+    min_freq  = min(all_freqs)
+    energy    = current_atoms.get_potential_energy()
+    
+    logger.info(f"  Energy: {energy:.6f} eV | Min freq: {min_freq:.4f} THz")
+    
+    history.append({
+        'cycle':    0,
+        'energy':   energy,
+        'min_freq': min_freq,
+        'alpha':    0.0
+    })
+
+    if min_freq >= stability_goal:
+        logger.info(f"  [Success] Initial structure is already stable (min_freq {min_freq:.4f} ≥ {stability_goal} THz).")
+        max_iter = 0
+
+    # ── Iterative stability loop ────────────────────────────────────────────────
     for cycle in range(1, max_iter + 1):
         logger.info(f"\n{'='*20} CYCLE {cycle}/{max_iter} {'='*20}")
 
-        current_atoms.calc = engine.get_calculator()
+        # A. Mode following based on LAST analysis
+        logger.info(f"  [Action] Mode following (alpha={current_alpha:.3f} Ang)...")
+        iter_config = copy.deepcopy(config)
+        iter_config['analysis']['vibrational']['mode_refinement']['perturbation_alpha'] = current_alpha
 
-        # A. Vibrational analysis → qpoints.yaml
-        analyzer = VibrationalAnalyzer(
-            atoms      = current_atoms,
-            engine     = engine,
-            displacement = u,
+        # Extract modes for follower
+        target_modes = [b for phon in parser.data['phonon'] for b in phon['band']]
+
+        follower      = MultiModeFollower(engine, config=iter_config)
+        current_atoms = follower.optimize(
+            current_atoms,
+            modes     = target_modes,
+            fmax      = target_fmax,
+            steps     = target_steps,
+            optimizer = optimizer,
         )
-        qpath = vib_cfg.get('qpoints_file') or 'qpoints.yaml'
+
+        # B. Analyze NEW structure
+        analyzer = VibrationalAnalyzer(atoms=current_atoms, engine=engine, displacement=u)
         analyzer.generate_qpoints_file(filename=qpath)
 
-        # B. Parse frequencies
-        from qpoint_handler import QPointParser
         parser    = QPointParser(qpath)
         all_freqs = [b['frequency'] for phon in parser.data['phonon'] for b in phon['band']]
         min_freq  = min(all_freqs)
         energy    = current_atoms.get_potential_energy()
-
+        
         logger.info(f"  Energy: {energy:.6f} eV | Min freq: {min_freq:.4f} THz")
-        history.append({'cycle': cycle, 'energy': energy, 'min_freq': min_freq, 'alpha': current_alpha})
+        
+        history.append({
+            'cycle':    cycle,
+            'energy':   energy,
+            'min_freq': min_freq,
+            'alpha':    current_alpha
+        })
 
         # C. Convergence check
         if min_freq >= stability_goal:
             logger.info(f"  [Success] Stability goal reached (min_freq {min_freq:.4f} ≥ {stability_goal} THz).")
             break
 
-        # D. Stagnation detection and adaptive alpha
-        if cycle > 1:
-            improvement = min_freq - history[-2]['min_freq']
-            if improvement < stag_eps:
-                new_alpha = current_alpha * stag_factor
-                logger.warning(f"  [Stagnation] Improvement {improvement:.4f} THz < eps={stag_eps} THz. "
-                               f"Alpha: {current_alpha:.3f} -> {new_alpha:.3f} Ang")
-                current_alpha = new_alpha
-
-        # E. Multi-mode following with updated alpha
-        logger.info(f"  [Action] Mode following (alpha={current_alpha:.3f} Ang)...")
-        iter_config = copy.deepcopy(config)
-        iter_config['analysis']['vibrational']['mode_refinement']['perturbation_alpha'] = current_alpha
-
-        follower      = MultiModeFollower(engine, config=iter_config)
-        current_atoms = follower.optimize(
-            current_atoms,
-            fmax      = target_fmax,
-            steps     = target_steps,
-            optimizer = optimizer,
-        )
+        # D. Stagnation detection
+        improvement = min_freq - history[-2]['min_freq']
+        if improvement < stag_eps:
+            new_alpha = current_alpha * stag_factor
+            logger.warning(f"  [Stagnation] Improvement {improvement:.4f} THz < eps={stag_eps} THz. "
+                           f"Alpha: {current_alpha:.3f} -> {new_alpha:.3f} Ang")
+            current_alpha = new_alpha
 
     # ── Summary ─────────────────────────────────────────────────────────────────
     logger.info(f"\n{'='*20} SUMMARY (u={u} Ang) {'='*20}")
@@ -121,11 +147,41 @@ def run_enhanced_phonon_refinement(config_path='config.yaml', displacement=None)
     for h in history:
         logger.info(f"{h['cycle']:5d} | {h['energy']:12.6f} | {h['min_freq']:14.4f} | {h['alpha']:10.3f}")
 
+    # ── Final Analysis & Advisor ─────────────────────────────────────────────
     final_freq = history[-1]['min_freq'] if history else float('nan')
-    if final_freq < stability_goal:
-        logger.error(f"\n[Conclusion] Goal NOT met. Final min freq: {final_freq:.4f} THz")
+    threshold  = mode_ref.get('freq_threshold_thz', -0.1)
+    
+    if final_freq < threshold:
+        logger.info("\n" + "="*20 + " ADVISOR: RECOMMENDED ACTIONS " + "="*20)
+        logger.warning(f"Final frequency ({final_freq:.4f} THz) is still below target ({threshold} THz).")
+        
+        advice = []
+        
+        # Case 1: Energy is still dropping significantly but steps reached limit
+        energy_change = abs(history[-1]['energy'] - history[-2]['energy']) if len(history) > 1 else 0
+        if energy_change > 1e-4:
+            advice.append("- [Steps] Energy is still decreasing. Increase 'relaxation: steps' (e.g., to 1000) for more thorough local minimization.")
+            
+        # Case 2: Frequency hasn't changed much despite perturbation (Stagnation)
+        freq_diff = abs(history[-1]['min_freq'] - history[0]['min_freq'])
+        if freq_diff < 0.05:
+            advice.append("- [Alpha] Minimal frequency improvement detected. Increase 'perturbation_alpha' or check if you are stuck in a deep, flat saddle point.")
+            
+        # Case 3: Reached max iterations
+        if len(history) - 1 >= mode_ref.get('max_iter', 5):
+            advice.append("- [Max Iter] Stability is improving but not converged. Increase 'max_iter' in config.yaml.")
+
+        # Case 4: General precision
+        if abs(final_freq) < 0.2:
+            advice.append("- [Precision] You are very close. Consider reducing 'fmax' (e.g., 0.0001) or decreasing 'displacement_ang' (e.g., 0.001) for finer Hessian resolution.")
+
+        for item in advice:
+            logger.info(item)
+        logger.info("="*70)
     else:
-        logger.info(f"\n[Conclusion] Stabilised to {final_freq:.4f} THz.")
+        logger.info("\n" + "="*20 + " ADVISOR: SUCCESS " + "="*20)
+        logger.info("Structure is considered stable according to the defined threshold.")
+        logger.info("="*60)
 
     out_name = f"{out_prefix}_u{str(u).replace('.', '')}_final.vasp"
     current_atoms.write(out_name)

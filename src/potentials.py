@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 from ase.optimize import BFGS, FIRE
 from ase.optimize.sciopt import SciPyFminCG
@@ -63,7 +64,7 @@ class SimulationEngine:
                 is_checkpoint = isinstance(model, str) and model.endswith('.pth')
                 if is_checkpoint and os.path.isfile(model):
                     model = os.path.abspath(model)
-                    logger.info(f"  [Engine] Detected local SevenNet checkpoint: {model}")
+                    logger.info(f"  [Engine] Detected local SevenNet checkpoint: {os.path.relpath(model)}")
 
                 kwargs = {
                     'model': model,
@@ -131,7 +132,7 @@ class SimulationEngine:
     # ------------------------------------------------------------------
 
     def relax(self, atoms, fmax=None, steps=None, optimizer=None, verbose=True,
-              frozen_z_ang=None, fix_atom_indices=None):
+              frozen_z_ang=None, fix_atom_indices=None, **kwargs):
         """Structural relaxation using BFGS, FIRE, or two-stage CG_FIRE.
 
         Arguments (fmax, steps, optimizer) default to ``config['engine']['relaxation']``
@@ -148,6 +149,8 @@ class SimulationEngine:
         calc = self.get_calculator()
         atoms.calc = calc
 
+        trajectory = kwargs.get('trajectory')
+
         if optimizer.upper() == 'CG_FIRE':
             fmax_cg = max(fmax * 10, 0.05)
             if verbose:
@@ -156,11 +159,11 @@ class SimulationEngine:
             dyn_cg.run(fmax=fmax_cg, steps=steps // 2)
             if verbose:
                 print(f"  [Relax] Stage 2: FIRE (fmax={fmax})")
-            dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None)
+            dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
             dyn_fire.run(fmax=fmax, steps=steps)
         else:
             opt_class = BFGS if optimizer.upper() == 'BFGS' else FIRE
-            dyn = opt_class(atoms, logfile=sys.stdout if verbose else None)
+            dyn = opt_class(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
             dyn.run(fmax=fmax, steps=steps)
 
         return atoms.get_potential_energy()

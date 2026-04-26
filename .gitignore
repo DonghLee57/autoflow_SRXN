@@ -18,3 +18,11 @@ cache*.json
 qpoints.yaml
 theory.md
 todolist.md
+devs/
+.wsl_env/
+wsl/
+*.exe
+micromamba.exe
+bin/
+Library/
+micromamba

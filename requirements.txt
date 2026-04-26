@@ -1,14 +1,16 @@
-# Core libraries for atomic/molecular modeling
+# Core Atomic & Molecular Simulation
 ase
-pymatgen
 numpy
 scipy
-matplotlib
-pandas
-tqdm
-# Common for surface reactions and ML potentials
-# (Keeping these commented out by default to avoid huge installs unless needed)
+
+# Symmetry Analysis
+spglib
+
+# Chemistry & Structure Handling
+rdkit
+pyyaml
+
+# MLIP Backends (Optional - install via pip install .[mlip])
 # torch
-# torch-geometric
 # mace-torch
-phonopy
+# sevenn
