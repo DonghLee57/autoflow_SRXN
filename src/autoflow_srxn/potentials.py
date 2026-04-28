@@ -7,7 +7,7 @@ from ase.optimize import BFGS, FIRE
 from ase.optimize.sciopt import SciPyFminCG
 from ase.calculators.emt import EMT
 from ase.calculators.calculator import Calculator, all_changes
-from logger_utils import get_workflow_logger
+from .logger_utils import get_workflow_logger
 
 # Absolute path to the per-pair ZBL outer cutoff database
 _ZBL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zbl_pairs.json')

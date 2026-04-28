@@ -4,12 +4,10 @@ import yaml
 import numpy as np
 from ase.io import read, write
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
-from ads_workflow_mgr import AdsorptionWorkflowManager
-from chemisorption_builder import build_chemisorption_structures
-from logger_utils import setup_logger
-from surface_utils import create_slab_from_bulk, write_standardized_vasp, passivate_surface_coverage_general
+from autoflow_srxn.ads_workflow_mgr import AdsorptionWorkflowManager
+from autoflow_srxn.chemisorption_builder import build_chemisorption_structures
+from autoflow_srxn.logger_utils import setup_logger
+from autoflow_srxn.surface_utils import create_slab_from_bulk, write_standardized_vasp, passivate_surface_coverage_general
 
 
 def load_config(config_path):

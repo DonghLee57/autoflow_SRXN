@@ -7,22 +7,23 @@ import shutil
 from ase.build import molecule
 from ase.calculators.emt import EMT
 
-# Add src to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-
-from vibrational_analyzer import VibrationalAnalyzer
-from qpoint_handler import QPointParser
-from thermo_engine import ThermoCalculator
+from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.qpoint_handler import QPointParser
+from autoflow_srxn.thermo_engine import ThermoCalculator
 
 class TestVibrationAndThermo(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Mock Engine for VibrationalAnalyzer
         class MockEngine:
+            def __init__(self):
+                self.all_config = {}
             def get_calculator(self):
                 return EMT()
         cls.engine = MockEngine()
         cls.atoms = molecule('H2O')
+        cls.atoms.set_cell([10, 10, 10])
+        cls.atoms.center()
         cls.atoms.calc = EMT()
 
     def test_qpoints_nested_format(self):

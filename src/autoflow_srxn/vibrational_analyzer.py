@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from ase.io import write
-from logger_utils import get_workflow_logger
+from .logger_utils import get_workflow_logger
 
 from ase.vibrations import Vibrations
 import shutil
@@ -69,7 +69,7 @@ class VibrationalAnalyzer:
             
         # 2. If radius is set, focus on adsorbate + neighbors
         if radius is not None:
-            from surface_utils import identify_protectors
+            from .surface_utils import identify_protectors
             _, ads_idx = identify_protectors(self.atoms, config)
             
             if len(ads_idx) > 0:
@@ -256,7 +256,7 @@ class VibrationalAnalyzer:
 
 def calculate_thermo(freqs_thz, T):
     """Calculates vibrational free energy and ZPE given THz frequencies."""
-    from thermo_engine import ThermoCalculator, eV_to_J_mol
+    from .thermo_engine import ThermoCalculator, eV_to_J_mol
     thermo = ThermoCalculator(freqs_thz)
     G_vib_J = thermo.calculate_vib_free_energy(T)
     ZPE_J   = thermo.calculate_zpe()
@@ -273,7 +273,7 @@ def build_phva_active_indices(atoms, n_adsorbate, cutoff_angstrom):
     return sorted(ads_set | slab_neighbors)
 
 
-from qpoint_handler import QPointParser
+from .qpoint_handler import QPointParser
 
 class MultiModeFollower:
     """

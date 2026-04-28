@@ -5,10 +5,8 @@ import numpy as np
 from ase.build import molecule
 
 # Add src to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-
-from potentials import SimulationEngine
-from vibrational_analyzer import VibrationalAnalyzer, MultiModeFollower
+from autoflow_srxn.potentials import SimulationEngine
+from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer, MultiModeFollower
 
 class TestVibrationViz(unittest.TestCase):
     @classmethod
@@ -35,7 +33,7 @@ class TestVibrationViz(unittest.TestCase):
                     'visualization': {
                         'enabled': True,
                         'n_frames': 5,
-                        'output_dir': cls.output_dir,
+                        'output_traj': os.path.join(cls.output_dir, 'relaxation.extxyz'),
                     }
                 }
             }

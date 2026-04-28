@@ -5,11 +5,7 @@ import os
 import sys
 
 # Add src to sys.path
-SRC_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
-if SRC_PATH not in sys.path:
-    sys.path.append(SRC_PATH)
-
-from vibrational_analyzer import calculate_mac, calculate_atomic_participation
+from autoflow_srxn.vibrational_analyzer import calculate_mac, calculate_atomic_participation
 
 def parse_qpoints(file_path):
     """Parses all modes from a qpoints.yaml file."""

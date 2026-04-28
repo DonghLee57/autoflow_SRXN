@@ -4,7 +4,7 @@ from ase.neighborlist import neighbor_list
 from ase.geometry import get_distances
 import sys
 import os
-from surface_utils import find_surface_indices, generate_vsepr_vectors, passivate_surface_coverage_general
+from .surface_utils import find_surface_indices, generate_vsepr_vectors, passivate_surface_coverage_general
 
 # Unified Valence Map for Silicon/Oxide systems
 SI_VALENCE_MAP = {'Si': 4, 'O': 2, 'H': 1, 'F': 1, 'Cl': 1}

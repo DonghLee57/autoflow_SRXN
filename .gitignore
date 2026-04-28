@@ -26,3 +26,5 @@ micromamba.exe
 bin/
 Library/
 micromamba
+relaxation.extxyz
+*.egg-info/

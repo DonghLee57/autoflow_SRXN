@@ -6,14 +6,9 @@ import shutil
 from ase.build import bulk, add_adsorbate
 from ase.io import read, write
 
-# Add src to sys.path
-SRC_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
-if SRC_PATH not in sys.path:
-    sys.path.append(SRC_PATH)
-
-from surface_utils import create_slab_from_bulk, passivate_surface_coverage_general
-from si_surface_utils import SI_VALENCE_MAP
-from vibrational_analyzer import VibrationalAnalyzer, calculate_mac
+from autoflow_srxn.surface_utils import create_slab_from_bulk, passivate_surface_coverage_general
+from autoflow_srxn.si_surface_utils import SI_VALENCE_MAP
+from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer, calculate_mac
 from mace.calculators import MACECalculator
 
 class EngineMock:

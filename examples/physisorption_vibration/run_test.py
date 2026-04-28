@@ -5,15 +5,12 @@ import numpy as np
 from ase.io import read
 from ase.constraints import FixAtoms
 
-# Path setup
 script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.abspath(os.path.join(script_dir, '../../src')))
-
-from potentials import SimulationEngine
-from surface_utils import create_slab_from_bulk, passivate_surface_coverage_general, write_standardized_vasp
-from si_surface_utils import SI_VALENCE_MAP
-from logger_utils import setup_logger
-from vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.potentials import SimulationEngine
+from autoflow_srxn.surface_utils import create_slab_from_bulk, passivate_surface_coverage_general, write_standardized_vasp
+from autoflow_srxn.si_surface_utils import SI_VALENCE_MAP
+from autoflow_srxn.logger_utils import setup_logger
+from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer
 
 def run_test():
     # 1. Setup

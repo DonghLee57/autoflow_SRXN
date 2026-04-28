@@ -8,12 +8,9 @@ from ase.constraints import FixAtoms
 from ase.neighborlist import neighbor_list
 from ase import Atoms
 
-# Path setup
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.abspath(os.path.join(_HERE, '../../src')))
-
-from potentials import SimulationEngine
-from vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.potentials import SimulationEngine
+from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer
 
 def passivate_sio2(atoms):
     i, j = neighbor_list('ij', atoms, 2.0)

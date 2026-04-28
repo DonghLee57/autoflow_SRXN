@@ -3,7 +3,7 @@ from ase import Atoms
 from ase.build import surface, make_supercell
 from ase.io import read
 import math
-from knowledge_engine import chem_kb
+from .knowledge_engine import chem_kb
 
 def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     """
