@@ -639,11 +639,9 @@ def apply_surface_reconstruction(atoms, strategy='auto', side='top', verbose=Fal
     If strategy='auto' or True, identifies material class and applies physical rules.
     """
     if strategy == 'auto' or strategy is True:
-        return auto_reconstruct_surface(atoms, side=side, verbose=verbose)
-    elif strategy == 'si100_2x1_buckled':
-        return reconstruct_si100_2x1_buckled(atoms, side=side, verbose=verbose)
+        return auto_reconstruct_surface(atoms, side=side, verbose=verbose, **kwargs)
     elif strategy == 'random_noise':
-        return apply_random_surface_noise(atoms, side=side, verbose=verbose)
+        return apply_random_surface_noise(atoms, side=side, verbose=verbose, **kwargs)
     else:
         return atoms
 
@@ -661,7 +659,7 @@ PAULING_EN = {
     91: 1.50, 92: 1.38, 93: 1.36, 94: 1.28
 }
 
-def auto_reconstruct_surface(atoms, side='top', verbose=False):
+def auto_reconstruct_surface(atoms, side='top', verbose=False, **kwargs):
     """
     Intelligent Reconstruction Engine based on Chemical Classification:
     1. Covalent (Si, Ge, C): Dimerization + Buckling (break dangling bonds).
@@ -725,7 +723,7 @@ def auto_reconstruct_surface(atoms, side='top', verbose=False):
         if verbose: print("  [AutoReconstructor] Pattern: Mixed/Unknown -> Random Symmetry Breaking.")
         return apply_random_surface_noise(atoms, side=side, amplitude=0.15)
 
-def apply_random_surface_noise(atoms, side='top', amplitude=0.1, verbose=False):
+def apply_random_surface_noise(atoms, side='top', amplitude=0.1, verbose=False, **kwargs):
     """
     General-purpose symmetry breaker.
     Applies small random displacements to surface atoms. This is useful for 

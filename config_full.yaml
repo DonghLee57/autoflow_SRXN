@@ -280,10 +280,6 @@ surface_prep:
       #   - Metallic: Applies Surface Relaxation (inward layer contraction) and 
       #     random noise to break electronic symmetry.
       #
-      # "si100_2x1_buckled"
-      #   Specifically forces a Si(100)-type p(2x1) buckled dimer reconstruction. 
-      #   It identifies closest neighbors on the surface and pairs them up.
-      #
       # "random_noise"
       #   Applies small random displacements to all surface atoms. This acts as a 
       #   general symmetry breaker, allowing high-fidelity potentials (like MACE) 
