@@ -192,28 +192,49 @@ def run_generic_adsorption_study(config_path='config.yaml'):
     relax_cfg = rs_cfg.get('candidate_relaxation', {})
     if all_final_results and relax_cfg.get('enabled', False):
         from autoflow_srxn.potentials import SimulationEngine
-        logger.info(f"STAGE 3: Performing short relaxation (10 steps) on {len(all_final_results)} candidates...")
+        n_steps = relax_cfg.get('steps', 10)
+        fmax_val = relax_cfg.get('fmax', 0.01)
+        v_flag = relax_cfg.get('verbose', False)
+
+        logger.info(f"STAGE 3: Performing short relaxation ({n_steps} steps) on {len(all_final_results)} candidates...")
         
         # We rely on the engine block in config.yaml. SimulationEngine handles defaults if missing.
         if 'engine' in config:
             backend = config['engine'].get('potential', {}).get('backend', 'mace')
-            logger.info(f"  [Relaxation] Using configured engine backend: {backend}")
+            logger.info(f"  [Relaxation] Using configured engine backend: {backend} (fmax={fmax_val})")
         else:
             logger.warning("  [Relaxation] 'engine' block missing in config. Falling back to internal defaults.")
             
         engine = SimulationEngine(config)
         relaxed_cands = []
         
+        logger.info(f"{'ID':<4} | {'Mechanism':<15} | {'E_initial (eV)':<15} | {'E_final (eV)':<15} | {'Delta (eV)':<10}")
+        logger.info("-" * 75)
+
         for i, atoms in enumerate(all_final_results):
             atoms_relaxed = atoms.copy()
-            atoms_relaxed.info = atoms.info.copy() # Ensure info is preserved
+            atoms_relaxed.info = atoms.info.copy()
             
             try:
-                # Perform a quick 10-step relaxation
-                engine.relax(atoms_relaxed, steps=10, verbose=False, fmax=0.01)
-                atoms_relaxed.info['relaxation'] = 'short_relax_10_steps'
+                # Attach calculator to get initial energy
+                calc = engine.get_calculator()
+                atoms_relaxed.calc = calc
+                e_init = atoms_relaxed.get_potential_energy()
+                
+                # Perform relaxation using parameters from config
+                engine.relax(atoms_relaxed, steps=n_steps, verbose=v_flag, fmax=fmax_val)
+                
+                e_final = atoms_relaxed.get_potential_energy()
+                delta_e = e_final - e_init
+                
+                mech = atoms.info.get('mechanism', 'unknown')
+                logger.info(f"{i:<4} | {mech[:15]:<15} | {e_init:15.4f} | {e_final:15.4f} | {delta_e:10.4f}")
+                
+                atoms_relaxed.info['e_initial'] = e_init
+                atoms_relaxed.info['e_final'] = e_final
+                atoms_relaxed.info['relaxation'] = f'short_relax_{n_steps}_steps'
             except Exception as e:
-                logger.warning(f"  Relaxation failed for candidate {i}: {e}")
+                logger.warning(f"{i:<4} | Relaxation failed: {e}")
                 atoms_relaxed.info['relaxation'] = 'failed'
             
             relaxed_cands.append(atoms_relaxed)

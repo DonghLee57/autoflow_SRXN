@@ -324,9 +324,9 @@ reaction_search:
 
   candidate_relaxation:          # [REQUIRES POTENTIAL]
     enabled: true
-    # Recommended coarse screening:
-    # fmax:  0.1
-    # steps: 100
+    fmax:    0.05    # Force convergence threshold (eV/Å) for candidates
+    steps:   50      # Number of relaxation steps for each candidate
+    verbose: false   # Whether to show step-by-step optimization logs
 
 
 # -----------------------------------------------------------------------------

@@ -79,3 +79,6 @@ reaction_search:
 
   candidate_relaxation:
     enabled: true
+    steps:   10
+    fmax:    0.01
+    verbose: false
