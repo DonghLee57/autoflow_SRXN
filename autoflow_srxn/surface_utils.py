@@ -641,8 +641,36 @@ def apply_surface_reconstruction(atoms, strategy='si100_2x1_buckled', side='top'
     """
     if strategy == 'si100_2x1_buckled':
         return reconstruct_si100_2x1_buckled(atoms, side=side, verbose=verbose)
+    elif strategy == 'random_noise':
+        return apply_random_surface_noise(atoms, side=side, verbose=verbose)
     else:
         raise ValueError(f"Unknown reconstruction strategy: {strategy}")
+
+def apply_random_surface_noise(atoms, side='top', amplitude=0.1, verbose=False):
+    """
+    General-purpose symmetry breaker.
+    Applies small random displacements to surface atoms. This is useful for 
+    breaking the high symmetry of ideal surfaces, allowing the potential energy 
+    minimization (relaxation) to find lower-energy reconstructed states 
+    that might be inaccessible from perfectly ideal coordinates.
+    """
+    new_atoms = atoms.copy()
+    indices = find_surface_indices(new_atoms, side=side, threshold=1.5)
+    
+    if len(indices) == 0:
+        return new_atoms
+        
+    pos = new_atoms.positions
+    # Apply small random noise (Normal distribution)
+    noise = np.random.normal(0, amplitude, (len(indices), 3))
+    # Keep the noise relatively small to avoid non-physical overlaps
+    pos[indices] += noise
+    
+    if verbose:
+        print(f"  [Reconstruction] Applied random symmetry breaking (amp={amplitude}A) to {len(indices)} atoms.")
+        
+    new_atoms.set_positions(pos)
+    return new_atoms
 
 def reconstruct_si100_2x1_buckled(atoms, side='top', dimer_dist=0.6, buckling_dist=0.4, verbose=False):
     """
