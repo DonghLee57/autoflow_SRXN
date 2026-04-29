@@ -196,6 +196,24 @@ def run_generic_adsorption_study(config_path='config.yaml'):
         fmax_val = relax_cfg.get('fmax', 0.01)
         v_flag = relax_cfg.get('verbose', False)
         sel_idx = relax_cfg.get('selected_indices', None)
+        
+        # Support dynamic evaluation of list expressions or numpy arrays
+        if isinstance(sel_idx, str):
+            try:
+                import numpy as np
+                # Provide a safe namespace with common utilities
+                allowed_names = {"range": range, "list": list, "np": np, "numpy": np, "abs": abs}
+                # Evaluate string expression safely
+                sel_idx = eval(sel_idx, {"__builtins__": {}}, allowed_names)
+                # Convert to list if it's a numpy array or range object
+                if hasattr(sel_idx, 'tolist'):
+                    sel_idx = sel_idx.tolist()
+                elif not isinstance(sel_idx, list):
+                    sel_idx = list(sel_idx)
+                logger.info(f"  [Relaxation] Evaluated selected_indices: {len(sel_idx)} sites selected.")
+            except Exception as e:
+                logger.error(f"  [Relaxation] Failed to evaluate 'selected_indices' expression '{sel_idx}': {e}")
+                sel_idx = None
 
         n_total = len(all_final_results)
         n_target = len(sel_idx) if sel_idx is not None else n_total

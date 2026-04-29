@@ -328,6 +328,8 @@ reaction_search:
     steps:   50      # Number of relaxation steps for each candidate
     verbose: false   # Whether to show step-by-step optimization logs
     selected_indices: null # List of specific candidate indices to relax (e.g. [0, 12, 45]).
+                           # If a string is provided, it is evaluated as a Python expression.
+                           # e.g., "list(range(10)) + [20, 30]" or "np.arange(0, 100, 5)"
                            # If null, all candidates are relaxed.
 
 
