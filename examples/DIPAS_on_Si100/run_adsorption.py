@@ -90,6 +90,7 @@ def run_generic_adsorption_study(config_path='config.yaml'):
     logger = setup_logger(
         log_path = paths.get('output_prefix', 'results') + '_workflow.log',
         verbose  = True,
+        mode     = 'w', # Overwrite logs for clarity
     )
     logger.info(f"--- Starting AutoFlow-SRXN Discovery Study ({config_path}) ---")
 
@@ -193,9 +194,12 @@ def run_generic_adsorption_study(config_path='config.yaml'):
         from autoflow_srxn.potentials import SimulationEngine
         logger.info(f"STAGE 3: Performing short relaxation (10 steps) on {len(all_final_results)} candidates...")
         
-        # Ensure a default potential is set if none exists in config for this example
-        if 'engine' not in config:
-            config['engine'] = {'potential': {'backend': 'emt'}}
+        # We rely on the engine block in config.yaml. SimulationEngine handles defaults if missing.
+        if 'engine' in config:
+            backend = config['engine'].get('potential', {}).get('backend', 'mace')
+            logger.info(f"  [Relaxation] Using configured engine backend: {backend}")
+        else:
+            logger.warning("  [Relaxation] 'engine' block missing in config. Falling back to internal defaults.")
             
         engine = SimulationEngine(config)
         relaxed_cands = []
