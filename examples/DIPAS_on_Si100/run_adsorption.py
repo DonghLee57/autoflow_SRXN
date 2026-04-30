@@ -145,7 +145,7 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     return processed_cands
 
 
-def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center_target="Si"):
+def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center_target="Si", e_gas=0.0, e_base=0.0):
     """Orchestrates candidate generation and subsequent verification."""
     rs_cfg = config.get("reaction_search", {})
     mechs_cfg = rs_cfg.get("mechanisms", {})
@@ -158,18 +158,6 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
 
     mgr = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=False)
     all_cands = []
-
-    # Calculate reference energies for E_ads
-    e_gas = calculate_gas_energy(mol, config, logger)
-    try:
-        e_base = slab.get_potential_energy()
-    except Exception:
-        # If slab has no calculator, we need one to get baseline energy
-        from autoflow_srxn.potentials import SimulationEngine
-
-        engine = SimulationEngine(config)
-        slab.calc = engine.get_calculator()
-        e_base = slab.get_potential_energy()
 
     if run_phy:
         logger.info(f"  Physisorption search for {mol.get_chemical_formula()}...")
@@ -200,21 +188,17 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
             c.info["mechanism"] = "chemisorption"
         all_cands.extend(chem_cands)
 
-        byproducts = [c.info["isolated_byproduct"] for c in chem_cands if "isolated_byproduct" in c.info]
-        if byproducts:
-            write(f"{out_prefix}_byproducts.extxyz", byproducts)
-
     if all_cands:
         write(f"{out_prefix}_all_poses.extxyz", all_cands)
 
-    # Automated Verification (Relax + Equil + Post-Relax)
+    # Automated Verification (Relax + Equil + Post-Relax) using pre-calculated energies
     verified_cands = execute_verification_stage(
         all_cands, config, logger, out_prefix, tag=tag, e_gas=e_gas, e_base=e_base
     )
     return verified_cands
 
 
-def execute_discovery_workflow(config, logger):
+def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_energy=0.0):
     """Core logic for a single discovery run (one precursor, one inhibitor)."""
     paths = config["paths"]
     sp_cfg = config.get("surface_prep", {})
@@ -285,13 +269,19 @@ def execute_discovery_workflow(config, logger):
             steps=slab_relax_cfg.get("steps", 200),
             frozen_z_ang=slab_relax_cfg.get("frozen_z_ang"),
         )
-        log_energy_comparison(logger, "Slab Relax", e_init, slab.get_potential_energy())
+        slab_base_energy = slab.get_potential_energy()  # Update base energy after relax
+        log_energy_comparison(logger, "Slab Relax", e_init, slab_base_energy)
 
     # ── Stage 1: Inhibitor pre-treatment ──────────────────────────────────────
     base_slabs = [slab]
     if inh_cfg.get("enabled", False) and inh_file and os.path.exists(inh_file):
         log_stage_title(logger, "STAGE 1", f"Inhibitor Discovery ({os.path.basename(inh_file)})")
         inh_mol = read(inh_file)
+        # Use cached gas energy if available
+        e_gas_inh = (
+            gas_energy_map.get(inh_file, 0.0) if gas_energy_map else calculate_gas_energy(inh_mol, config, logger)
+        )
+
         inh_cands = execute_discovery_stage(
             slab,
             inh_mol,
@@ -300,6 +290,8 @@ def execute_discovery_workflow(config, logger):
             logger,
             tag=2,
             center_target=inh_cfg.get("inhibitor_center", "O"),
+            e_gas=e_gas_inh,
+            e_base=slab_base_energy,
         )
         if inh_cands:
             if any("e_final" in c.info for c in inh_cands):
@@ -312,11 +304,28 @@ def execute_discovery_workflow(config, logger):
     if mol:
         log_stage_title(logger, "STAGE 2", f"Main Precursor Discovery ({os.path.basename(mol_file)})")
         mol_center = mechs_cfg.get("chemisorption", {}).get("precursor_center", "Si")
+        # Use cached gas energy if available
+        e_gas_mol = gas_energy_map.get(mol_file, 0.0) if gas_energy_map else calculate_gas_energy(mol, config, logger)
+
         all_final_results = []
         for i, s in enumerate(base_slabs):
+            try:
+                # For Stage 2, base is the inhibited surface
+                e_base_stage2 = s.info.get("e_final", s.get_potential_energy())
+            except Exception:
+                e_base_stage2 = slab_base_energy  # fallback
+
             suffix = f"_inh{i}" if len(base_slabs) > 1 else ""
             results = execute_discovery_stage(
-                s, mol, config, f"{out_prefix}{suffix}", logger, tag=3, center_target=mol_center
+                s,
+                mol,
+                config,
+                f"{out_prefix}{suffix}",
+                logger,
+                tag=3,
+                center_target=mol_center,
+                e_gas=e_gas_mol,
+                e_base=e_base_stage2,
             )
             all_final_results.extend(results)
 
@@ -360,6 +369,29 @@ def run_generic_adsorption_study(config_path="config.yaml"):
 
     global_prefix = paths.get("output_prefix", "discovery")
 
+    # ── E_ads Optimization: Pre-calculate Reference Energies ───────────────────
+    # We calculate Gas Energies once for all unique molecules to avoid redundancy.
+    unique_mols = list(set([f for f in adsorbates + inhibitors if f and os.path.exists(f)]))
+    gas_energy_map = {}
+    if unique_mols:
+        # Use a temporary logger for pre-calculation
+        tmp_logger = setup_logger(log_path=os.path.join(global_prefix, "ref_energies.log"), mode="w")
+        log_stage_title(tmp_logger, "PRE-CALC", "Calculating Reference Gas Energies...")
+        for m_path in unique_mols:
+            mol_atoms = read(m_path)
+            gas_energy_map[m_path] = calculate_gas_energy(mol_atoms, config, tmp_logger)
+
+    # Pre-calculate Slab Base Energy if slab is already provided
+    slab_base_energy = 0.0
+    if paths.get("substrate_slab") and os.path.exists(paths["substrate_slab"]):
+        from autoflow_srxn.potentials import SimulationEngine
+
+        tmp_slab = read(paths["substrate_slab"])
+        engine = SimulationEngine(config)
+        tmp_slab.calc = engine.get_calculator()
+        slab_base_energy = tmp_slab.get_potential_energy()
+
+    # ── Main Batch Loop ────────────────────────────────────────────────────────
     for inh_path in inhibitors:
         for ads_path in adsorbates:
             if not ads_path:
@@ -386,7 +418,9 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             run_config["paths"]["output_prefix"] = os.path.join(run_dir, "results")
 
             try:
-                execute_discovery_workflow(run_config, logger)
+                execute_discovery_workflow(
+                    run_config, logger, gas_energy_map=gas_energy_map, slab_base_energy=slab_base_energy
+                )
             except Exception as e:
                 logger.error(f"Discovery workflow failed for {run_name}: {e}")
 
