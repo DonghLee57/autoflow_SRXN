@@ -397,15 +397,34 @@ reaction_search:
 
   # ── Potential-required ─────────────────────────────────────────────────────
 
-  candidate_relaxation:          # [REQUIRES POTENTIAL]
-    enabled: true
-    fmax:    0.05    # Force convergence threshold (eV/Å) for candidates
-    steps:   50      # Number of relaxation steps for each candidate
-    verbose: false   # Whether to show step-by-step optimization logs
-    selected_indices: null # List of specific candidate indices to relax (e.g. [0, 12, 45]).
-                           # If a string is provided, it is evaluated as a Python expression.
-                           # e.g., "list(range(10)) + [20, 30]" or "np.arange(0, 100, 5)"
-                           # If null, all candidates are relaxed.
+  # [Stage 3: Candidate Verification & Sampling]
+  # After candidates are generated geometrically, they can be processed using 
+  # ML potentials to find stable minima or sample thermal behavior.
+  verification:
+    # ── Geometry Optimization ───────────────────────────────────────────────
+    relaxation:
+      enabled: true
+      fmax:    0.05    # Force convergence threshold (eV/Å).
+      steps:   50      # Max optimization steps.
+      verbose: false
+
+    # ── Molecular Dynamics Sampling ─────────────────────────────────────────
+    # Useful for checking the thermal stability of physisorption poses or 
+    # discovering spontaneous reaction pathways at elevated temperatures.
+    md_sampling:
+      enabled:        false
+      temperature_K:  300      # Simulation temperature (K).
+      md_steps:       1000     # Integration steps.
+      timestep_fs:    1.0      # Timestep (fs).
+      damping:        100.0    # Langevin friction (fs).
+      frozen_z_ang:   4.0      # Fix bottom layers during MD (Å).
+
+    # ── Selection Filter ────────────────────────────────────────────────────
+    # List of specific candidate indices to process (e.g. [0, 12, 45]).
+    # If a string is provided, it is evaluated as a Python expression.
+    # e.g., "list(range(10)) + [20, 30]" or "np.arange(0, 100, 5)"
+    # If null, all candidates are processed.
+    selected_indices: null
 
 
 # -----------------------------------------------------------------------------
