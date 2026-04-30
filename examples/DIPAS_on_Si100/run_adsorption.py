@@ -32,11 +32,11 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, verbose=True,
     d_mol = mgr.calculate_molecule_lateral_extent(mol)
     a_len = np.linalg.norm(slab.cell[0])
     b_len = np.linalg.norm(slab.cell[1])
-    logger.info(f"  DIAGNOSTIC: {mol.get_chemical_formula()} span = {d_mol:.2f} Å | "
-                f"Substrate = {a_len:.2f} × {b_len:.2f} Å")
+    logger.info(f"  DIAGNOSTIC: {mol.get_chemical_formula()} span = {d_mol:.2f} A | "
+                f"Substrate = {a_len:.2f} x {b_len:.2f} A")
     if a_len < d_mol + 3.0 or b_len < d_mol + 3.0:
-        logger.warning(f"  PBC CONFLICT: cell ({a_len:.1f}×{b_len:.1f}) may be too small "
-                       f"for {mol.get_chemical_formula()} (span={d_mol:.1f} Å).")
+        logger.warning(f"  PBC CONFLICT: cell ({a_len:.1f}x{b_len:.1f}) may be too small "
+                       f"for {mol.get_chemical_formula()} (span={d_mol:.1f} A).")
 
     all_cands = []
 

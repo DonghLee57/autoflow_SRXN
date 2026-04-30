@@ -1,6 +1,6 @@
 # Example: DIPAS Physisorption and Chemisorption on Si(100)
 # Geometry-only workflow: slab generation, passivation, and candidate search.
-# No potential required for these stages; slab_relaxation and equilibration disabled.
+# Enhanced with Auto-Reconstruction (Dimerization + Buckling) and Candidate Relaxation.
 
 paths:
   substrate_bulk:  "../../structures/Si_mp149.vasp"
@@ -9,6 +9,7 @@ paths:
   inhibitor:       "../../structures/ethanol.vasp"
   output_dir:      "results"
   output_prefix:   "dipas_on_si100_results"
+
 engine:
   potential:
     backend: "mace"
@@ -28,7 +29,12 @@ surface_prep:
     target_area_ang2:   500.0
     top_termination:    "Si"
     bottom_termination: "Si"
-    supercell_matrix:   null
+    reconstruction:
+      enabled:       true
+      strategy:      "auto"
+      side:          "top"
+      dimer_dist:    0.6
+      buckling_dist: 0.4
 
   passivation:
     enabled:   true
@@ -44,12 +50,6 @@ surface_prep:
       O:  2
       N:  3
       H:  1
-
-  slab_relaxation:
-    enabled: false   # No potential configured for this geometry-only example
-
-  equilibration:
-    enabled: false   # No potential configured for this geometry-only example
 
 reaction_search:
   mechanisms:

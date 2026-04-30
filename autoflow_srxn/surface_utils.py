@@ -633,7 +633,7 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
     
     return slab
 
-def apply_surface_reconstruction(atoms, strategy='auto', side='top', verbose=False):
+def apply_surface_reconstruction(atoms, strategy='auto', side='top', verbose=False, **kwargs):
     """
     Applies surface reconstruction. 
     If strategy='auto' or True, identifies material class and applies physical rules.
