@@ -95,8 +95,11 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     mechs_cfg = rs_cfg.get("mechanisms", {})
     inh_cfg = mechs_cfg.get("inhibition", {})
 
+    out_prefix = paths.get("output_prefix")
+    log_file = f"{out_prefix}_workflow.log" if out_prefix else "workflow.log"
+
     logger = setup_logger(
-        log_path=paths.get("output_prefix", "results") + "_workflow.log",
+        log_path=log_file,
         verbose=True,
         mode="w",  # Overwrite logs for clarity
     )
@@ -255,15 +258,15 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             )
             all_final_results.extend(results)
 
-    # ── Stage 3: Short Relaxation (Verification) ──────────────────────────────
-    relax_cfg = rs_cfg.get("candidate_relaxation", {})
-    if all_final_results and relax_cfg.get("enabled", False):
+    # ── Stage 3: Verification (Relaxation & MD Sampling) ──────────────────────
+    verify_cfg = rs_cfg.get("verification", {})
+    run_relax = verify_cfg.get("relaxation", {}).get("enabled", False)
+    run_md = verify_cfg.get("md_sampling", {}).get("enabled", False)
+
+    if all_final_results and (run_relax or run_md):
         from autoflow_srxn.potentials import SimulationEngine
 
-        n_steps = relax_cfg.get("steps", 10)
-        fmax_val = relax_cfg.get("fmax", 0.01)
-        v_flag = relax_cfg.get("verbose", False)
-        sel_idx = relax_cfg.get("selected_indices", None)
+        sel_idx = verify_cfg.get("selected_indices", None)
 
         # Support dynamic evaluation of list expressions or numpy arrays
         if isinstance(sel_idx, str):
@@ -279,67 +282,79 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                     sel_idx = sel_idx.tolist()
                 elif not isinstance(sel_idx, list):
                     sel_idx = list(sel_idx)
-                logger.info(f"  [Relaxation] Evaluated selected_indices: {len(sel_idx)} sites selected.")
+                logger.info(f"  [Verification] Evaluated selected_indices: {len(sel_idx)} sites selected.")
             except Exception as e:
-                logger.error(f"  [Relaxation] Failed to evaluate 'selected_indices' expression '{sel_idx}': {e}")
+                logger.error(f"  [Verification] Failed to evaluate 'selected_indices' expression '{sel_idx}': {e}")
                 sel_idx = None
 
         n_total = len(all_final_results)
         n_target = len(sel_idx) if sel_idx is not None else n_total
         log_stage_title(
-            logger, "STAGE 3", f"Performing short relaxation ({n_steps} steps) on {n_target}/{n_total} candidates..."
+            logger,
+            "STAGE 3",
+            f"Performing verification (Relax={run_relax}, MD={run_md}) on {n_target}/{n_total} sites.",
         )
 
-        # We rely on the engine block in config.yaml. SimulationEngine handles defaults if missing.
-        if "engine" in config:
-            backend = config["engine"].get("potential", {}).get("backend", "mace")
-            logger.info(f"  [Relaxation] Using configured engine backend: {backend} (fmax={fmax_val})")
-        else:
-            logger.warning("  [Relaxation] 'engine' block missing in config. Falling back to internal defaults.")
-
         engine = SimulationEngine(config)
-        calc = engine.get_calculator()  # Load engine once before the table starts
+        calc = engine.get_calculator()
 
-        relaxed_cands = []
-        summary_data = []  # To store results for clean table output at the end
+        processed_cands = []
+        summary_data = []
 
         for i, atoms in enumerate(all_final_results):
-            # Skip if not in selected_indices
             if sel_idx is not None and i not in sel_idx:
                 continue
 
-            atoms_relaxed = atoms.copy()
-            atoms_relaxed.info = atoms.info.copy()
+            atoms_proc = atoms.copy()
+            atoms_proc.info = atoms.info.copy()
+            atoms_proc.calc = calc
 
             try:
-                # Attach calculator to get initial energy
-                atoms_relaxed.calc = calc
-                e_init = atoms_relaxed.get_potential_energy()
+                e_init = atoms_proc.get_potential_energy()
 
-                # Perform relaxation using parameters from config
-                engine.relax(atoms_relaxed, steps=n_steps, verbose=v_flag, fmax=fmax_val)
+                # --- 1. Relaxation ---
+                if run_relax:
+                    r_cfg = verify_cfg.get("relaxation", {})
+                    engine.relax(
+                        atoms_proc,
+                        steps=r_cfg.get("steps", 50),
+                        fmax=r_cfg.get("fmax", 0.05),
+                        verbose=r_cfg.get("verbose", False),
+                    )
 
-                e_final = atoms_relaxed.get_potential_energy()
+                # --- 2. MD Sampling ---
+                if run_md:
+                    m_cfg = verify_cfg.get("md_sampling", {})
+                    engine.run_md(
+                        atoms_proc,
+                        temp_K=m_cfg.get("temperature_K", 300),
+                        md_steps=m_cfg.get("md_steps", 1000),
+                        timestep_fs=m_cfg.get("timestep_fs", 1.0),
+                        damping=m_cfg.get("damping", 100.0),
+                        frozen_z_ang=m_cfg.get("frozen_z_ang"),
+                    )
+
+                e_final = atoms_proc.get_potential_energy()
                 delta_e = e_final - e_init
                 mech = atoms.info.get("mechanism", "unknown")
 
                 summary_data.append({"id": i, "mech": mech, "e_init": e_init, "e_final": e_final, "delta": delta_e})
 
-                atoms_relaxed.info["e_initial"] = e_init
-                atoms_relaxed.info["e_final"] = e_final
-                atoms_relaxed.info["relaxation"] = f"short_relax_{n_steps}_steps"
+                atoms_proc.info["e_initial"] = e_init
+                atoms_proc.info["e_final"] = e_final
+                atoms_proc.info["verification"] = f"relax={run_relax}_md={run_md}"
             except Exception as e:
-                logger.warning(f"Candidate {i} relaxation failed: {e}")
-                atoms_relaxed.info["relaxation"] = "failed"
+                logger.warning(f"Candidate {i} verification failed: {e}")
+                atoms_proc.info["verification"] = "failed"
 
-            relaxed_cands.append(atoms_relaxed)
+            processed_cands.append(atoms_proc)
 
         # --- Print Visual Summary Table ---
-        log_results_table(logger, summary_data, title=f"Reaction Search Summary (steps={n_steps})")
+        log_results_table(logger, summary_data, title="Candidate Verification Summary")
 
-        if relaxed_cands:
-            write(f"{out_prefix}_relaxed_poses.extxyz", relaxed_cands)
-            logger.info(f"Saved relaxed candidates to '{out_prefix}_relaxed_poses.extxyz'.")
+        if processed_cands:
+            write(f"{out_prefix}_verified_poses.extxyz", processed_cands)
+            logger.info(f"Saved verified candidates to '{out_prefix}_verified_poses.extxyz'.")
 
     logger.info(f"--- Study Complete. Total unique candidates: {len(all_final_results)} ---")
 
