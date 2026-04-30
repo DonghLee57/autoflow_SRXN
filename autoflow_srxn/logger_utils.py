@@ -29,8 +29,6 @@ def setup_logger(log_path="workflow.log", verbose=False, mode="a"):
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:
-        import os
-
         print(f"Warning: Could not setup file logging at {os.path.relpath(log_path)}: {e}")
 
     # Console Handler
