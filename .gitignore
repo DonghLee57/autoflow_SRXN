@@ -18,6 +18,7 @@ cache*.json
 qpoints.yaml
 theory.md
 todolist.md
+ssw_plan.md
 devs/
 .wsl_env/
 wsl/
@@ -28,3 +29,7 @@ Library/
 micromamba
 relaxation.extxyz
 *.egg-info/
+
+# Example outputs
+examples/**/*.vasp
+examples/**/*.extxyz
