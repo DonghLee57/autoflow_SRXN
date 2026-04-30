@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 
@@ -16,6 +17,11 @@ def setup_logger(log_path="workflow.log", verbose=False, mode="a"):
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
+
+    # Ensure log directory exists
+    log_dir = os.path.dirname(os.path.abspath(log_path))
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
 
     # File Handler
     try:
