@@ -169,6 +169,29 @@ def run_generic_adsorption_study(config_path='config.yaml'):
         write_standardized_vasp('passivated.vasp', slab)
         logger.info("Saved passivated substrate to 'passivated.vasp'.")
 
+    # [Optional Slab Relaxation]
+    slab_relax_cfg = sp_cfg.get('slab_relaxation', {})
+    if slab_relax_cfg.get('enabled', False):
+        from autoflow_srxn.potentials import SimulationEngine
+        logger.info("STAGE 0.5: Performing slab relaxation...")
+        try:
+            engine = SimulationEngine(config)
+            n_steps = slab_relax_cfg.get('steps', 200)
+            fmax_val = slab_relax_cfg.get('fmax', 0.05)
+            frozen_z = slab_relax_cfg.get('frozen_z_ang')
+            
+            engine.relax(
+                slab, 
+                fmax=fmax_val,
+                steps=n_steps,
+                frozen_z_ang=frozen_z,
+                verbose=True
+            )
+            write_standardized_vasp('relaxed_slab.vasp', slab)
+            logger.info("Saved relaxed slab to 'relaxed_slab.vasp'.")
+        except Exception as e:
+            logger.error(f"Slab relaxation failed: {e}")
+
     # ── Stage 1: Inhibitor pre-treatment (optional branching) ─────────────────
     base_slabs = [slab]
     if inh_cfg.get('enabled', False):

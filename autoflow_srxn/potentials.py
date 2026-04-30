@@ -281,8 +281,8 @@ class SimulationEngine:
                 label += ", D3=True"
             logger.info(f"  [Engine] Loaded MACE-MP calculator ({label}).")
             return calc
-        except ImportError:
-            logger.warning("  [Engine] MACE not installed. Falling back to EMT.")
+        except Exception as e:
+            logger.warning(f"  [Engine] MACE loading failed ({type(e).__name__}: {e}). Falling back to EMT.")
             return EMT()
 
     def _build_sevennet(self, logger):
@@ -314,8 +314,8 @@ class SimulationEngine:
                 logger.info(f"  [Engine] Loaded SevenNet (model={model}, modal={self.modal}).")
             return calc
 
-        except ImportError:
-            logger.warning("  [Engine] SevenNet (sevenn) not installed. Falling back to EMT.")
+        except Exception as e:
+            logger.warning(f"  [Engine] SevenNet loading failed ({type(e).__name__}: {e}). Falling back to EMT.")
             return EMT()
 
     def get_calculator(self):

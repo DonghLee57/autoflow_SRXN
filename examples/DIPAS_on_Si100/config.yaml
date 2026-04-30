@@ -50,6 +50,12 @@ surface_prep:
       O:  2
       N:  3
       H:  1
+  
+  slab_relaxation:
+    enabled:      true
+    fmax:         0.05
+    steps:        50
+    frozen_z_ang: 4.0   # Fix bottom 4A of the slab
 
 reaction_search:
   mechanisms:
