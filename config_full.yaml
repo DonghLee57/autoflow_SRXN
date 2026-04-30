@@ -55,14 +55,17 @@ paths:
 
 
 # -----------------------------------------------------------------------------
-# Engine — ML potential + default relaxation/MD parameters
-#
-# [REQUIRES POTENTIAL] for any workflow step that calls relax() or run_md().
-#
-# relaxation and md define *defaults* that all potential-requiring steps
-# inherit. Override only in the specific stage block that needs different values.
+# Global Workflow Control
+# -----------------------------------------------------------------------------
+# Set to 'true' to force re-calculation even if results exist in the directory.
+# If 'false', the workflow skips pairs that already have 'results_final_verified.extxyz'.
+restart: false
+
+# -----------------------------------------------------------------------------
+# Potential & Simulation Engine Settings
 # -----------------------------------------------------------------------------
 engine:
+
   potential:
     # ── Backend ────────────────────────────────────────────────────────────────
     # Choice of machine learning interatomic potential (ML-IAP) backend.
