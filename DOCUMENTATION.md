@@ -38,6 +38,9 @@ Handles the creation and modification of the substrate surface.
 - **`thickness_ang`**: Float (Å). Minimum thickness of the slab.
 - **`vacuum_ang`**: Float (Å). Vacuum padding on both sides.
 - **`target_area_ang2`**: Float (Å²). Target surface area; the engine will find the best supercell expansion to match this.
+- **`supercell_matrix`**: List of lists (e.g., `[[2,0],[0,2]]`). Explicit supercell expansion matrix. Overrides `target_area_ang2` if set.
+- **`top_termination`**: String (Element symbol, e.g., `"O"`). Ensures the top surface ends with the specified element.
+- **`bottom_termination`**: String (Element symbol, e.g., `"O"`). Ensures the bottom surface ends with the specified element.
 
 ### 3.2 Reconstruction
 - **`enabled`**: Boolean. Apply surface reconstruction patterns.
