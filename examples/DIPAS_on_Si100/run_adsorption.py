@@ -44,6 +44,10 @@ def log_to_csv(csv_path, summary_data):
 
     if not summary_data:
         return
+    log_dir = os.path.dirname(os.path.abspath(csv_path))
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
     file_exists = os.path.isfile(csv_path)
     # Ensure all rows have consistent keys
     keys = summary_data[0].keys()
