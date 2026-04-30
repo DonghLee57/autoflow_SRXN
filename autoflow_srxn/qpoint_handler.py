@@ -1,12 +1,14 @@
-import yaml
-import numpy as np
 import os
 
+import numpy as np
+import yaml
+
+
 class QPointParser:
-    """
-    Parses Phonopy qpoints.yaml to extract vibrational frequencies and eigenvectors.
+    """Parses Phonopy qpoints.yaml to extract vibrational frequencies and eigenvectors.
     Focused on identifies unstable (imaginary) modes for structural refinement.
     """
+
     def __init__(self, file_path):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"  [QPointParser] Could not find: {file_path}")
@@ -15,7 +17,7 @@ class QPointParser:
 
     def _load_yaml(self):
         """Loads large YAML files safely."""
-        with open(self.file_path, 'r') as f:
+        with open(self.file_path) as f:
             # Use CLoader if available for performance
             try:
                 from yaml import CLoader as Loader
@@ -42,24 +44,24 @@ class QPointParser:
             list[dict]: Each entry has ``'frequency'`` (float, THz) and
                         ``'eigenvector'`` (np.ndarray, shape (N_atoms, 3)).
         """
-        if 'phonon' not in self.data:
+        if "phonon" not in self.data:
             return []
 
         # AutoFlow-SRXN extension: atom masses (amu) for e_k → u_k back-conversion.
         # Falls back gracefully if absent (plain phonopy files).
-        masses_list = self.data.get('masses', [])
+        masses_list = self.data.get("masses", [])
 
-        qpoint = self.data['phonon'][0]
-        bands  = qpoint.get('band', [])
+        qpoint = self.data["phonon"][0]
+        bands = qpoint.get("band", [])
 
         modes = []
         for b in bands:
-            freq = b.get('frequency')
+            freq = b.get("frequency")
             if freq is None:
                 continue
 
             if freq < freq_threshold:
-                raw_eig = b.get('eigenvector')
+                raw_eig = b.get("eigenvector")
                 if not raw_eig:
                     continue
 
@@ -67,14 +69,14 @@ class QPointParser:
                 # Nested: [ [ [ux,ix], [uy,iy], [uz,iz] ], ... ] -> len is num_atoms
                 # Flat:   [ [ux,ix], [uy,iy], [uz,iz], ... ]     -> len is 3 * num_atoms
                 is_nested = isinstance(raw_eig[0][0], (list, tuple))
-                
+
                 if is_nested:
                     num_atoms = len(raw_eig)
                 else:
                     num_atoms = len(raw_eig) // 3
-                
-                has_masses = (len(masses_list) == num_atoms)
-                eig_vec    = np.zeros((num_atoms, 3))
+
+                has_masses = len(masses_list) == num_atoms
+                eig_vec = np.zeros((num_atoms, 3))
 
                 for i in range(num_atoms):
                     # Back-convert: u_{k,α} = e_{k,α} / sqrt(m_k)
@@ -84,13 +86,13 @@ class QPointParser:
                             e_val = raw_eig[i][j][0]
                         else:
                             e_val = raw_eig[3 * i + j][0]
-                        
+
                         eig_vec[i, j] = e_val / m_sqrt if m_sqrt > 0.0 else e_val
 
-                modes.append({'frequency': freq, 'eigenvector': eig_vec})
+                modes.append({"frequency": freq, "eigenvector": eig_vec})
 
         # Most unstable (most negative) first
-        modes.sort(key=lambda x: x['frequency'])
+        modes.sort(key=lambda x: x["frequency"])
 
         if max_modes and max_modes > 0:
             modes = modes[:max_modes]

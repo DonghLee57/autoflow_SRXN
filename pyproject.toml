@@ -29,3 +29,46 @@ packages = ["autoflow_srxn"]
 
 [tool.setuptools.package-data]
 autoflow_srxn = ["*.json"]
+
+[tool.ruff]
+# Target PEP8 and Google Style
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors (PEP8)
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "D",   # pydocstyle (Google Style docstrings)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+# Specifically enforce Google Style for docstrings
+ignore = [
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D107", # Missing docstring in __init__
+    "D205", # 1 blank line required between summary line and description
+    "D415", # First line should end with a period
+    "E402", # Module level import not at top of file (common in examples/tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["D"]  # Ignore docstring requirements in examples
+"unittests/*" = ["D"] # Ignore docstring requirements in tests
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

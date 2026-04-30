@@ -318,8 +318,11 @@ surface_prep:
   # ── Potential-required ─────────────────────────────────────────────────────
 
   slab_relaxation:               # [REQUIRES POTENTIAL]
+    # Equilibration of the substrate surface before adsorption search begins.
     enabled: true
-    # Inherits engine.relaxation by default.
+    fmax:    0.05    # Force convergence (eV/Å). Inherits engine.relaxation.fmax if null.
+    steps:   100     # Max steps. Inherits engine.relaxation.steps if null.
+    frozen_z_ang: 4.0 # Fix bottom layers of the slab during relaxation (Å).
 
   equilibration:                 # [REQUIRES POTENTIAL]
     enabled:      true
@@ -338,6 +341,19 @@ reaction_search:
       enabled:          true
       placement_height: 3.5     # Initial molecule height above top surface layer (Å)
       rot_steps:        8       # Fibonacci-sphere orientations sampled per site
+      
+      # [Center-Targeted Placement]
+      # Specifies which atom in the molecule should be placed directly above the 
+      # surface active site.
+      # - "com" (Default): Center of mass.
+      # - "closest": Atom closest to the COM.
+      # - String (e.g. "Si", "O"): First occurrence of the element.
+      # - Integer (e.g. 1): Explicit atom index.
+      #
+      # Note: When a specific center (element or index) is specified, the engine
+      # tries a rotation-less placement first. If it doesn't overlap with the 
+      # substrate, it proceeds without further rotation exploration for that site.
+      center:           "com"
 
     chemisorption:
       enabled:          true
