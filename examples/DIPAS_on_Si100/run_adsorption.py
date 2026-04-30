@@ -192,7 +192,17 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             fmax_val = slab_relax_cfg.get("fmax", 0.05)
             frozen_z = slab_relax_cfg.get("frozen_z_ang")
 
+            # Calculate initial energy
+            slab.calc = engine.get_calculator()
+            e_init = slab.get_potential_energy()
+
             engine.relax(slab, fmax=fmax_val, steps=n_steps, frozen_z_ang=frozen_z, verbose=True)
+
+            e_final = slab.get_potential_energy()
+            logger.info(
+                f"  [Slab Relax] E_initial: {e_init:.4f} eV, E_final: {e_final:.4f} eV, Delta: {e_final - e_init:.4f} eV"
+            )
+
             write_standardized_vasp("relaxed_slab.vasp", slab)
             logger.info("Saved relaxed slab to 'relaxed_slab.vasp'.")
         except Exception as e:
