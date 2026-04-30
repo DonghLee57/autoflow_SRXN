@@ -122,8 +122,12 @@ Configures the interatomic potential backend and hardware settings.
 - **`d3`**: Boolean. Enable/disable Grimme's D3 dispersion correction.
 
 ### 6.3 SevenNet Specifics
-- **`model`**: Path to a `.pth` checkpoint or a predefined name (e.g., `"7net-0"`).
-- **`modal`**: String or Integer. Specific model version or configuration variant (e.g., `"0"`, `"1"`).
+- **`model`**: Path to a `.pth` checkpoint or a predefined name (e.g., `"7net-omni"`, `"7net-mf-ompa"`, `"7net-0"`).
+- **`modal`**: String. Used to select a specific **task** or **fidelity** level in multi-task architectures (like SevenNet-Omni). This ensures results are consistent with the specific DFT settings used for training. Common tasks include:
+    - `"mpa"`: PBE+U (Recommended for general bulk and surface studies).
+    - `"matpes_r2scan"`: r²SCAN level of theory.
+    - `"omol25_low"`: ωB97M-V level of theory for small molecules.
+    - `"omat24"`: High-fidelity PBE for high-force configurations.
 - **`enable_flash`**: Boolean. Enables FlashAttention-2 (GPU only) to reduce memory usage.
 - **`enable_cueq`**: Boolean. Enables cuEquivariance acceleration (GPU only).
 
