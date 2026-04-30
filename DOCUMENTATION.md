@@ -123,6 +123,7 @@ Configures the interatomic potential backend and hardware settings.
 
 ### 6.3 SevenNet Specifics
 - **`model`**: Path to a `.pth` checkpoint or a predefined name (e.g., `"7net-0"`).
+- **`modal`**: String or Integer. Specific model version or configuration variant (e.g., `"0"`, `"1"`).
 - **`enable_flash`**: Boolean. Enables FlashAttention-2 (GPU only) to reduce memory usage.
 - **`enable_cueq`**: Boolean. Enables cuEquivariance acceleration (GPU only).
 
