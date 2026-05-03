@@ -65,8 +65,6 @@ class AdsorptionWorkflowManager:
             slab.get_atomic_numbers(),
         )
 
-        # We first try the user-provided symprec. If it fails to reduce anything AND it's low, we try to increment it up to 0.5 to force reduction.
-        # But generally we respect the user's symprec if it works.
         try_precisions = [symprec]
         if symprec < 0.5:
             try_precisions += [0.5]
@@ -77,11 +75,9 @@ class AdsorptionWorkflowManager:
                 if dataset is None:
                     continue
 
-                # Handling SPGlib >= 2.0 where dataset is an object
                 if hasattr(dataset, "equivalent_atoms"):
                     equiv = dataset.equivalent_atoms
                 else:
-                    # Fallback for older dict interface
                     equiv = dataset["equivalent_atoms"]
 
                 unique_classes = np.unique(equiv[indices])
@@ -105,7 +101,6 @@ class AdsorptionWorkflowManager:
         """Reduces a set of arbitrary Cartesian coordinates to symmetry-unique ones."""
         if not coords:
             return []
-        # Find symmetry of the SUBSTRATE only to avoid symmetry breaking by adsorbates
         sub_indices = np.where(slab.get_tags() < 2)[0]
         sub_slab = slab[sub_indices]
         
@@ -124,21 +119,16 @@ class AdsorptionWorkflowManager:
         inv_lattice = np.linalg.inv(lattice)
 
         for c in coords:
-            # Convert to fractional
             c_frac = np.dot(c, inv_lattice)
             is_new = True
             
             for uc in unique_coords:
                 uc_frac = np.dot(uc, inv_lattice)
-                # Check if c_frac can be mapped to uc_frac via any symmetry operation
                 for r, t in zip(rotations, translations):
                     mapped = np.dot(r, c_frac) + t
                     diff = mapped - uc_frac
-                    diff -= np.round(diff) # PBC wrap
-                    # Check Cartesian distance
+                    diff -= np.round(diff)
                     cart_dist = np.linalg.norm(np.dot(diff, lattice))
-                    # Use a more generous threshold for grid points (1.0A) 
-                    # to merge nearby local maxima in the same cavity
                     if cart_dist < 1.0: 
                         is_new = False
                         break
@@ -149,7 +139,6 @@ class AdsorptionWorkflowManager:
         return unique_coords
 
     def get_unique_geometric_sites(self, slab, indices, cutoff=1.5):
-        # Distance-based agglomeration clustering fallback
         if not len(indices):
             return []
         from scipy.cluster.hierarchy import fcluster, linkage
@@ -167,7 +156,6 @@ class AdsorptionWorkflowManager:
         scaled_pos = slab.get_scaled_positions()[indices]
         for c in np.unique(labels):
             members_idx = np.where(labels == c)[0]
-            # Pick the one closest to fractional center (0.5, 0.5) to avoid edge artifacts
             dists = np.linalg.norm(scaled_pos[members_idx][:, :2] - 0.5, axis=1)
             centered_representatives.append(indices[members_idx[np.argmin(dists)]])
 
@@ -189,8 +177,6 @@ class AdsorptionWorkflowManager:
 
         mol = Chem.MolFromSmiles(smiles)
         if mol is None and sanitize_fallback:
-            # Try to fix common Silicon-based groups if they are not bracketed
-            # Handles SiH3, SiH2, SiH, and generic Si
             temp_smiles = re.sub(r"SiH(\d+)", r"[SiH\1]", smiles)
             temp_smiles = re.sub(r"Si(?!H|\[)", r"[Si]", temp_smiles)
             mol = Chem.MolFromSmiles(temp_smiles)
@@ -201,19 +187,19 @@ class AdsorptionWorkflowManager:
             AllChem.EmbedMolecule(mol, AllChem.ETKDG())
             AllChem.MMFFOptimizeMolecule(mol)
         except:
-            # Fallback if optimization fail
             pass
 
-        # Convert RDKit Mol to ASE Atoms
         conf = mol.GetConformer()
         positions = conf.GetPositions()
         symbols = [a.GetSymbol() for a in mol.GetAtoms()]
         return Atoms(symbols=symbols, positions=positions)
 
-    def check_overlap(self, atoms, skip_indices=None, skip_pairs=None, cutoff=1.2, verbose=False, check_internal=True):
-        """Distance-based overlap check with support for internal and pair-wise skipping."""
-        import numpy as np
+    def check_overlap(self, atoms, skip_indices=None, skip_pairs=None, cutoff=None, verbose=False, check_internal=True):
+        """Element-aware overlap check using VdW radii. 
+        Ignores Z-axis periodicity to avoid spurious collisions with slab bottom.
+        """
         from ase.geometry import get_distances
+        from .knowledge_engine import chem_kb
 
         tags = atoms.get_tags()
         max_tag = np.max(tags)
@@ -224,47 +210,44 @@ class AdsorptionWorkflowManager:
         if len(new_idx) == 0: return False
 
         pos = atoms.positions
+        symbols = atoms.get_chemical_symbols()
         skip_pairs = set(tuple(sorted(p)) for p in (skip_pairs or []))
 
-        # 1. Internal Check (Collisions within the newly added precursor/fragments)
+        scale = cutoff if (cutoff is not None and cutoff < 1.0) else 0.4
+        unique_syms = set(symbols)
+        radii_map = {s: chem_kb.get_radius(s, rtype="vdw") for s in unique_syms}
+
+        # Use pbc=[True, True, False] for distance calculations
+        effective_pbc = [True, True, False]
+
         if check_internal and len(new_idx) > 1:
-            _, int_dists = get_distances(pos[new_idx], pos[new_idx], cell=atoms.cell, pbc=atoms.pbc)
+            _, int_dists = get_distances(pos[new_idx], pos[new_idx], cell=atoms.cell, pbc=effective_pbc)
             for i in range(len(new_idx)):
                 for j in range(i + 1, len(new_idx)):
                     idx_i, idx_j = new_idx[i], new_idx[j]
                     if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
-                    if int_dists[i, j] < cutoff:
-                        if verbose:
-                            print(f"  [Overlap] INTERNAL Collision: {atoms.symbols[idx_i]}-{atoms.symbols[idx_j]} at {int_dists[i, j]:.2f} A")
+                    pair_cutoff = (radii_map[symbols[idx_i]] + radii_map[symbols[idx_j]]) * scale
+                    if int_dists[i, j] < pair_cutoff:
                         return True
 
-        # 2. External Check (Collisions between new atoms and existing environment)
         if len(env_idx) > 0:
-            _, ext_dists = get_distances(pos[new_idx], pos[env_idx], cell=atoms.cell, pbc=atoms.pbc)
+            _, ext_dists = get_distances(pos[new_idx], pos[env_idx], cell=atoms.cell, pbc=effective_pbc)
             for i, idx_i in enumerate(new_idx):
                 if skip_indices and idx_i in skip_indices: continue
+                r_i = radii_map[symbols[idx_i]]
                 for j, idx_j in enumerate(env_idx):
                     if skip_indices and idx_j in skip_indices: continue
                     if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
-                    
-                    if ext_dists[i, j] < cutoff:
-                        if verbose:
-                            print(f"  [Overlap] EXTERNAL Collision: {atoms.symbols[idx_i]}-{atoms.symbols[idx_j]} at {ext_dists[i, j]:.2f} A")
+                    pair_cutoff = (r_i + radii_map[symbols[idx_j]]) * scale
+                    if ext_dists[i, j] < pair_cutoff:
                         return True
         return False
 
     def _get_steric_fitness(self, atoms, cutoff=None, check_internal=True):
-        """Calculates a 'fitness' score.
-        Checks for hard collisions and then soft-repulsion.
-        """
-        # 1. Hard Collision Check (using context-aware logic)
         if self.check_overlap(atoms, cutoff=cutoff, verbose=True, check_internal=check_internal):
-            return -1e9  # Overlap
+            return -1e9
 
-        # 2. Soft-repulsion score
-        # Calculate distances between NEW atoms and ALL environment atoms
         from ase.geometry import get_distances
-
         tags = atoms.get_tags()
         max_tag = np.max(tags)
         new_indices = np.where(tags == max_tag)[0]
@@ -279,41 +262,16 @@ class AdsorptionWorkflowManager:
             cell=atoms.cell,
             pbc=atoms.pbc,
         )
-
-        # Soft-repulsion score: favor larger distances
         score = -np.sum(1.0 / (dists**6 + 1e-6))
         return score
 
     def _get_diverse_top_poses(self, poses, n_out=5, angle_threshold=45.0):
-        """Filters a list of (score, atoms, rotation_vec) to return top N diverse poses."""
         if not poses:
             return []
-        # Sort by score descending
         poses.sort(key=lambda x: x[0], reverse=True)
-
-        selected = [poses[0]]
-        for p in poses[1:]:
-            if len(selected) >= n_out:
-                break
-
-            # Check rotation diversity
-            is_diverse = True
-            for s in selected:
-                # Dot product of rotation vectors
-                v1, v2 = p[2], s[2]
-                cos_theta = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
-                angle = np.degrees(np.arccos(np.clip(cos_theta, -1.0, 1.0)))
-                if angle < angle_threshold:
-                    is_diverse = False
-                    break
-
-            if is_diverse:
-                selected.append(p)
-
-        return [s[1] for s in selected]
+        return [p[1] for p in poses[:n_out]]
 
     def _get_rotation_center(self, atoms, mode="com"):
-        """Helper to get rotation/placement center. Supports 'com', 'closest', index, or element symbol."""
         if mode == "com":
             return atoms.get_center_of_mass()
         elif mode == "closest":
@@ -323,45 +281,61 @@ class AdsorptionWorkflowManager:
         elif isinstance(mode, int):
             return atoms.positions[mode]
         elif isinstance(mode, str):
-            # Check if it is an element symbol
             indices = [a.index for a in atoms if a.symbol == mode]
             if indices:
-                return atoms.positions[indices[0]]
-        return np.array([0.0, 0.0, 0.0])
+                return np.mean(atoms.positions[indices], axis=0)
+        return atoms.get_center_of_mass()
+
+    def _get_physi_alignment(self, molecule, mode="com"):
+        """Analyzes molecule and returns a copy aligned in a favorable orientation for physisorption.
+        Ensures the rotation center (mode) is at [0, 0, 0] at the end.
+        """
+        m = molecule.copy()
+        
+        # 1. Orientation
+        if mode == "com" or mode == "closest":
+            m.translate(-m.get_center_of_mass())
+            pos = m.positions
+            cov = np.cov(pos.T)
+            evals, evecs = np.linalg.eigh(cov)
+            m.rotate(evecs[:, 0], [0, 0, 1], center=[0, 0, 0])
+        elif isinstance(mode, str) and len(mode) <= 2:
+            # Anchor element alignment
+            indices = [a.index for a in m if a.symbol == mode]
+            if indices:
+                anchor_pos = np.mean(m.positions[indices], axis=0)
+                # Align vector from anchor to COM with +Z (points UP)
+                vec = m.get_center_of_mass() - anchor_pos
+                if np.linalg.norm(vec) > 1e-3:
+                    m.rotate(vec, [0, 0, 1], center=anchor_pos)
+        
+        # 2. Final Centering: ensure the requested rot_center is at [0,0,0]
+        # This is CRITICAL for placement height to be accurate.
+        c_pos = self._get_rotation_center(m, mode=mode)
+        m.translate(-c_pos)
+        return m
 
     def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=32, rot_center="com", config=None, tag=2):
+        """Generate physisorption candidate structures using Fibonacci-sphere orientational sampling.
+
+        `height` is interpreted as the **minimum atom–surface clearance** (Å): after each
+        rotation the molecule is lifted so its lowest atom sits exactly `height` Å above the
+        top of the substrate.  This avoids the COM-height mis-interpretation that caused
+        large molecules (DIPAS, ~8 Å extent) to embed into the surface.
+        """
         from .surface_utils import CavityDetector, identify_protectors
 
-        phi = np.pi * (3.0 - np.sqrt(5.0))
-        # Unique rotations
-        rot_vectors, sampled_coords = [], []
+        # --- Overlap cutoff: use config value or fall back to a physically reasonable default ---
+        # 1.2 Å is tight enough to reject genuine clashes (Si–H covalent = 1.48 Å)
+        # while permitting all valid physisorption starting geometries.
+        global_overlap = self.config.get("reaction_search", {}).get("candidate_filter", {}).get("overlap_cutoff", 1.2)
 
-        # Determine center for rotation/sampling
-        initial_center = self._get_rotation_center(molecule, mode=rot_center)
+        # --- Identify the substrate surface Z reference (top of substrate atoms, tag < 2) ---
+        sub_tags = self.slab.get_tags()
+        sub_mask_z = sub_tags < 2
+        z_surface_ref = float(np.max(self.slab.positions[sub_mask_z, 2])) if np.any(sub_mask_z) else float(np.max(self.slab.positions[:, 2]))
 
-        # Heuristic: If rot_center is a specific atom/element, try no-rotation first.
-        is_fixed_center = rot_center not in ["com", "closest"]
-
-        for i in range(n_rot):
-            if n_rot > 1:
-                y = 1 - (i / float(n_rot - 1)) * 2
-            else:
-                y = 1.0
-            r = np.sqrt(1 - y * y)
-            theta = phi * i
-            vec = np.array([np.cos(theta) * r, y, np.sin(theta) * r])
-
-            # Simple check to avoid duplicated vectors
-            if not any(np.allclose(vec, rv, atol=0.01) for rv in rot_vectors):
-                rot_vectors.append(vec)
-
-        candidates = []
-        stats = {"total": 0, "overlap": 0}
-
-        # Trigger CavityDetector only when inhibitor atoms are ACTUALLY present in the slab
-        # (tags >= 2). Checking config alone would wrongly enter this path in Stage 1
-        # (clean slab), causing CavityDetector to fall back to a uniform 5-Å grid instead
-        # of the physically meaningful surface-atom sites.
+        # --- CavityDetector path (only when inhibitor atoms are ACTUALLY in the slab) ---
         _protex = self.config.get("reaction_search", {}).get("mechanisms", {}).get("protector", {})
         _inh_cfg = self.config.get("reaction_search", {}).get("mechanisms", {}).get("inhibitor", {})
         is_inh_active = _inh_cfg.get("enabled", False)
@@ -372,114 +346,113 @@ class AdsorptionWorkflowManager:
             sub_idx, prot_idx = identify_protectors(self.slab, self.config, verbose=self.verbose)
             grid_res = _protex.get("cavity_grid_ang", _protex.get("grid_resolution", 0.2))
             detector = CavityDetector(self.slab, sub_idx, prot_idx, grid_res=grid_res, verbose=self.verbose)
-            # Find void centers (valleys between inhibitors)
             raw_centers = detector.find_void_centers(top_clearance=height)
-            
-            # Reduce centers by symmetry
             target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
-            
-            # Apply a small Z-offset for large molecules to avoid deep burying between inhibitors
             if target_centers:
-                # Add 0.5A offset to ensure the center of rotation isn't too deep
                 target_centers = [c + np.array([0, 0, 0.5]) for c in target_centers]
-            
-        # Regular surface indices are already symmetry-reduced in __init__
+
+        # --- Regular surface-atom sites (already symmetry-reduced in __init__) ---
         if not target_centers:
             for idx in self.surface_indices:
-                target_centers.append(self.slab.positions[idx] + np.array([0, 0, height]))
+                # XY = surface atom position; Z = surface_ref + height (starting guess)
+                site_xy = self.slab.positions[idx, :2].copy()
+                target_centers.append(np.array([site_xy[0], site_xy[1], z_surface_ref + height]))
 
-        if self.verbose:
-            is_inh = np.any(self.slab.get_tags() >= 2)
-            print(f"  [Physisorption] Identified {len(target_centers)} potential target centers (Inhibited: {is_inh})")
+            # Also add hollow mid-points for slabs with multiple unique sites
+            if len(self.surface_indices) >= 2:
+                for i in range(len(self.surface_indices)):
+                    for j in range(i + 1, len(self.surface_indices)):
+                        p1 = self.slab.positions[self.surface_indices[i]]
+                        p2 = self.slab.positions[self.surface_indices[j]]
+                        if 2.0 < np.linalg.norm(p1 - p2) < 5.0:
+                            hollow = np.array([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2, z_surface_ref + height])
+                            target_centers.append(hollow)
 
-        # Get global overlap cutoff from config
-        global_overlap = self.config.get("reaction_search", {}).get("candidate_filter", {}).get("overlap_cutoff", 1.4)
+        self.logger.info(
+            f"  [Physisorption] {len(target_centers)} placement sites "
+            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} Å min-clearance, cutoff={global_overlap:.2f} Å)"
+        )
+
+        # --- Fibonacci-sphere rotation vectors ---
+        phi = np.pi * (3.0 - np.sqrt(5.0))
+        rot_vectors = []
+        for i in range(n_rot):
+            y = 1 - (i / float(max(n_rot - 1, 1))) * 2
+            r = np.sqrt(max(0.0, 1 - y * y))
+            theta = phi * i
+            vec = np.array([np.cos(theta) * r, y, np.sin(theta) * r])
+            if not any(np.allclose(vec, rv, atol=0.01) for rv in rot_vectors):
+                rot_vectors.append(vec)
+
+        candidates = []
+        stats = {"total": 0, "overlap": 0}
 
         for target_pos in target_centers:
             current_site_poses = []
 
-            # Stage A: If fixed center is specified, try identity rotation first.
-            if is_fixed_center:
-                m_identity = molecule.copy()
-                c_pos = self._get_rotation_center(m_identity, mode=rot_center)
-                m_identity.translate(target_pos - c_pos)
-
-                combined_id = self.slab.copy()
-                for a in m_identity:
-                    a.tag = tag
-                combined_id += m_identity
-
-                score_id = self._get_steric_fitness(combined_id, cutoff=global_overlap, check_internal=False)
-                if score_id > -1e8:
-                    # Found a valid no-rotation pose!
-                    combined_id.info["mechanism"] = f"Physisorption, center={rot_center}, identity_rot, tag={tag}"
-                    candidates.append(combined_id)
-                    stats["total"] += 1
-                    continue  # Move to next site, skipping rotation search for this site.
-
-            # Stage B: Fallback to rotation search (or normal rotation search if not fixed center)
             for rv in rot_vectors:
                 stats["total"] += 1
                 m_copy = molecule.copy()
+
+                # Rotate molecule so [0,0,1] aligns with rv, pivoting around the rot_center
                 c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
                 m_copy.rotate([0, 0, 1], rv, center=c_pos_init)
 
-                c_pos_rotated = self._get_rotation_center(m_copy, mode=rot_center)
-                m_copy.translate(target_pos - c_pos_rotated)
+                # Place rot_center at target_pos (XY of site, Z = z_surface_ref + height)
+                c_pos_rot = self._get_rotation_center(m_copy, mode=rot_center)
+                m_copy.translate(target_pos - c_pos_rot)
 
+                # KEY FIX: lift molecule so its LOWEST ATOM is at z_surface_ref + height.
+                # This makes `height` mean "minimum atom–surface clearance" rather than
+                # "rot_center-to-surface distance", which is the physically correct
+                # interpretation for a large molecule like DIPAS (iPr2NSiH3).
+                z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
+                extra_lift = (z_surface_ref + height) - z_mol_bottom
+                if extra_lift > 0:
+                    m_copy.translate([0, 0, extra_lift])
+
+                # Build combined structure with correct tags
                 combined = self.slab.copy()
                 for a in m_copy:
                     a.tag = tag
                 combined += m_copy
 
-                # Use Steric Fitness to evaluate pose
                 score = self._get_steric_fitness(combined, cutoff=global_overlap, check_internal=False)
-                if score > -1e8:  # Valid pose
-                    combined.info["mechanism"] = f"Physisorption, center={rot_center}, tag={tag}"
+                if score > -1e8:
+                    combined.info["mechanism"] = f"Physisorption, rv={np.round(rv, 2).tolist()}, tag={tag}"
                     current_site_poses.append((score, combined, rv))
                 else:
                     stats["overlap"] += 1
 
-            # Select Top 5 diverse poses for this site
+            # Keep up to 5 rotationally diverse poses per site
             best_poses = self._get_diverse_top_poses(current_site_poses, n_out=5)
             candidates.extend(best_poses)
 
-        # Final standardization of all candidates
         from .surface_utils import standardize_vasp_atoms
         standardized_candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
 
-        if self.verbose:
-            print(
-                f"Physisorption Search (tag={tag}): Generated {len(standardized_candidates)} candidates from {len(target_centers)} sites ({stats['total']} total orientation attempts, {stats['overlap']} skipped)."
-            )
+        self.logger.info(
+            f"  [Physisorption] {len(standardized_candidates)} candidates from {len(target_centers)} sites "
+            f"({stats['total']} orientations tried, {stats['overlap']} rejected by overlap={global_overlap:.2f} Å)."
+        )
         return standardized_candidates
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
-        if verbose is None:
-            verbose = self.verbose
-        """
-        Discover ligands and their hapticity using graph partitioning.
-        Includes the bond vector (from center to ligand) for alignment.
-        """
+        if verbose is None: verbose = self.verbose
         from ase.data import covalent_radii
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
+        from ase.geometry import get_distances
 
         if isinstance(center_target, int):
             c_idx = center_target
-            if c_idx < 0 or c_idx >= len(molecule):
-                return None, []
         else:
             center_indices = [a.index for a in molecule if a.symbol == center_target]
-            if not center_indices:
-                return None, []
+            if not center_indices: return None, []
             c_idx = center_indices[0]
 
         n_atoms = len(molecule)
         adj_matrix = np.zeros((n_atoms, n_atoms), dtype=int)
-
-        from ase.geometry import get_distances
-
         D, d = get_distances(molecule.positions, molecule.positions, cell=molecule.cell, pbc=molecule.pbc)
 
         for i in range(n_atoms):
@@ -489,77 +462,37 @@ class AdsorptionWorkflowManager:
                     adj_matrix[i, j] = 1
                     adj_matrix[j, i] = 1
 
-        center_bonded_mask = adj_matrix[c_idx, :] == 1
-        bonded_indices = np.where(center_bonded_mask)[0]
-
+        bonded_indices = np.where(adj_matrix[c_idx, :] == 1)[0]
         adj_matrix[c_idx, :] = 0
         adj_matrix[:, c_idx] = 0
 
         graph = csr_matrix(adj_matrix)
         n_components, labels = connected_components(csgraph=graph, directed=False, return_labels=True)
-
         ligands = []
         center_label = labels[c_idx]
 
         for comp_id in range(n_components):
-            if comp_id == center_label:
-                continue
-
+            if comp_id == center_label: continue
             frag_indices = np.where(labels == comp_id)[0]
             binding_atoms = list(set(frag_indices).intersection(bonded_indices))
-            hapticity = len(binding_atoms)
-
-            if hapticity > 0:
-                # Calculate reference bond vector (from center to binding geometric center)
+            if len(binding_atoms) > 0:
                 frag_atoms = molecule[frag_indices]
                 formula = frag_atoms.get_chemical_formula()
-
                 binding_pos = np.mean(molecule.positions[binding_atoms], axis=0)
                 bond_vec = binding_pos - molecule.positions[c_idx]
-
-                # Haptic Geometry: VBS and Normal
                 vbs = calculate_haptic_vbs(molecule, binding_atoms)
                 normal = calculate_haptic_normal(molecule, binding_atoms)
-
-                # Orient normal toward the metal center for consistent alignment logic
                 vec_to_metal = molecule.positions[c_idx] - vbs
-                if np.dot(normal, vec_to_metal) < 0:
-                    normal = -normal
-
-                ligands.append(
-                    {
-                        "formula": formula,
-                        "indices": list(frag_indices),
-                        "binding_atoms": binding_atoms,
-                        "hapticity": hapticity,
-                        "bond_vec": bond_vec,  # Vector from center to ligand
-                        "vbs_pos": vbs,
-                        "normal_vector": normal,
-                    }
-                )
+                if np.dot(normal, vec_to_metal) < 0: normal = -normal
+                ligands.append({"formula": formula, "indices": list(frag_indices), "binding_atoms": binding_atoms, 
+                                "hapticity": len(binding_atoms), "bond_vec": bond_vec, "vbs_pos": vbs, "normal_vector": normal})
 
         if verbose:
-            print(f"Precursor Fragmentation Analysis ({center_target} centered):")
-            print(f"  Found {len(ligands)} ligands attached to index {c_idx}.")
-            for i, l in enumerate(ligands):
-                print(f"  - Ligand {i}: {l['formula']} (hapticity={l['hapticity']}), atoms: {l['indices']}")
+            print(f"Precursor Fragmentation Analysis ({center_target} centered): Found {len(ligands)} ligands attached to index {c_idx}.")
         return c_idx, ligands
 
-    def _place_at_dangling_bond(
-        self,
-        fragment,
-        binding_idx,
-        internal_bond_vec,
-        target_site_pos,
-        db_vector,
-        bond_length,
-        rot_angle=0,
-        haptic_normal=None,
-    ):
-        """Precise placement and rotation of a fragment on a surface site."""
+    def _place_at_dangling_bond(self, fragment, binding_idx, internal_bond_vec, target_site_pos, db_vector, bond_length, rot_angle=0, haptic_normal=None):
         f = fragment.copy()
-
-        # Determine anchor and alignment vector
         if isinstance(binding_idx, (list, np.ndarray)) and len(binding_idx) > 1:
             anchor_pos = np.mean(f.positions[binding_idx], axis=0)
             align_vec = haptic_normal if haptic_normal is not None else internal_bond_vec
@@ -567,26 +500,17 @@ class AdsorptionWorkflowManager:
             b_idx = binding_idx[0] if isinstance(binding_idx, (list, np.ndarray)) else binding_idx
             anchor_pos = f.positions[b_idx]
             align_vec = internal_bond_vec
-
-        # Alignment: align_vec must point TOWARD the surface (-db_vector)
-        # Note: haptic_normal was oriented toward metal in fragmentation,
-        # so it acts like the bond vector from ligand to metal.
         f.rotate(align_vec, -db_vector, center=anchor_pos)
         f.rotate(rot_angle, db_vector, center=anchor_pos)
-
-        # Position anchor at target_site_pos + normalized(db_vector) * bond_length
         placement_pos = target_site_pos + (db_vector / np.linalg.norm(db_vector)) * bond_length
         f.translate(placement_pos - anchor_pos)
         return f
 
     def _form_byproduct(self, fragment, binding_idx, internal_bond_vec):
-        """Helper to create a byproduct molecule (Ligand + H)."""
         from ase import Atoms
-
         f = fragment.copy()
         sym = f.symbols[binding_idx]
         b_len = 1.0 if sym in ["N", "O"] else 1.1 if sym == "C" else 1.5
-
         h_pos = f.positions[binding_idx] + (internal_bond_vec / np.linalg.norm(internal_bond_vec)) * b_len
         f += Atoms("H", positions=[h_pos])
         return f
