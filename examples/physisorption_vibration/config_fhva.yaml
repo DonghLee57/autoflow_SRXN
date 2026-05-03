@@ -1,0 +1,14 @@
+# FHVA Configuration
+input_structure: "dipas_sio2_relaxed.vasp"
+engine:
+  potential:
+    backend: "mace"
+    device:  "cpu"
+    dtype:   "float64"
+
+analysis:
+  vibrational:
+    name: "results/fhva"
+    displacement_ang: 0.01
+    phva:
+      enabled: false

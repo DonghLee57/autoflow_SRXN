@@ -14,24 +14,32 @@ For a surface atom $i$ with $n$ existing covalent neighbors and a target valence
 - **Dual Bonds ($m=2$)**: Optimized for tetrahedral/square-planar environments (e.g., Si(100) dimers), spreading vectors according to $AX_2E_2$ VSEPR geometry.
 - **Surface Saturation ($m \ge 3$)**: Distributes vectors in a symmetric conical spread around the primary vacuum-pointing axis.
 
-### 1.2 Asymmetric Substrate Factory
+### 1.2 Chemisorption Builder — Geometry-Only Initial Placement
+The chemisorption builder generates initial structures algorithmically without invoking any MLIP, making Stage 2 candidate generation fully potential-free.
+
+Key algorithmic properties:
+- **Element-specific bond lengths**: The center→surface bond length is computed from ASE covalent radii ($r_{center} + r_{surface}$) rather than a hard-coded Si–Si value. This correctly handles Si–O (~1.77 Å), Si–N (~1.82 Å), and other chemistries.
+- **Best-clearance rotation selection**: All `rot_steps` orientations × both site permutations are evaluated for each dangling-bond pair. The pose with the largest **minimum non-bonded clearance** (distance to nearest non-bonded neighbour) is retained, maximising the distance budget for the subsequent MLIP relaxation.
+- **`_min_nonbonded_clearance` scorer**: Computes the minimum inter-atomic distance between newly placed fragments and the slab, explicitly excluding the bond-forming atom pairs listed in `skip_pairs`.
+
+### 1.4 Asymmetric Substrate Factory
 The framework automates the generation of complex surface models with precise termination control.
 - **Asymmetric Termination**: Supports separate atomic plane constraints for top and bottom surfaces (e.g., Silanol-terminated top vs. Oxygen-terminated bottom).
 - **Side-Specific Passivation**: Enables independent passivation coverage for different sides of the slab, critical for modeling realistic asymmetric experimental conditions.
 - **Steric-Constraint Expansion**: Autonomously expands the supercell to satisfy a `target_area` constraint, ensuring periodic boundary stability for large adsorbates like DIPAS.
 
-### 1.3 Partial Hessian Vibrational Analysis (PHVA)
+### 1.5 Partial Hessian Vibrational Analysis (PHVA)
 To accelerate thermodynamic calculations and kinetic modeling, the framework implements **Partial Hessian Vibrational Analysis**.
 For a system with $N_{total}$ atoms, the full Hessian matrix $H \in \mathbb{R}^{3N \times 3N}$ is approximated by a submatrix $H_{active} \in \mathbb{R}^{3N_{active} \times 3N_{active}}$:
 $$ H_{ij} \approx 0 \quad \text{if } i \text{ or } j \notin \text{Active Set} $$
 The **Active Set** is dynamically defined as the adsorbate plus all substrate atoms within a user-defined cutoff radius $R_{phva}$ (default 6.0 Å), significantly reducing the number of force calls required for frequency extraction.
 
-### 1.4 Thermodynamics & Gibbs Free Energy
+### 1.6 Thermodynamics & Gibbs Free Energy
 The engine integrates vibrational data to calculate finite-temperature thermodynamic properties using the Harmonic approximation.
 - **Vibrational Partition Function**: $Z_{vib} = \prod_i \frac{e^{-\beta \hbar \omega_i / 2}}{1 - e^{-\beta \hbar \omega_i}}$
 - **Gibbs Free Energy**: $G(T) = E_{pot} + ZPE + \int C_p dT - TS$
 
-### 1.5 Iterative Mode-Following Refinement
+### 1.7 Iterative Mode-Following Refinement
 To ensure all generated structures represent true local minima, the framework implements an iterative mode-following algorithm. If a relaxed structure contains imaginary vibrational modes (frequency < -0.1 THz), the system is autonomously perturbed along the Cartesian displacement vector $\mathbf{u}_k$ of the most unstable mode:
 $$ \mathbf{R}_{new} = \mathbf{R}_{old} + \alpha \frac{\mathbf{u}_k}{\|\mathbf{u}_k\|} $$
 where $\mathbf{u}_{k,i} = \mathbf{e}_{k,i} / \sqrt{m_i}$ is derived from the mass-weighted eigenvector $\mathbf{e}_k$. The process repeats until all significant imaginary frequencies are eliminated.
@@ -95,6 +103,8 @@ All relaxation and force calculations are routed through `SimulationEngine` (`sr
 
 Per-pair outer switching distances are stored in `src/zbl_pairs.json` for 14 chemically relevant elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr). Each value is set to approximately the equilibrium bond length (Pyykko & Atsumi single-bond radii, scaled by 1.056) so ZBL is essentially inactive at normal bonding distances and only activates at sub-bonding close contacts. Element pairs absent from the file fall back to the global `cutoff_outer` parameter.
 
+**ExplosionMonitor** is automatically attached to every optimizer and MD integrator. It checks the per-atom energy at each step and raises a `RuntimeError` (gracefully caught by the engine) if: the energy turns positive, jumps by more than 10 eV/atom, or shifts by an order of magnitude relative to the initial value. This prevents MLIP instabilities at the strained geometries produced by the structure search from consuming the full step budget.
+
 **Configuration:**
 ```yaml
 engine:
@@ -114,13 +124,12 @@ engine:
 ```
 
 ### 3.3 Directory Structure
-- `src/`: Core package logic (surface utils, adsorption managers, vibration analysis).
+- `autoflow_srxn/`: Main package.
+  - `core/`: Advanced sub-modules — `CoverageManager` (thermodynamic coverage), `knowledge.py` (chemical KB), `ts_engine.py` (transition-state utilities).
   - `zbl_pairs.json`: Per-pair ZBL outer switching cutoffs for 14 elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr).
 - `examples/`:
-    - `partial_hamiltonian_vibrational_analysis/`: Full PHVA vs FHVA benchmark on SiO2(001) + DIPAS.
-    - `mode_following_relaxation/`: Automated stability refinement of the DIPAS precursor.
-    - `example_dipas/`: Si(100) surface reaction stage-wise discovery.
-    - `physisorption_vibration/`: Physisorption vibrational analysis example.
+    - `DIPAS_on_Si110/`: Ethanol inhibitor + DIPAS precursor on Si(110) — physisorption + dissociative chemisorption discovery.
+    - `physisorption_vibration/`: Physisorption vibrational analysis (PHVA / FHVA benchmarking).
 - `structures/`: Base crystal and precursor configurations (VASP format).
 - `unittests/`: Unit test suite for potential engines and ZBL calculator.
 

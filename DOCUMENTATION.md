@@ -9,12 +9,12 @@ Settings that control the overall execution behavior of the screening engine.
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `restart` | Boolean | `false` | If `true`, forces re-calculation of all pairs. If `false`, skips pairs where `results_final_verified.extxyz` already exists. |
+| `restart` | Boolean | `false` | If `true`, forces re-calculation of all pairs. If `false`, skips pairs where `final_results.extxyz` already exists. |
 
 ---
 
 ## 2. Path Configuration
-Defines where to find input structures and where to save results.
+Defines where to find input structures and where to manage results.
 
 | Parameter | Description |
 | :--- | :--- |
@@ -24,8 +24,8 @@ Defines where to find input structures and where to save results.
 | `inhibitors_dir` | Directory containing multiple inhibitor files for batch screening. |
 | `substrate_bulk` | Path to the bulk crystalline structure (used if `slab_generation` is enabled). |
 | `substrate_slab` | Path to a pre-generated slab file. |
-| `output_prefix` | Base directory name for output files (default: `discovery`). |
-| `include_no_inhibitor` | If `true`, includes a baseline run without any inhibitor for each precursor. |
+| `output_prefix` | Base directory name for batch output folders (default: `results`). |
+| `include_no_inhibitor` | If `true`, includes a 'clean' baseline run for each precursor. |
 
 ---
 
@@ -37,114 +37,126 @@ Handles the creation and modification of the substrate surface.
 - **`miller`**: List of 3 integers (e.g., `[1, 0, 0]`). Miller indices of the surface plane.
 - **`thickness_ang`**: Float (Å). Minimum thickness of the slab.
 - **`vacuum_ang`**: Float (Å). Vacuum padding on both sides.
-- **`target_area_ang2`**: Float (Å²). Target surface area; the engine will find the best supercell expansion to match this.
-- **`supercell_matrix`**: List of lists (e.g., `[[2,0],[0,2]]`). Explicit supercell expansion matrix. Overrides `target_area_ang2` if set.
+- **`target_area_ang2`**: Float (Å²). Target surface area; the engine selects the largest supercell that does not exceed this value while optimising aspect ratio.
+- **`supercell_matrix`**: List of lists (e.g., `[[2,0],[0,2]]`). Explicit supercell matrix. Overrides `target_area_ang2` if set.
 - **`top_termination`**: String (Element symbol, e.g., `"O"`). Ensures the top surface ends with the specified element.
 - **`bottom_termination`**: String (Element symbol, e.g., `"O"`). Ensures the bottom surface ends with the specified element.
 
-### 3.2 Reconstruction
-- **`enabled`**: Boolean. Apply surface reconstruction patterns.
-- **`strategy`**: `"auto"`, `"dimerization"`, `"rumpling"`, or `"tilt"`.
-- **`side`**: `"top"`, `"bottom"`, or `"both"`.
+### 3.2 Reconstruction & Passivation
+- **`reconstruction`**: Apply automated surface reconstruction (auto/ionic/covalent/metallic).
+- **`passivation`**: Saturate dangling bonds (typically on the bottom side using "H").
 
-### 3.3 Passivation
-- **`enabled`**: Boolean. Saturate dangling bonds (typically on the bottom side).
-- **`coverage`**: Float (0.0 to 1.0). Fractional coverage of the chosen element.
-- **`element`**: String (e.g., `"H"`). Passivating element.
-- **`side`**: `"bottom"` (recommended) or `"top"`.
-
-### 3.4 Surface Analysis
-Settings used by the engine to analyze the local environment of surface atoms.
-- **`symprec`**: Float (Å). Precision for symmetry and site equivalence detection.
-- **`ideal_coordination`**: Dictionary mapping elements to their expected bulk coordination numbers (e.g., `Si: 4`, `O: 2`). This is used to detect "dangling bonds" for passivation and active site mapping.
-
-### 3.5 Slab Relaxation
-Initial geometry optimization of the substrate.
-- **`enabled`**: Boolean. Perform optimization.
-- **`fmax`**: Float (eV/Å). Force convergence threshold.
-- **`steps`**: Integer. Max optimization steps.
-- **`frozen_z_ang`**: Float (Å). Fix atoms below this Z-height to simulate the bulk interior.
-
-### 3.6 Slab Equilibration
-Thermal pre-equilibration of the substrate using Molecular Dynamics.
-- **`enabled`**: Boolean. Perform MD on the clean slab.
-- **`frozen_z_ang`**: Float (Å). Fix bottom layers during MD.
+### 3.3 Slab Relaxation & Equilibration
+- **`slab_relaxation.enabled`**: Geometry optimisation of the clean substrate before adsorption search.
+- **`slab_relaxation.frozen_z_ang`**: Fix atoms below this Z-height to simulate the bulk interior during relaxation.
+- **`equilibration.enabled`**: NVT MD pre-equilibration of the substrate at `engine.md.temperature_K`.
 
 ---
 
 ## 4. Reaction Search (`reaction_search`)
-Defines how the engine explores the configuration space of adsorbates on the surface.
+Explores the configuration space of adsorbates through two sequential stages.
 
-### 4.1 Mechanisms
-#### Physisorption
-- **`placement_height`**: Float (Å). Initial distance between the molecule's COM and the surface.
-- **`rot_steps`**: Integer. Number of rotational orientations to sample for each site.
+### 4.1 Stage-Specific Controls
+The `mechanisms` block is now split into two independent stages. Each stage defines its own `physisorption` and `chemisorption` settings.
 
-#### Chemisorption
-- **`precursor_center`**: String (Element symbol). The atom in the precursor that intends to bond with the surface.
-- **`inhibitor_center`**: String (Element symbol). The atom in the inhibitor that intends to bond with the surface.
+#### `inhibitor` (Stage 1)
+- **`enabled`**: Boolean. Whether to perform inhibitor pre-treatment.
+- **`center`**: String or Integer. The binding atom in the inhibitor (Element or index).
+- **`branching_limit`**: Integer. Number of top-ranked inhibited surfaces to carry over to Stage 2.
+- **`physisorption` / `chemisorption`**: Nested blocks to enable/configure mechanisms for this stage.
 
-#### Inhibition (Stage 1 Branching)
-- **`branching_limit`**: Integer. The number of top-ranked inhibited surfaces to carry over to Stage 2 (precursor adsorption).
+#### `precursor` (Stage 2)
+- **`center`**: String or Integer. The central reactive atom in the precursor.
+- **`physisorption` / `chemisorption`**: Nested blocks to enable/configure mechanisms for this stage.
+
+### 4.2 Shared Mechanism Parameters
+- **`physisorption.placement_height`**: Float (Å). Initial molecule height above the surface.
+- **`physisorption.rot_steps`**: Integer. Fibonacci-sphere orientations sampled per site.
+- **`chemisorption.rot_steps`**: Integer. Rotational sampling for covalent bond alignment.
+
+### 4.3 Physisorption Site Selection Logic
+The site pool for physisorption differs between Stage 1 and Stage 2:
+
+| Stage | Slab state | Site selection |
+| :--- | :--- | :--- |
+| **Stage 1** (Inhibitor) | Clean | Symmetry-reduced surface atom positions + `placement_height` offset |
+| **Stage 2** (Precursor) | Inhibitor-decorated | `CavityDetector` — finds void centres between inhibitor molecules via EDT distance transform + gravity pull toward the substrate |
+
+`CavityDetector` is only activated when the slab contains atoms with `tag ≥ 2` (i.e., actual inhibitor atoms are present). Running Stage 1 on a clean slab always uses the surface-atom path.
+
+### 4.4 Chemisorption Algorithm
+Bond placement is purely geometric (no MLIP required):
+
+1. **Ligand discovery**: The precursor is graph-partitioned at `center` to enumerate detachable ligands and their hapticity.
+2. **Dangling-bond mapping**: VSEPR vectors are generated for under-coordinated surface atoms. Directional filter (`db_vec[2] > 0.1`) ensures only vacuum-pointing bonds are used. Symmetry-equivalent pairs are deduplicated.
+3. **Element-specific bond length**: The center→surface bond is placed at $r_{cov}(\text{center}) + r_{cov}(\text{surface})$ (ASE covalent radii). This replaces the previous Si–Si hardcode of 2.35 Å.
+4. **Best-clearance selection**: All `rot_steps` angles × both site permutations are evaluated. The pose with the largest minimum non-bonded clearance (distance to nearest non-bonded neighbour, excluding bond-forming pairs) is kept. This maximises the geometric buffer available for the subsequent MLIP relaxation and reduces energy blow-up risk.
+
+### 4.5 Candidate Filter
+- **`overlap_cutoff`**: Hard rejection threshold (Å) for any non-bonded atom pair.
+- **`symprec`**: Symmetry-equivalence cutoff for site deduplication.
+- **`max_pair_dist`**: Maximum distance (Å) between two dangling-bond sites to form a dissociative chemisorption pair.
 
 ---
 
 ## 5. Verification Pipeline (`verification`)
-Standardized multi-step validation for discovery candidates.
+Standardized validation for discovery candidates.
 
-### 5.1 Stages
-1. **Relaxation**: Local geometry optimization using BFGS/LBFGS.
-2. **Equilibration (NVT MD)**:
-   - **`temperature_K`**: Float (K). Simulation temperature.
-   - **`md_steps`**: Integer. Number of Langevin MD steps.
-   - **`timestep_fs`**: Float (fs). MD integration time step.
-3. **Post-Relax**: (Optional) Final minimization of the MD-sampled structure to ensure energy consistency.
+### 5.1 Verification Logic
+- **`relaxation`**: Local geometry optimisation (BFGS / LBFGS / FIRE / GPMin). The `optimizer` key in `engine.relaxation` selects the algorithm.
+- **`equilibration`**: Optional NVT MD sampling for thermal stability assessment.
+- **`selected_indices`**: List or expression (e.g., `[0, 5, 10]`). Only process specific candidate indices. If `null`, all candidates are verified.
+
+**Explosion safety**: An `ExplosionMonitor` is attached to every optimizer and MD integrator. It halts the calculation if the per-atom energy turns positive, jumps by more than 10 eV/atom, or shifts by an order of magnitude relative to the initial value. The candidate is discarded and the workflow continues rather than consuming the full step budget on a broken geometry.
 
 ### 5.2 Adsorption Energy ($E_{ads}$)
 Calculated using: $E_{ads} = E_{total} - (E_{gas} + E_{base})$
-- **$E_{gas}$**: Pre-calculated optimized energy of the molecule in vacuum.
-- **$E_{base}$**: Potential energy of the surface substrate before this specific adsorption event.
+- **$E_{gas}$**: Optimized energy of the isolated molecule.
+- **$E_{base}$**: Potential energy of the surface (potentially inhibited) before adsorption.
 
 ---
 
-## 6. Simulation Engine (`engine`)
-Configures the interatomic potential backend and hardware settings.
+## 6. Output Management & Directory Structure
+AutoFlow-SRXN uses a hierarchical output structure for clear traceability.
 
-### 6.1 Common Parameters
-| Parameter | Default | Description |
-| :--- | :--- | :--- |
-| `backend` | `"mace"` | Selection of the potential: `"mace"`, `"sevennet"`, or `"emt"`. |
-| `device` | `"cpu"` | Compute device: `"cpu"` or `"cuda"`. |
-| `dtype` | `"float64"` | Numerical precision: `"float32"` or `"float64"` (Recommended). |
+### 6.1 Folder Naming
+Each batch pair follows the naming convention:
+`{output_prefix}/{inhibitor}_pretreated_{precursor}/`
+*(Note: If no inhibitor is used, `{inhibitor}` defaults to `clean`.)*
 
-### 6.2 MACE Specifics
-- **`model`**: `"small"`, `"medium"`, or `"large"`. Refers to the MACE-MP foundation model size.
-- **`d3`**: Boolean. Enable/disable Grimme's D3 dispersion correction.
-
-### 6.3 SevenNet Specifics
-- **`model`**: Path to a `.pth` checkpoint or a predefined name (e.g., `"7net-omni"`, `"7net-mf-ompa"`, `"7net-0"`).
-- **`modal`**: String. Used to select a specific **task** or **fidelity** level in multi-task architectures (like SevenNet-Omni). This ensures results are consistent with the specific DFT settings used for training. Common tasks include:
-    - `"mpa"`: PBE+U (Recommended for general bulk and surface studies).
-    - `"matpes_r2scan"`: r²SCAN level of theory.
-    - `"omol25_low"`: ωB97M-V level of theory for small molecules.
-    - `"omat24"`: High-fidelity PBE for high-force configurations.
-- **`enable_flash`**: Boolean. Enables FlashAttention-2 (GPU only) to reduce memory usage.
-- **`enable_cueq`**: Boolean. Enables cuEquivariance acceleration (GPU only).
-
-### 6.4 EMT (Effective Medium Theory)
-- No additional parameters. Use exclusively for rapid workflow testing on simple metals and light elements.
-
-### 6.5 ZBL Short-Range Repulsion
-Repulsive potential at very short distances to prevent non-physical atom overlaps during MD or aggressive relaxation.
-- **`enabled`**: Boolean. Enable ZBL mixing.
-- **`cutoff_inner`**: Float (Å). Distance below which ZBL is fully active.
-- **`cutoff_outer`**: Float (Å). Global fallback distance above which ZBL is inactive.
-
----
-
-## 7. Output Files
+### 6.2 Internal File Structure
+Inside each run directory:
 - **`workflow.log`**: Detailed execution trace.
-- **`energylog.csv`**: Tabulated energy data for all verified candidates.
-- **`structures_candidates.extxyz`**: All generated initial candidates.
-- **`structures_relaxed.extxyz`**: Structures after relaxation/MD verification.
-- **`structures_final.extxyz`**: Final verified stable structures with energy metadata.
+- **`stage1_inhibitor/`**: Intermediate candidates for the inhibitor stage.
+  - `stage1_inhibitor_candidates.extxyz`: All generated poses.
+  - `stage1_inhibitor_relaxed.extxyz`: Verified (relaxed) poses with energy metadata.
+- **`stage2_precursor/`**: Intermediate candidates for the precursor stage (same naming pattern).
+- **`final_results.extxyz`**: Final verified stable structures, sorted by adsorption energy.
+- **`ref_energies.log`**: Gas-phase reference energies for all unique molecules (written once per batch).
+
+---
+
+## 7. Simulation Engine (`engine`)
+
+### 7.1 Backend Selection
+
+| Backend | Description | Interface |
+| :--- | :--- | :--- |
+| `mace` | MACE-MP equivariant GNN (89 elements, Materials Project training set) | `mace.calculators.mace_mp` |
+| `sevennet` | SevenNet E(3)-equivariant GNN, strong for surface catalysis | `sevenn.calculator.SevenNetCalculator` |
+| `emt` | Effective Medium Theory (simple metals only). Use for smoke-tests only. | `ase.calculators.emt.EMT` |
+
+### 7.2 Optimizer Options (`engine.relaxation.optimizer`)
+
+| Optimizer | Best for |
+| :--- | :--- |
+| `BFGS` (default) | General surface optimisations near equilibrium |
+| `LBFGS` | Large supercells (> 500 atoms) — reduced memory |
+| `FIRE` | Highly strained initial geometries |
+| `CG_FIRE` | Two-stage: SciPy CG escape then FIRE fine-tune |
+| `GPMin` | Expensive calculators where minimising force calls matters |
+
+### 7.3 Key Engine Parameters
+- **`dtype`**: `"float32"` (MD / coarse screening) or `"float64"` (geometry optimisation, vibrations).
+- **`d3`**: Enable Grimme D3(BJ) dispersion — recommended for physisorption and weakly-bound precursors.
+- **`zbl.enabled`**: Add ZBL screened-Coulomb repulsion to prevent MLIP instabilities at sub-bonding distances.

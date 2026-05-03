@@ -14,14 +14,31 @@ class AdsorptionWorkflowManager:
     """Generalized Adsorption Manager with Mechanistic Logging and Visual Clarity."""
 
     def __init__(self, slab, config=None, symprec=0.2, verbose=False):
-        self.slab = slab
+        from .surface_utils import standardize_vasp_atoms
+        self.slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
         self.config = config if config is not None else {}
         self.verbose = verbose
         self.symprec = symprec
         self.logger = get_workflow_logger()
 
-        z_max = slab.positions[:, 2].max()
-        all_surface = np.where(slab.positions[:, 2] > z_max - 1.5)[0]
+        tags = slab.get_tags()
+        # Identify substrate surface (tags < 2)
+        sub_mask = (tags < 2)
+        if np.any(sub_mask):
+            z_max_sub = slab.positions[sub_mask, 2].max()
+            sub_surface = np.where(sub_mask & (slab.positions[:, 2] > z_max_sub - 1.5))[0]
+        else:
+            sub_surface = np.array([], dtype=int)
+
+        # Identify inhibitor surface (tags >= 2)
+        inh_mask = (tags >= 2)
+        if np.any(inh_mask):
+            z_max_inh = slab.positions[inh_mask, 2].max()
+            inh_surface = np.where(inh_mask & (slab.positions[:, 2] > z_max_inh - 1.5))[0]
+        else:
+            inh_surface = np.array([], dtype=int)
+
+        all_surface = np.unique(np.concatenate([sub_surface, inh_surface]))
         self.surface_indices = self.get_unique_surface_indices(slab, all_surface, symprec=self.symprec)
         self.logger.info(
             f"Surface Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites."
@@ -83,6 +100,53 @@ class AdsorptionWorkflowManager:
             except Exception:
                 pass
         return self.get_unique_geometric_sites(slab, indices)
+
+    def get_unique_coordinates(self, slab, coords, symprec=0.2):
+        """Reduces a set of arbitrary Cartesian coordinates to symmetry-unique ones."""
+        if not coords:
+            return []
+        # Find symmetry of the SUBSTRATE only to avoid symmetry breaking by adsorbates
+        sub_indices = np.where(slab.get_tags() < 2)[0]
+        sub_slab = slab[sub_indices]
+        
+        lattice = sub_slab.get_cell()
+        positions = sub_slab.get_scaled_positions()
+        numbers = sub_slab.get_atomic_numbers()
+        
+        sym = spglib.get_symmetry((lattice, positions, numbers), symprec=symprec)
+        if not sym:
+            return coords
+
+        rotations = sym['rotations']
+        translations = sym['translations']
+        
+        unique_coords = []
+        inv_lattice = np.linalg.inv(lattice)
+
+        for c in coords:
+            # Convert to fractional
+            c_frac = np.dot(c, inv_lattice)
+            is_new = True
+            
+            for uc in unique_coords:
+                uc_frac = np.dot(uc, inv_lattice)
+                # Check if c_frac can be mapped to uc_frac via any symmetry operation
+                for r, t in zip(rotations, translations):
+                    mapped = np.dot(r, c_frac) + t
+                    diff = mapped - uc_frac
+                    diff -= np.round(diff) # PBC wrap
+                    # Check Cartesian distance
+                    cart_dist = np.linalg.norm(np.dot(diff, lattice))
+                    # Use a more generous threshold for grid points (1.0A) 
+                    # to merge nearby local maxima in the same cavity
+                    if cart_dist < 1.0: 
+                        is_new = False
+                        break
+                if not is_new:
+                    break
+            if is_new:
+                unique_coords.append(c)
+        return unique_coords
 
     def get_unique_geometric_sites(self, slab, indices, cutoff=1.5):
         # Distance-based agglomeration clustering fallback
@@ -146,70 +210,55 @@ class AdsorptionWorkflowManager:
         symbols = [a.GetSymbol() for a in mol.GetAtoms()]
         return Atoms(symbols=symbols, positions=positions)
 
-    def check_overlap(self, atoms, cutoff=None, verbose=False):
-        """Rigid-body overlap check using a configurable threshold.
-        Supports multi-stage tagging:
-          - Substrate: Tags 0, 1
-          - Adsorbates: Tags >= 2
-        """
+    def check_overlap(self, atoms, skip_indices=None, skip_pairs=None, cutoff=1.2, verbose=False, check_internal=True):
+        """Distance-based overlap check with support for internal and pair-wise skipping."""
         import numpy as np
         from ase.geometry import get_distances
 
-        cand_filter = self.config.get("reaction_search", {}).get("candidate_filter", {})
-        env_cutoff = cand_filter.get("overlap_cutoff", 2.5)
-        # Tighter threshold for substrate-adsorbate contacts (allows bonding proximity)
-        sub_cutoff = 1.5
-
-        if cutoff is not None:
-            # If a local cutoff is provided (e.g. from chemisorption builder), use it for everything
-            env_cutoff = cutoff
-            sub_cutoff = cutoff
-
-        pos = atoms.positions
-        cell = atoms.cell
-        pbc = atoms.pbc
-
         tags = atoms.get_tags()
         max_tag = np.max(tags)
+        if max_tag < 2: return False
 
-        if max_tag < 2:
-            return False
+        new_idx = np.where(tags == max_tag)[0]
+        env_idx = np.where(tags < max_tag)[0]
+        if len(new_idx) == 0: return False
 
-        # We only check distance between the atoms added in the CURRENT stage (highest tag)
-        # and all other atoms.
-        new_indices = np.where(tags == max_tag)[0]
-        if len(new_indices) == 0:
-            return False
+        pos = atoms.positions
+        skip_pairs = set(tuple(sorted(p)) for p in (skip_pairs or []))
 
-        for idx in new_indices:
-            mask = np.ones(len(atoms), dtype=bool)
-            mask[tags == max_tag] = False  # Skip internal checks
-            mask_indices = np.where(mask)[0]
+        # 1. Internal Check (Collisions within the newly added precursor/fragments)
+        if check_internal and len(new_idx) > 1:
+            _, int_dists = get_distances(pos[new_idx], pos[new_idx], cell=atoms.cell, pbc=atoms.pbc)
+            for i in range(len(new_idx)):
+                for j in range(i + 1, len(new_idx)):
+                    idx_i, idx_j = new_idx[i], new_idx[j]
+                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
+                    if int_dists[i, j] < cutoff:
+                        if verbose:
+                            print(f"  [Overlap] INTERNAL Collision: {atoms.symbols[idx_i]}-{atoms.symbols[idx_j]} at {int_dists[i, j]:.2f} A")
+                        return True
 
-            ref_pos = pos[idx]
-            other_pos = pos[mask]
-            other_tags = tags[mask]
-
-            _, d_list = get_distances(ref_pos, other_pos, cell=cell, pbc=pbc)
-            d_list = d_list.flatten()  # Ensure 1D array for zipping
-
-            for d, o_idx, o_tag in zip(d_list, mask_indices, other_tags):
-                # Threshold depends on whether we are hitting the substrate or another adsorbate
-                threshold = sub_cutoff if o_tag < 2 else env_cutoff
-                if d < threshold:
-                    if verbose:
-                        print(
-                            f"  [Overlap] Collision: Atom {idx}(tag {tags[idx]}) and {o_idx}(tag {o_tag}) at {d:.2f} A (Threshold: {threshold} A)"
-                        )
-                    return True
+        # 2. External Check (Collisions between new atoms and existing environment)
+        if len(env_idx) > 0:
+            _, ext_dists = get_distances(pos[new_idx], pos[env_idx], cell=atoms.cell, pbc=atoms.pbc)
+            for i, idx_i in enumerate(new_idx):
+                if skip_indices and idx_i in skip_indices: continue
+                for j, idx_j in enumerate(env_idx):
+                    if skip_indices and idx_j in skip_indices: continue
+                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
+                    
+                    if ext_dists[i, j] < cutoff:
+                        if verbose:
+                            print(f"  [Overlap] EXTERNAL Collision: {atoms.symbols[idx_i]}-{atoms.symbols[idx_j]} at {ext_dists[i, j]:.2f} A")
+                        return True
         return False
 
-    def _get_steric_fitness(self, atoms, cutoff=None):
+    def _get_steric_fitness(self, atoms, cutoff=None, check_internal=True):
         """Calculates a 'fitness' score.
         Checks for hard collisions and then soft-repulsion.
         """
         # 1. Hard Collision Check (using context-aware logic)
-        if self.check_overlap(atoms, cutoff=cutoff, verbose=False):
+        if self.check_overlap(atoms, cutoff=cutoff, verbose=True, check_internal=check_internal):
             return -1e9  # Overlap
 
         # 2. Soft-repulsion score
@@ -309,24 +358,42 @@ class AdsorptionWorkflowManager:
         candidates = []
         stats = {"total": 0, "overlap": 0}
 
+        # Trigger CavityDetector only when inhibitor atoms are ACTUALLY present in the slab
+        # (tags >= 2). Checking config alone would wrongly enter this path in Stage 1
+        # (clean slab), causing CavityDetector to fall back to a uniform 5-Å grid instead
+        # of the physically meaningful surface-atom sites.
+        _protex = self.config.get("reaction_search", {}).get("mechanisms", {}).get("protector", {})
+        _inh_cfg = self.config.get("reaction_search", {}).get("mechanisms", {}).get("inhibitor", {})
+        is_inh_active = _inh_cfg.get("enabled", False)
+        slab_has_inhibitors = np.any(self.slab.get_tags() >= 2)
+
         target_centers = []
-        conf = config if config is not None else self.config
-        _protex = (
-            conf.get("reaction_search", {}).get("mechanisms", {}).get("protector_exchange", conf.get("protector", {}))
-        )
-        if conf and _protex.get("enabled", False):
-            sub_idx, prot_idx = identify_protectors(self.slab, conf, verbose=self.verbose)
+        if self.config and (_protex.get("enabled", False) or (is_inh_active and slab_has_inhibitors)):
+            sub_idx, prot_idx = identify_protectors(self.slab, self.config, verbose=self.verbose)
             grid_res = _protex.get("cavity_grid_ang", _protex.get("grid_resolution", 0.2))
             detector = CavityDetector(self.slab, sub_idx, prot_idx, grid_res=grid_res, verbose=self.verbose)
-            target_centers = detector.find_void_centers(top_clearance=height)
-        else:
-            z_max = self.slab.positions[:, 2].max()
+            # Find void centers (valleys between inhibitors)
+            raw_centers = detector.find_void_centers(top_clearance=height)
+            
+            # Reduce centers by symmetry
+            target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
+            
+            # Apply a small Z-offset for large molecules to avoid deep burying between inhibitors
+            if target_centers:
+                # Add 0.5A offset to ensure the center of rotation isn't too deep
+                target_centers = [c + np.array([0, 0, 0.5]) for c in target_centers]
+            
+        # Regular surface indices are already symmetry-reduced in __init__
+        if not target_centers:
             for idx in self.surface_indices:
-                site = self.slab.positions[idx]
-                target_centers.append(np.array([site[0], site[1], z_max + height]))
+                target_centers.append(self.slab.positions[idx] + np.array([0, 0, height]))
+
+        if self.verbose:
+            is_inh = np.any(self.slab.get_tags() >= 2)
+            print(f"  [Physisorption] Identified {len(target_centers)} potential target centers (Inhibited: {is_inh})")
 
         # Get global overlap cutoff from config
-        global_overlap = self.config.get("reaction_search", {}).get("candidate_filter", {}).get("overlap_cutoff", 2.0)
+        global_overlap = self.config.get("reaction_search", {}).get("candidate_filter", {}).get("overlap_cutoff", 1.4)
 
         for target_pos in target_centers:
             current_site_poses = []
@@ -342,7 +409,7 @@ class AdsorptionWorkflowManager:
                     a.tag = tag
                 combined_id += m_identity
 
-                score_id = self._get_steric_fitness(combined_id, cutoff=global_overlap)
+                score_id = self._get_steric_fitness(combined_id, cutoff=global_overlap, check_internal=False)
                 if score_id > -1e8:
                     # Found a valid no-rotation pose!
                     combined_id.info["mechanism"] = f"Physisorption, center={rot_center}, identity_rot, tag={tag}"
@@ -366,7 +433,7 @@ class AdsorptionWorkflowManager:
                 combined += m_copy
 
                 # Use Steric Fitness to evaluate pose
-                score = self._get_steric_fitness(combined, cutoff=global_overlap)
+                score = self._get_steric_fitness(combined, cutoff=global_overlap, check_internal=False)
                 if score > -1e8:  # Valid pose
                     combined.info["mechanism"] = f"Physisorption, center={rot_center}, tag={tag}"
                     current_site_poses.append((score, combined, rv))
@@ -377,11 +444,15 @@ class AdsorptionWorkflowManager:
             best_poses = self._get_diverse_top_poses(current_site_poses, n_out=5)
             candidates.extend(best_poses)
 
+        # Final standardization of all candidates
+        from .surface_utils import standardize_vasp_atoms
+        standardized_candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
+
         if self.verbose:
             print(
-                f"Physisorption Search (tag={tag}): Generated {len(candidates)} candidates from {len(target_centers)} sites ({stats['total']} total orientation attempts, {stats['overlap']} skipped)."
+                f"Physisorption Search (tag={tag}): Generated {len(standardized_candidates)} candidates from {len(target_centers)} sites ({stats['total']} total orientation attempts, {stats['overlap']} skipped)."
             )
-        return candidates
+        return standardized_candidates
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
         if verbose is None:

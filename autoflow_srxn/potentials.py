@@ -6,7 +6,7 @@ import numpy as np
 from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.emt import EMT
 from ase.data import chemical_symbols as _CHEM_SYMS
-from ase.optimize import BFGS, FIRE
+from ase.optimize import BFGS, FIRE, LBFGS, GPMin
 from ase.optimize.sciopt import SciPyFminCG
 
 from .logger_utils import get_workflow_logger
@@ -187,6 +187,60 @@ class ZBLCalculator(Calculator):
         self.results["energy"] = energy
         self.results["forces"] = forces
 
+
+# ---------------------------------------------------------------------------
+# Explosion Monitoring
+# ---------------------------------------------------------------------------
+
+class ExplosionMonitor:
+    """Monitors normalized energy during dynamics to detect system instability."""
+    def __init__(self, atoms, threshold_ev_per_atom=10.0, logger=None):
+        self.atoms = atoms
+        self.n_atoms = len(atoms)
+        self.threshold_per_atom = threshold_ev_per_atom
+        self.logger = logger
+        try:
+            self.initial_e = atoms.get_potential_energy()
+        except:
+            self.initial_e = None
+            
+    def __call__(self):
+        try:
+            e = self.atoms.get_potential_energy()
+            if self.initial_e is None:
+                self.initial_e = e
+                return
+            
+            # 1. Normalize by atom count
+            e_per_atom = e / self.n_atoms
+            delta_per_atom = (e - self.initial_e) / self.n_atoms
+            
+            # 2. Check criteria
+            # - Energy becomes positive (> 1 eV/atom is usually a broken MLIP state)
+            # - Energy jumps by more than 10 eV/atom (unphysical explosion)
+            # - Total energy changes by more than an order of magnitude relative to initial
+            is_unstable = False
+            reason = ""
+            
+            if e_per_atom > 0.0:
+                is_unstable = True
+                reason = f"Positive energy ({e_per_atom:.2f} eV/atom)"
+            elif abs(delta_per_atom) > self.threshold_per_atom:
+                is_unstable = True
+                reason = f"Massive energy jump ({delta_per_atom:.2f} eV/atom)"
+            elif self.initial_e != 0 and abs(e / self.initial_e) > 10.0:
+                is_unstable = True
+                reason = f"Order-of-magnitude shift (E_curr/E_init = {e/self.initial_e:.1f})"
+
+            if is_unstable:
+                msg = f"  [ExplosionDetector] {reason}. Terminating calculation."
+                if self.logger: self.logger.error(msg)
+                raise RuntimeError(msg)
+                
+        except (RuntimeError, ValueError) as ex:
+            raise ex
+        except Exception:
+            pass 
 
 # ---------------------------------------------------------------------------
 # SimulationEngine
@@ -408,25 +462,40 @@ class SimulationEngine:
         optimizer = optimizer if optimizer is not None else relax_cfg.get("optimizer", "BFGS")
 
         self._apply_constraints(atoms, frozen_z_ang, fix_atom_indices, "relaxation")
-        calc = self.get_calculator()
-        atoms.calc = calc
+        atoms.calc = self.get_calculator()
 
         trajectory = kwargs.get("trajectory")
+        logger = get_workflow_logger()
+        monitor = ExplosionMonitor(atoms, logger=logger)
 
-        if optimizer.upper() == "CG_FIRE":
-            fmax_cg = max(fmax * 10, 0.05)
-            if verbose:
-                print(f"  [Relax] Stage 1: SciPyFminCG (fmax={fmax_cg})")
-            dyn_cg = SciPyFminCG(atoms, logfile=sys.stdout if verbose else None)
-            dyn_cg.run(fmax=fmax_cg, steps=steps // 2)
-            if verbose:
-                print(f"  [Relax] Stage 2: FIRE (fmax={fmax})")
-            dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
-            dyn_fire.run(fmax=fmax, steps=steps)
-        else:
-            opt_class = BFGS if optimizer.upper() == "BFGS" else FIRE
-            dyn = opt_class(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
-            dyn.run(fmax=fmax, steps=steps)
+        try:
+            if optimizer.upper() == "CG_FIRE":
+                fmax_cg = max(fmax * 10, 0.05)
+                if verbose:
+                    print(f"  [Relax] Stage 1: SciPyFminCG (fmax={fmax_cg})")
+                dyn_cg = SciPyFminCG(atoms, logfile=sys.stdout if verbose else None)
+                dyn_cg.attach(monitor)
+                dyn_cg.run(fmax=fmax_cg, steps=steps // 2)
+                if verbose:
+                    print(f"  [Relax] Stage 2: FIRE (fmax={fmax})")
+                dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
+                dyn_fire.attach(monitor)
+                dyn_fire.run(fmax=fmax, steps=steps)
+            elif optimizer.upper() == "GPMIN":
+                dyn = GPMin(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
+                dyn.attach(monitor)
+                dyn.run(fmax=fmax, steps=steps)
+            else:
+                opt_map = {"BFGS": BFGS, "FIRE": FIRE, "LBFGS": LBFGS}
+                opt_class = opt_map.get(optimizer.upper(), BFGS)
+                dyn = opt_class(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
+                dyn.attach(monitor)
+                dyn.run(fmax=fmax, steps=steps)
+        except RuntimeError as e:
+            if "ExplosionDetector" in str(e):
+                if verbose: print(f"  [Relax] Halted: {e}")
+            else:
+                raise e
 
         return atoms.get_potential_energy()
 
@@ -467,7 +536,18 @@ class SimulationEngine:
             temperature_K=temp_K,
             friction=1.0 / (damping * units.fs),
         )
-        dyn.run(md_steps)
+        
+        logger = get_workflow_logger()
+        monitor = ExplosionMonitor(atoms, logger=logger)
+        dyn.attach(monitor)
+        
+        try:
+            dyn.run(md_steps)
+        except RuntimeError as e:
+            if "ExplosionDetector" in str(e):
+                print(f"  [MD] Halted: {e}")
+            else:
+                raise e
 
     def get_forces(self, atoms):
         calc = self.get_calculator()

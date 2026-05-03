@@ -20,6 +20,10 @@ def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     z_min = sorted_atoms.positions[:, 2].min()
     sorted_atoms.translate([0, 0, z_min_offset - z_min])
 
+    # Preserve calculator and info
+    sorted_atoms.calc = atoms.calc
+    sorted_atoms.info = atoms.info
+
     return sorted_atoms
 
 
@@ -222,7 +226,7 @@ def passivate_surface_coverage_general(
     if not candidates:
         if verbose:
             print(f"  [Passivation] No dangling bonds found on {side} surface.")
-        return atoms
+        return standardize_vasp_atoms(atoms, z_min_offset=0.5)
 
     n_target = int(round(len(candidates) * h_coverage))
     if n_target == 0:
@@ -298,7 +302,10 @@ def passivate_surface_coverage_general(
 
     if verbose:
         print(f"  [Passivation] Successfully placed {success}/{n_target} {element} atoms on {side} surface.")
-    return current_atoms
+    
+    # Standardize output
+    atoms = standardize_vasp_atoms(current_atoms, z_min_offset=0.5)
+    return atoms
 
 
 def identify_protectors(atoms, config, verbose=False):
@@ -449,7 +456,7 @@ class CavityDetector:
             gy = int((pos[1] % ly) / self.grid_res)
             gz = int((pos[2] - z_sub_top) / self.grid_res)
 
-            ir = int(np.ceil((r + 1.2) / self.grid_res))  # 1.2A steric buffer
+            ir = int(np.ceil((r + 1.8) / self.grid_res))  # 1.8A steric buffer to prevent unphysical closeness
             x_min, x_max = max(0, gx - ir), min(nx, gx + ir + 1)
             y_min, y_max = max(0, gy - ir), min(ny, gy + ir + 1)
             z_min, z_max = max(0, gz - ir), min(nz, gz + ir + 1)
@@ -471,6 +478,25 @@ class CavityDetector:
             sizes.append(dist[c[0], c[1], c[2]])
 
         centers = [x for _, x in sorted(zip(sizes, centers), key=lambda pair: pair[0], reverse=True)]
+        
+        # --- Gravity Pull: Move centers down ---
+        pulled_centers = []
+        for c in centers:
+            z_curr = c[2]
+            best_z = z_curr
+            for z_test in np.arange(z_curr, z_sub_top + 1.5, -0.2):
+                test_pos = np.array([c[0], c[1], z_test])
+                too_close = False
+                for p_idx in self.prot_idx:
+                    p_pos = self.slab.positions[p_idx]
+                    d = np.linalg.norm(test_pos - p_pos)
+                    if d < 2.0:
+                        too_close = True
+                        break
+                if too_close: break
+                best_z = z_test
+            pulled_centers.append(np.array([c[0], c[1], best_z]))
+        centers = pulled_centers
 
         if self.verbose:
             print(f"  [CavityDetector] Found {len(centers)} potential void centers inside the protector layer.")
@@ -654,29 +680,36 @@ def create_slab_from_bulk(
         a1, a2 = slab.cell[0], slab.cell[1]
         area_prim = np.linalg.norm(np.cross(a1, a2))
 
-        # Max repeats while area <= target_area
-        max_repeats = int(target_area // area_prim)
-        if max_repeats < 1:
-            max_repeats = 1
+        # Max repeats: look around target_area
+        # Allow +/- 1 repeats to find a better aspect ratio
+        search_range = int(math.ceil(target_area / area_prim)) + 1
 
-        # Find n, m such that n*m <= max_repeats and final cell is square-ish
-        # Target aspect ratio is 1.0. Current primitive aspect ratio is |a1|/|a2|
+        # Find n, m such that n*m is around search_range and final cell is square-ish
         l1, l2 = np.linalg.norm(a1), np.linalg.norm(a2)
 
         best_n, best_m = 1, 1
-        best_score = -1.0
+        best_score = -1e9
 
-        for n in range(1, max_repeats + 1):
-            for m in range(1, max_repeats // n + 1):
+        for n in range(1, search_range + 2):
+            for m in range(1, search_range + 2):
                 current_area = n * m * area_prim
+                # Penalize area far from target_area, but prioritize aspect ratio
+                area_penalty = abs(current_area - target_area) / target_area
+                
                 ratio = (n * l1) / (m * l2)
-                aspect_score = 1.0 / (1.0 + abs(ratio - 1.0))  # 1.0 is perfect, < 1.0 is worse
+                aspect_score = 1.0 / (1.0 + abs(ratio - 1.0))
+                
+                # Balanced score: High aspect score is prioritized, then area proximity
+                score = aspect_score * 10.0 - area_penalty
+                
+                # Hard constraint: current_area should be at least ~80% of target_area
+                if current_area < target_area * 0.8:
+                    continue
+                # Hard constraint: don't exceed target_area by too much unless it's a small unit cell
+                if current_area > target_area * 1.5 and current_area > 100:
+                    continue
 
-                # Balanced score: Area * AspectScore
-                # This penalizes highly elongated cells even if they have slightly more area
-                score = current_area * aspect_score
-
-                if score > best_score + 1e-4:
+                if score > best_score:
                     best_score = score
                     best_n, best_m = n, m
 
@@ -710,11 +743,14 @@ def apply_surface_reconstruction(atoms, strategy="auto", side="top", verbose=Fal
     If strategy='auto' or True, identifies material class and applies physical rules.
     """
     if strategy == "auto" or strategy is True:
-        return auto_reconstruct_surface(atoms, side=side, verbose=verbose, **kwargs)
+        res = auto_reconstruct_surface(atoms, side=side, verbose=verbose, **kwargs)
     elif strategy == "random_noise":
-        return apply_random_surface_noise(atoms, side=side, verbose=verbose, **kwargs)
+        res = apply_random_surface_noise(atoms, side=side, verbose=verbose, **kwargs)
     else:
-        return atoms
+        res = atoms
+
+    # Force standardization on reconstruction result
+    return standardize_vasp_atoms(res, z_min_offset=0.5)
 
 
 # Pauling Electronegativity values for the first 94 elements (standard literature values)

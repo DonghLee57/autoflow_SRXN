@@ -1,0 +1,70 @@
+# =============================================================================
+# Practical Config: Ethanol (Physi) + DIPAS (Physi/Chemi) on Si(110)
+# =============================================================================
+
+paths:
+  substrate_bulk: "../../structures/Si_mp149.vasp"
+  adsorbate: "../../structures/DIPAS.vasp"
+  inhibitor: "../../structures/ethanol.vasp"
+  include_no_inhibitor: true
+  output_prefix: "results_si110"
+  restart: true
+
+surface_prep:
+  slab_generation:
+    enabled: true
+    miller: [1, 1, 0]  # Targeted Si(110) surface
+    thickness_ang: 12.0 
+    vacuum_ang: 15.0
+    target_area_ang2: 250.0 
+    
+  passivation:
+    enabled: true
+    element: "H"
+    side: "bottom"
+
+  slab_relaxation:
+    enabled: true
+    fmax: 0.1
+    steps: 50
+    frozen_z_ang: 5.5 # Fix bottom 5.5A
+
+reaction_search:
+  mechanisms:
+    inhibitor:
+      enabled: true
+      center: "O"
+      physisorption:
+        enabled: true
+        placement_height: 3.2
+      branching_limit: 1
+      chemisorption:
+        enabled: false
+
+    precursor:
+      center: "Si"
+      physisorption:
+        enabled: true
+        placement_height: 3.8
+      chemisorption:
+        enabled: true
+        rot_steps: 8
+
+  candidate_filter:
+    symprec: 0.2
+    # Removed manual overlap_cutoff to use robust Bondi radii
+
+verification:
+  relaxation:
+    enabled: true
+    steps: 100
+    fmax: 0.05
+    frozen_z_ang: 5.5 # Consistent fixing
+
+engine:
+  name: "mace"
+  parameters:
+    model: "medium"
+    device: "cpu"
+    dtype: "float64"
+    d3: true         # Enable dispersion for physisorption stability

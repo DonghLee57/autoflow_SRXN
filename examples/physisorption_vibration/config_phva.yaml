@@ -1,0 +1,15 @@
+# PHVA Configuration
+input_structure: "dipas_sio2_relaxed.vasp"
+engine:
+  potential:
+    backend: "mace"
+    device:  "cpu"
+    dtype:   "float64"
+
+analysis:
+  vibrational:
+    name: "results/phva"
+    displacement_ang: 0.01
+    phva_radius_ang:  null
+    frozen_z_ang:     5.5
+

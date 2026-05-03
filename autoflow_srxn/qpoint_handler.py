@@ -17,7 +17,7 @@ class QPointParser:
 
     def _load_yaml(self):
         """Loads large YAML files safely."""
-        with open(self.file_path) as f:
+        with open(self.file_path, encoding="utf-8") as f:
             # Use CLoader if available for performance
             try:
                 from yaml import CLoader as Loader

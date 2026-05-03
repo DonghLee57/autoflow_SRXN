@@ -64,23 +64,46 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     # Find best (lowest e_final) for each mechanism group
     best_by_mech = {}
     for row in summary_data:
-        m = row["mech"]
-        if m not in best_by_mech or row["e_final"] < best_by_mech[m]["e_final"]:
-            best_by_mech[m] = row
+        m = row.get("mech", "unknown")
+        e_final = row.get("e_final")
+        if e_final is not None:
+            if m not in best_by_mech or e_final < best_by_mech[m].get("e_final", 1e10):
+                best_by_mech[m] = row
 
-    best_ids = {res["id"] for res in best_by_mech.values()}
+    best_ids = {res["id"] for res in best_by_mech.values()} if best_by_mech else set()
 
-    logger.info("\n" + "=" * 95)
+    logger.info("\n" + "=" * 135)
     logger.info(f" {title}")
-    logger.info("-" * 95)
-    logger.info(
-        f"{'ID':<4} | {'Mechanism':<15} | {'E_final (eV)':<15} | {'Delta (eV)':<10} | {'E_ads (eV)':<10} | {'Note'}"
-    )
-    logger.info("-" * 105)
+    logger.info("-" * 135)
+    
+    # Dynamic header based on available keys
+    has_e_final = any("e_final" in r for r in summary_data)
+    has_e_init = any("e_initial" in r for r in summary_data)
+    has_stage = any("stage" in r for r in summary_data)
+    
+    header = f"{'ID':<4} | "
+    if has_stage: header += f"{'Stage':<10} | "
+    header += f"{'Mechanism':<15} | "
+    if has_e_init: header += f"{'E_initial (eV)':<15} | "
+    if has_e_final: header += f"{'E_final (eV)':<15} | {'Delta (eV)':<10} | "
+    header += f"{'E_ads (eV)':<10} | {'Note'}"
+    
+    logger.info(header)
+    logger.info("-" * 135)
+    
     for row in summary_data:
-        marker = "* (Best Pose)" if row["id"] in best_ids else ""
+        marker = "* (Best Pose)" if row.get("id") in best_ids else ""
         e_ads = row.get("e_ads", 0.0)
-        logger.info(
-            f"{row['id']:<4} | {row['mech'][:15]:<15} | {row['e_final']:15.4f} | {row['delta']:10.4f} | {e_ads:10.4f} | {marker}"
-        )
-    logger.info("=" * 105 + "\n")
+        mech = row.get("mech", "unknown")
+        
+        line = f"{row.get('id', 0):<4} | "
+        if has_stage: line += f"{row.get('stage', ''):<10} | "
+        line += f"{mech[:15]:<15} | "
+        if has_e_init:
+            line += f"{row.get('e_initial', 0.0):15.4f} | "
+        if has_e_final:
+            line += f"{row.get('e_final', 0.0):15.4f} | {row.get('delta', 0.0):10.4f} | "
+        line += f"{e_ads:10.4f} | {row.get('note', marker)}"
+        
+        logger.info(line)
+    logger.info("=" * 135 + "\n")
