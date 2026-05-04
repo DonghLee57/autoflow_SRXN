@@ -403,27 +403,56 @@ reaction_search:
       # Search Mechanisms for Stage 1 (Inhibitor)
       physisorption:
         enabled:          true
-        placement_height: 3.5   # Initial height above top surface layer (Å)
-        rot_steps:        8     # Fibonacci sampling orientations
-        center:           "com" # "com", "closest", symbol, or index
-        
+        placement_height: 3.5   # Initial height above top surface layer (Å), see height_mode
+        rot_steps:        8     # Fibonacci-sphere sampling orientations
+        center:           "com" # "com", "closest", element symbol, or atom index
+
+        # ── Height interpretation mode ──────────────────────────────────────
+        # "clearance" (default)
+        #   Lowest atom of the molecule is placed exactly placement_height Å
+        #   above the top substrate layer.  Physically correct for large
+        #   molecules (e.g., DIPAS, ~8 Å extent) where the COM can be far
+        #   above the binding atom.  Prevents accidental embedding.
+        # "center"
+        #   Rotation center (COM or the element specified by `center`) is
+        #   placed at placement_height Å above the surface.  Use when you need
+        #   a consistent center-to-surface reference across multiple molecules.
+        height_mode:      "clearance"
+
+        # ── Optional gravity pull ────────────────────────────────────────────
+        # After initial placement, descend the molecule step_size Å per step
+        # until the first Alvarez vdW contact (overlap_scale × (r_i + r_j)) or
+        # the hard floor (substrate surface + 0.3 Å) is reached.
+        # Disabled by default; useful for compact molecules or tight cavities.
+        gravity_pull:
+          enabled:    false
+          step_size:  0.2       # Å per descent step
+
       chemisorption:
         enabled:          true
         rot_steps:        8     # Rotation attempts for bond-alignment
 
     # [STAGE 2: MAIN PRECURSOR DISCOVERY]
-    # This stage simulates the adsorption of the target ALD/CVD precursor 
+    # This stage simulates the adsorption of the target ALD/CVD precursor
     # on the surfaces selected from Stage 1.
     precursor:
       center:           "Si"    # Central reactive atom in the molecule
-      
+
       # Search Mechanisms for Stage 2 (Main Precursor)
       physisorption:
         enabled:          true
         placement_height: 3.5
         rot_steps:        8
         center:           "com"
-        
+
+        # ── Height interpretation mode (same semantics as inhibitor block above)
+        height_mode:      "clearance"
+
+        # ── Optional gravity pull ────────────────────────────────────────────
+        gravity_pull:
+          enabled:    false
+          step_size:  0.2       # Å per descent step
+
       chemisorption:
         enabled:          true
         rot_steps:        8
@@ -436,7 +465,29 @@ reaction_search:
       cavity_grid_ang: 0.2      # Resolution for void-center search (Å)
 
   candidate_filter:
-    overlap_cutoff: 2.5    # Hard rejection: discard poses with any atomic pair below this distance (Å)
+    # ── Overlap criterion — Alvarez (2013) vdW radii ─────────────────────────
+    # Steric clash is detected when the inter-atomic distance falls below:
+    #
+    #   d_threshold(i, j) = overlap_scale × (r_vdW,i + r_vdW,j)
+    #
+    # where r_vdW values are taken from the Alvarez (2013) database
+    # (Dalton Trans. 42, 8617-8636, DOI: 10.1039/c3dt50599e).
+    # This element-aware criterion automatically accounts for the different
+    # spatial extents of H (1.20 Å), Si (2.19 Å), N (1.66 Å), etc.,
+    # replacing the previous single-value `overlap_cutoff` distance.
+    #
+    # overlap_scale guidelines:
+    #   0.55 — very permissive: only hard core repulsion rejected
+    #   0.65 — recommended default: rejects genuine clashes while allowing
+    #           all valid physisorption starting geometries
+    #   0.75 — strict: tighter exclusion; may reject valid poses for small
+    #           molecules with compact geometries
+    #
+    # For chemisorption geometry checks, an explicit flat cutoff (e.g.,
+    # cutoff=1.4 Å) can still be passed directly to check_overlap(); it
+    # overrides the vdW-based threshold for that call only.
+    overlap_scale:  0.65
+
     symprec:        0.2    # Symmetry equivalence cutoff for site deduplication (Å)
     max_pair_dist:  5.0    # Max distance between two dangling-bond sites to form a reaction pair (Å)
 

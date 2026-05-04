@@ -22,6 +22,36 @@ Key algorithmic properties:
 - **Best-clearance rotation selection**: All `rot_steps` orientations × both site permutations are evaluated for each dangling-bond pair. The pose with the largest **minimum non-bonded clearance** (distance to nearest non-bonded neighbour) is retained, maximising the distance budget for the subsequent MLIP relaxation.
 - **`_min_nonbonded_clearance` scorer**: Computes the minimum inter-atomic distance between newly placed fragments and the slab, explicitly excluding the bond-forming atom pairs listed in `skip_pairs`.
 
+### 1.3 Physisorption Candidate Generation — Fibonacci-Sphere Sampling
+
+Physisorption candidates are generated purely geometrically, without invoking any MLIP.  The algorithm samples the orientational space of the molecule uniformly using a **Fibonacci-sphere** (golden-angle) point set, evaluates steric fitness at each orientation, and retains the top diverse poses.
+
+**Placement height modes** (`height_mode`):
+
+| Mode | Interpretation of `placement_height` |
+| :--- | :--- |
+| `"clearance"` (default) | Lowest atom of the molecule sits exactly `placement_height` Å above the top substrate layer.  This is the physically correct interpretation for large asymmetric molecules (e.g., DIPAS, extent ~8 Å) where the COM can be far above the binding atom. |
+| `"center"` | Rotation center (COM or specified element) sits at `placement_height` Å above the surface.  Useful when comparing multiple molecules at a consistent center-to-surface distance. |
+
+**Gravity pull** (`gravity_pull`):  After initial placement, the molecule can optionally be descended in `step_size` Å increments until the first van der Waals contact or the hard floor (`z_surface_ref + 0.3 Å`) is encountered.
+
+**Overlap criterion — Alvarez (2013) vdW radii**:
+
+At every stage (physisorption, chemisorption geometry check) the steric clash test uses element-pair-specific thresholds derived from the Alvarez (2013) van der Waals radii database:
+
+$$d_{threshold}(i, j) = s \cdot (r_{vdW,i} + r_{vdW,j})$$
+
+where $s$ is the **`overlap_scale`** parameter (default 0.65, configurable in `candidate_filter`).  Atom pair $(i, j)$ is considered clashing if their separation falls below $d_{threshold}$.  Selected reference values (Å):
+
+| Element | $r_{vdW}$ | Element | $r_{vdW}$ |
+| :--- | :--- | :--- | :--- |
+| H | 1.20 | Si | 2.19 |
+| C | 1.77 | P | 1.90 |
+| N | 1.66 | S | 1.89 |
+| O | 1.50 | Fe | 2.44 |
+
+The `cutoff` parameter (flat Å threshold) remains available as an explicit override for callers that require element-independent thresholds (e.g., chemisorption builder: `cutoff=1.4 Å`).
+
 ### 1.4 Asymmetric Substrate Factory
 The framework automates the generation of complex surface models with precise termination control.
 - **Asymmetric Termination**: Supports separate atomic plane constraints for top and bottom surfaces (e.g., Silanol-terminated top vs. Oxygen-terminated bottom).
@@ -199,3 +229,4 @@ python -m unittest unittests/test_potentials.py -v
 - SevenNet: [10.1021/acs.jctc.4c00190]
 - ASE Framework: [10.1088/1361-648X/aa680e]
 - Pyykko & Atsumi covalent radii (ZBL pair DB): [10.1002/chem.200800987]
+- **Alvarez (2013) vdW radii (overlap criterion)**: [10.1039/c3dt50599e] — *Dalton Trans.* **42**, 8617–8636
