@@ -1,6 +1,6 @@
-{
+﻿{
   "_meta": {
-    "description": "Per-pair outer switching cutoffs (r_out, Å) for the ZBL screened-Coulomb calculator.",
+    "description": "Per-pair outer switching cutoffs (r_out, A) for the ZBL screened-Coulomb calculator.",
     "purpose": [
       "ZBLCalculator uses these values as the pair-specific outer switching distance.",
       "The ZBL weight S(r) transitions from 1 (fully active) at r ≤ cutoff_inner",
@@ -11,7 +11,7 @@
     "derivation": {
       "formula": "r_out = max(0.8, min(2.8, round((R_cov_i + R_cov_j) × 1.056, 1)))",
       "scale_factor": 1.056,
-      "calibration": "Chosen so that H–Si gives 1.5 Å, matching the Si–H single-bond length (1.480 Å).",
+      "calibration": "Chosen so that H-Si gives 1.5 A, matching the Si-H single-bond length (1.480 A).",
       "cov_radius_source": "Pyykko & Atsumi, Chem. Eur. J. 2009 (single-bond radii), consistent with src/chem_data.json",
       "min_outer_ang": 0.8,
       "max_outer_ang": 2.8,
@@ -33,9 +33,9 @@
       }
     },
     "key_convention": "Alphabetically sorted element symbols joined by '-', e.g. 'H-Si' not 'Si-H'.",
-    "inner_cutoff_note": "The inner cutoff (where S=1, ZBL fully active) is a global parameter in ZBLCalculator, default 0.5 Å.  It is NOT stored here.",
+    "inner_cutoff_note": "The inner cutoff (where S=1, ZBL fully active) is a global parameter in ZBLCalculator, default 0.5 A.  It is NOT stored here.",
     "units": "angstrom",
-    "fallback": "Pairs absent from this file use ZBLCalculator.cutoff_outer (global fallback, default 2.5 Å)."
+    "fallback": "Pairs absent from this file use ZBLCalculator.cutoff_outer (global fallback, default 2.5 A)."
   },
 
   "Al-Al": 2.6,
@@ -157,3 +157,5 @@
 
   "Zr-Zr": 2.8
 }
+
+

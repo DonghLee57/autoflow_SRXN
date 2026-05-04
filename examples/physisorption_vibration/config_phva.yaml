@@ -1,5 +1,5 @@
-# PHVA Configuration
-input_structure: "dipas_sio2_relaxed.vasp"
+paths:
+  input_structure: "dipas_sio2_relaxed.vasp"
 engine:
   potential:
     backend: "mace"

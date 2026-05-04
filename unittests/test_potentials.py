@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 import numpy as np
 from ase.build import molecule
@@ -74,7 +74,7 @@ class TestZBLCalculator(unittest.TestCase):
     """Unit tests for the pure-Python ZBL screened Coulomb calculator."""
 
     def _make_h2(self, bond_length=0.74):
-        """Two-hydrogen molecule at given bond length (Å).
+        """Two-hydrogen molecule at given bond length (A).
 
         Atom 0 is placed at the origin so the bond length equals the
         inter-atomic distance exactly, regardless of ASE's default centering.
@@ -120,11 +120,11 @@ class TestZBLCalculator(unittest.TestCase):
         """ZBL forces push atoms apart (repulsive along bond axis)."""
         from autoflow_srxn.potentials import ZBLCalculator
 
-        atoms = self._make_h2(bond_length=0.6)  # < H-H pair outer (0.8 Å) so force is active
+        atoms = self._make_h2(bond_length=0.6)  # < H-H pair outer (0.8 A) so force is active
         calc = ZBLCalculator(cutoff_inner=0.5, cutoff_outer=2.0)
         atoms.calc = calc
         forces = atoms.get_forces()
-        # Atom 0 is at origin, atom 1 is at +z → atom 0 should be pushed in -z
+        # Atom 0 is at origin, atom 1 is at +z -> atom 0 should be pushed in -z
         self.assertLess(forces[0, 2], 0.0)
         # Atom 1 should be pushed in +z
         self.assertGreater(forces[1, 2], 0.0)
@@ -132,7 +132,7 @@ class TestZBLCalculator(unittest.TestCase):
     def test_zbl_energy_decreases_with_distance(self):
         """ZBL energy decreases monotonically as H-H atoms separate.
 
-        Distances are kept below the H-H per-pair outer cutoff (~0.8 Å) so
+        Distances are kept below the H-H per-pair outer cutoff (~0.8 A) so
         the energy is non-zero and strictly decreasing throughout the range.
         """
         from autoflow_srxn.potentials import ZBLCalculator
@@ -198,3 +198,4 @@ class TestZBLCalculator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

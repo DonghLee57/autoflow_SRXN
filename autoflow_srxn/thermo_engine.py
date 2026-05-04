@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 from scipy import constants as const
 
 try:
@@ -93,7 +93,7 @@ def _is_centrosymmetric(atoms) -> bool:
     """Return True if every atom has an inversion-related partner (used for D∞h detection)."""
     pos = atoms.positions - atoms.get_center_of_mass()
     numbers = atoms.get_atomic_numbers()
-    tol = 0.15  # Å
+    tol = 0.15  # A
     for i, (p, z) in enumerate(zip(pos, numbers)):
         paired = any(j != i and numbers[j] == z and np.linalg.norm(p + pos[j]) < tol for j in range(len(atoms)))
         if not paired:
@@ -107,13 +107,13 @@ def _compute_sigma_from_atoms(atoms) -> int:
     Algorithm
     ---------
     Linear molecules (one principal moment ≈ 0):
-        D∞h (H₂, N₂, CO₂ …) → σ = 2   (inversion-symmetric)
-        C∞v (HCl, CO …)      → σ = 1
+        D∞h (H₂, N₂, CO₂ …) -> σ = 2   (inversion-symmetric)
+        C∞v (HCl, CO …)      -> σ = 1
 
     Non-linear molecules:
         Count proper rotation operations (det R = +1) found by spglib.
         This equals the order of the rotational subgroup, which is σ by definition.
-        Examples: C₂v → 2, C₃v → 3, Td → 12, Oh → 24.
+        Examples: C₂v -> 2, C₃v -> 3, Td -> 12, Oh -> 24.
 
     Returns 1 (C₁) on any failure or when spglib is not installed.
     """
@@ -142,7 +142,7 @@ def _compute_sigma_from_atoms(atoms) -> int:
         )
         if sym is None or "rotations" not in sym:
             return 1
-        # det(R) = +1 → proper rotation; det(R) = −1 → improper (reflection / inversion / Sn)
+        # det(R) = +1 -> proper rotation; det(R) = −1 -> improper (reflection / inversion / Sn)
         n_proper = sum(1 for R in sym["rotations"] if abs(np.linalg.det(R) - 1.0) < 0.1)
         return max(1, n_proper)
     except Exception:
@@ -209,7 +209,7 @@ class GasThermo:
         -------
         dict
             mass      : float  — molecular mass (amu)
-            moments   : list   — principal moments of inertia (amu·Å²)
+            moments   : list   — principal moments of inertia (amu·A2)
                                  one element for linear, three for nonlinear
             symmetry  : str    — 'linear' or 'nonlinear'
             sigma     : int    — rotational symmetry number (auto-detected via spglib)
@@ -233,3 +233,5 @@ class GasThermo:
             "symmetry": symmetry,
             "sigma": sigma,
         }
+
+

@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 import numpy as np
 import yaml
@@ -47,7 +47,7 @@ class QPointParser:
         if "phonon" not in self.data:
             return []
 
-        # AutoFlow-SRXN extension: atom masses (amu) for e_k → u_k back-conversion.
+        # AutoFlow-SRXN extension: atom masses (amu) for e_k -> u_k back-conversion.
         # Falls back gracefully if absent (plain phonopy files).
         masses_list = self.data.get("masses", [])
 
@@ -98,3 +98,4 @@ class QPointParser:
             modes = modes[:max_modes]
 
         return modes
+

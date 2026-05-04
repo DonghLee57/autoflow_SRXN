@@ -9,7 +9,7 @@ from autoflow_srxn.chemisorption_builder import (
 )
 
 # Add src to sys.path
-from autoflow_srxn.si_surface_utils import build_si100_slab
+from autoflow_srxn.surface_utils import build_si100_slab
 
 
 class TestAdsorption(unittest.TestCase):

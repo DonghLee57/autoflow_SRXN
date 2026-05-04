@@ -21,9 +21,14 @@ def main():
         config = yaml.safe_load(f)
 
     # Load structure from config
-    struct_path = config.get("input_structure")
+    paths = config.get("paths", {})
+    struct_path = paths.get("input_structure")
     if not struct_path:
-        print(f"Error: 'input_structure' not specified in {args.config}")
+        # Fallback to root for legacy support or simpler configs
+        struct_path = config.get("input_structure")
+        
+    if not struct_path:
+        print(f"Error: 'paths.input_structure' not specified in {args.config}")
         sys.exit(1)
         
     if not os.path.exists(struct_path):
@@ -50,7 +55,7 @@ def main():
     log_path = os.path.join(name_base, "vibration.log")
     logger = setup_logger(log_path=log_path, verbose=True)
     logger.info(f"Starting vibrational analysis using config: {args.config}")
-    logger.info(f"Structure: {args.structure} ({len(atoms)} atoms)")
+    logger.info(f"Structure: {struct_path} ({len(atoms)} atoms)")
 
     # Initialize engine
     engine = SimulationEngine(config=config)

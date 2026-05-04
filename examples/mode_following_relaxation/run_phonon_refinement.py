@@ -43,7 +43,15 @@ def run_enhanced_phonon_refinement(config_path="config.yaml", displacement=None)
 
     # ── Engine and structure ────────────────────────────────────────────────────
     engine = SimulationEngine(config=config)
-    mol_path = config["paths"]["adsorbate"]
+    mol_path = config["paths"]["precursor"]
+    
+    if not os.path.isabs(mol_path) and not os.path.exists(mol_path):
+        # Try relative to config file
+        config_dir = os.path.dirname(os.path.abspath(config_path))
+        alt_path = os.path.join(config_dir, mol_path)
+        if os.path.exists(alt_path):
+            mol_path = alt_path
+
     logger.info(f"Loading molecule from: {mol_path}")
     atoms = read(mol_path)
     atoms.center(vacuum=10.0)

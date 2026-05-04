@@ -1,4 +1,4 @@
-# AutoFlow-SRXN: Automated Surface Reaction Workflow
+﻿# AutoFlow-SRXN: Automated Surface Reaction Workflow
 
 **AutoFlow-SRXN** is a high-fidelity, fully-automated framework designed for high-throughput exploration and generation of adsorption and reaction structures between arbitrary precursors and substrates. It leverages geometric coordination principles, machine learning interatomic potentials (MLIPs), and statistical mechanics to predict thermodynamic stability and reaction kinetics at material interfaces.
 
@@ -18,51 +18,30 @@ For a surface atom $i$ with $n$ existing covalent neighbors and a target valence
 The chemisorption builder generates initial structures algorithmically without invoking any MLIP, making Stage 2 candidate generation fully potential-free.
 
 Key algorithmic properties:
-- **Element-specific bond lengths**: The center→surface bond length is computed from ASE covalent radii ($r_{center} + r_{surface}$) rather than a hard-coded Si–Si value. This correctly handles Si–O (~1.77 Å), Si–N (~1.82 Å), and other chemistries.
+- **Element-specific bond lengths**: The center->surface bond length is computed from ASE covalent radii ($r_{center} + r_{surface}$) rather than a hard-coded Si-Si value. This correctly handles Si-O (~1.77 A), Si-N (~1.82 A), and other chemistries.
 - **Best-clearance rotation selection**: All `rot_steps` orientations × both site permutations are evaluated for each dangling-bond pair. The pose with the largest **minimum non-bonded clearance** (distance to nearest non-bonded neighbour) is retained, maximising the distance budget for the subsequent MLIP relaxation.
 - **`_min_nonbonded_clearance` scorer**: Computes the minimum inter-atomic distance between newly placed fragments and the slab, explicitly excluding the bond-forming atom pairs listed in `skip_pairs`.
 
 ### 1.3 Physisorption Candidate Generation — Fibonacci-Sphere Sampling
+Physisorption candidates are generated purely geometrically, without invoking any MLIP. The algorithm samples the orientational space of the molecule uniformly using a **Fibonacci-sphere** (golden-angle) point set, evaluates steric fitness at each orientation, and retains the top diverse poses.
 
-Physisorption candidates are generated purely geometrically, without invoking any MLIP.  The algorithm samples the orientational space of the molecule uniformly using a **Fibonacci-sphere** (golden-angle) point set, evaluates steric fitness at each orientation, and retains the top diverse poses.
+### 1.4 Proximity-Based Site Filtering (Inhibited Surfaces)
+For surfaces already covered by inhibitors or functional groups, the framework can automatically restrict the reaction search to the immediate vicinity of these molecules. This is essential for studying localized cooperative effects or steric competition.
+- **Inhibitor-Aware Sampling**: Identifies all atoms of existing inhibitors (`prot_idx`) and filters candidate sites based on their distance to **any** inhibitor atom.
+- **PBC-Aware Proximity**: Uses periodic distance calculations to ensure sites near inhibitor images in adjacent cells are correctly included.
+- **Dynamic Visualization**: Automatically generates a 2D `site_proximity_map.png` in the results directory, showing the "Periodic Proximity Zone" (shaded blue) and active/excluded sites (red/grey).
 
-**Placement height modes** (`height_mode`):
-
-| Mode | Interpretation of `placement_height` |
-| :--- | :--- |
-| `"clearance"` (default) | Lowest atom of the molecule sits exactly `placement_height` Å above the top substrate layer.  This is the physically correct interpretation for large asymmetric molecules (e.g., DIPAS, extent ~8 Å) where the COM can be far above the binding atom. |
-| `"center"` | Rotation center (COM or specified element) sits at `placement_height` Å above the surface.  Useful when comparing multiple molecules at a consistent center-to-surface distance. |
-
-**Gravity pull** (`gravity_pull`):  After initial placement, the molecule can optionally be descended in `step_size` Å increments until the first van der Waals contact or the hard floor (`z_surface_ref + 0.3 Å`) is encountered.
-
-**Overlap criterion — Alvarez (2013) vdW radii**:
-
-At every stage (physisorption, chemisorption geometry check) the steric clash test uses element-pair-specific thresholds derived from the Alvarez (2013) van der Waals radii database:
-
-$$d_{threshold}(i, j) = s \cdot (r_{vdW,i} + r_{vdW,j})$$
-
-where $s$ is the **`overlap_scale`** parameter (default 0.65, configurable in `candidate_filter`).  Atom pair $(i, j)$ is considered clashing if their separation falls below $d_{threshold}$.  Selected reference values (Å):
-
-| Element | $r_{vdW}$ | Element | $r_{vdW}$ |
-| :--- | :--- | :--- | :--- |
-| H | 1.20 | Si | 2.19 |
-| C | 1.77 | P | 1.90 |
-| N | 1.66 | S | 1.89 |
-| O | 1.50 | Fe | 2.44 |
-
-The `cutoff` parameter (flat Å threshold) remains available as an explicit override for callers that require element-independent thresholds (e.g., chemisorption builder: `cutoff=1.4 Å`).
-
-### 1.4 Asymmetric Substrate Factory
+### 1.5 Asymmetric Substrate Factory
 The framework automates the generation of complex surface models with precise termination control.
 - **Asymmetric Termination**: Supports separate atomic plane constraints for top and bottom surfaces (e.g., Silanol-terminated top vs. Oxygen-terminated bottom).
 - **Side-Specific Passivation**: Enables independent passivation coverage for different sides of the slab, critical for modeling realistic asymmetric experimental conditions.
-- **Steric-Constraint Expansion**: Autonomously expands the supercell to satisfy a `target_area` constraint, ensuring periodic boundary stability for large adsorbates like DIPAS.
+- **Steric-Constraint Expansion**: Autonomously expands the supercell to satisfy a `target_area` constraint, ensuring periodic boundary stability for large precursors like DIPAS.
 
 ### 1.5 Partial Hessian Vibrational Analysis (PHVA)
 To accelerate thermodynamic calculations and kinetic modeling, the framework implements **Partial Hessian Vibrational Analysis**.
 For a system with $N_{total}$ atoms, the full Hessian matrix $H \in \mathbb{R}^{3N \times 3N}$ is approximated by a submatrix $H_{active} \in \mathbb{R}^{3N_{active} \times 3N_{active}}$:
 $$ H_{ij} \approx 0 \quad \text{if } i \text{ or } j \notin \text{Active Set} $$
-The **Active Set** is dynamically defined as the adsorbate plus all substrate atoms within a user-defined cutoff radius $R_{phva}$ (default 6.0 Å), significantly reducing the number of force calls required for frequency extraction.
+The **Active Set** is dynamically defined as the precursor plus all substrate atoms within a user-defined cutoff radius $R_{phva}$ (default 6.0 A), significantly reducing the number of force calls required for frequency extraction.
 
 ### 1.6 Thermodynamics & Gibbs Free Energy
 The engine integrates vibrational data to calculate finite-temperature thermodynamic properties using the Harmonic approximation.
@@ -80,7 +59,7 @@ where $\mathbf{u}_{k,i} = \mathbf{e}_{k,i} / \sqrt{m_i}$ is derived from the mas
 - **High-Throughput Exploration**: Rational search of the potential energy surface (PES) using symmetry-aware site identification.
 - **MLIP-Driven Accuracy**: High-fidelity relaxation and frequency calculations using **MACE-MP** and **SevenNet** foundation models.
 - **PHVA/FHVA Benchmarking**: Systematic validation of partial Hessian approximations against full Hessian references.
-- **Standardized Data Export**: Generation of human-readable `qpoints.yaml` files and `all_relaxed_candidates.extxyz` for visualization.
+- **Standardized Data Export**: Generation of human-readable `qpoints.yaml` files and `final_results.extxyz` for visualization.
 
 ---
 
@@ -91,6 +70,11 @@ where $\mathbf{u}_{k,i} = \mathbf{e}_{k,i} / \sqrt{m_i}$ is derived from the mas
 graph TD
     A[config.yaml] --> B(Structure Generation Interface)
     subgraph pkg [autoflow_srxn Package]
+        subgraph IFACE [interface/ sub-package]
+            B -->|interface.enabled| LM[LatticeMatch ZSL]
+            LM --> IB[InterfaceBuilder]
+            IB -->|tag 0/1 ASE slab| PA
+        end
         B --> P[Surface Utils]
         P -->|Asymmetric Control| PA[Standardized Substrate]
         B --> C[AdsorptionWorkflowManager]
@@ -109,6 +93,7 @@ graph TD
     end
     
     subgraph Output
+        IB --> IC[interface_candidates.html]
         SY --> G[all_relaxed_candidates.extxyz]
         TC --> Q[qpoints.yaml]
     end
@@ -149,12 +134,17 @@ engine:
     enable_flash: false  # enable FlashAttention  (SevenNet only)
     zbl:                 # Ziegler-Biersack-Littmark short-range repulsion
       enabled:      false   # true  -> MLIP + ZBL combination
-      cutoff_inner: 0.5     # Å – ZBL fully active below this
-      cutoff_outer: 2.5     # Å – global fallback; per-pair values in src/zbl_pairs.json
+      cutoff_inner: 0.5     # A - ZBL fully active below this
+      cutoff_outer: 2.5     # A - global fallback; per-pair values in src/zbl_pairs.json
 ```
 
 ### 3.3 Directory Structure
 - `autoflow_srxn/`: Main package.
+  - `interface/`: Heterointerface sub-package *(optional, requires pymatgen)*.
+    - `lattice_match.py`: Pure-NumPy ZSL coincidence search — `iter_hnf_2d`, `strain_from_F`, `find_coincidences`, `POLAR_SG`.
+    - `builder.py`: `build_symmetric_slab()` → ASE Atoms (tag 0=substrate, tag 1=film); `InterfaceCandidate` dataclass.
+    - `workflow.py`: `InterfaceWorkflow` — `from_files()`, `find_candidates()`, `build()`, `summary()`, `plot()`.
+    - `visualize.py`: Standalone Plotly helpers — `plot_candidates()`, `strain_heatmap()`, `make_summary_table()`.
   - `core/`: Advanced sub-modules — `CoverageManager` (thermodynamic coverage), `knowledge.py` (chemical KB), `ts_engine.py` (transition-state utilities).
   - `zbl_pairs.json`: Per-pair ZBL outer switching cutoffs for 14 elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr).
 - `examples/`:
@@ -204,7 +194,7 @@ This script will:
 2. Relax the gas-phase DIPAS molecule in isolation.
 3. Search for physisorption sites, relax the top 8 candidates, and select the lowest-energy structure.
 4. Run FHVA (full Hessian) on the gas molecule and adsorbed system.
-5. Run PHVA (partial Hessian, active set = adsorbate + slab atoms within 6.0 Å) on the adsorbed system.
+5. Run PHVA (partial Hessian, active set = precursor + slab atoms within 6.0 A) on the adsorbed system.
 6. Save individual `qpoints.yaml` files for each system in `vibrations/`.
 7. Compute ΔG_rxn(FHVA) and ΔG_rxn(PHVA) via the harmonic-oscillator approximation and write `results/phva_fhva_comparison.yaml`.
 
@@ -221,7 +211,7 @@ python -m unittest unittests/test_potentials.py -v
 | :--- | :--- | :--- |
 | **Energy** | Electronvolt (eV) | - |
 | **Frequency** | Wavenumber (cm⁻¹) | 1 THz $\approx$ 33.356 cm⁻¹ |
-| **Distance** | Angstrom (Å) | - |
+| **Distance** | Angstrom (A) | - |
 | **Temperature**| Kelvin (K) | Default: 298.15 K |
 
 **DOIs & References:**
@@ -229,4 +219,5 @@ python -m unittest unittests/test_potentials.py -v
 - SevenNet: [10.1021/acs.jctc.4c00190]
 - ASE Framework: [10.1088/1361-648X/aa680e]
 - Pyykko & Atsumi covalent radii (ZBL pair DB): [10.1002/chem.200800987]
-- **Alvarez (2013) vdW radii (overlap criterion)**: [10.1039/c3dt50599e] — *Dalton Trans.* **42**, 8617–8636
+- **Alvarez (2013) vdW radii (overlap criterion)**: [10.1039/c3dt50599e] — *Dalton Trans.* **42**, 8617-8636
+

@@ -7,8 +7,11 @@ from ase.build import add_adsorbate, bulk
 from ase.io import read, write
 from mace.calculators import MACECalculator
 
-from autoflow_srxn.si_surface_utils import SI_VALENCE_MAP
-from autoflow_srxn.surface_utils import create_slab_from_bulk, passivate_surface_coverage_general
+from autoflow_srxn.surface_utils import (
+    create_slab_from_bulk,
+    passivate_surface_coverage_general,
+    SI_VALENCE_MAP,
+)
 from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer, calculate_mac
 
 

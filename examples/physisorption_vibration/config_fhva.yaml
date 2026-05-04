@@ -1,5 +1,5 @@
-# FHVA Configuration
-input_structure: "dipas_sio2_relaxed.vasp"
+paths:
+  input_structure: "dipas_sio2_relaxed.vasp"
 engine:
   potential:
     backend: "mace"
@@ -10,5 +10,4 @@ analysis:
   vibrational:
     name: "results/fhva"
     displacement_ang: 0.01
-    phva:
-      enabled: false
+    phva_radius_ang:  null  # Force Full Hessian

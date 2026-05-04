@@ -60,21 +60,21 @@ class CoverageManager:
                 omega -= count * mu
         return omega
 
-    def is_adsorbed(self, atoms: Atoms, adsorbate_indices: list) -> bool:
+    def is_adsorbed(self, atoms: Atoms, precursor_indices: list) -> bool:
         """
-        Checks if the adsorbate is truly CHEMISORBED to the substrate.
-        Criteria: At least one bond shorter than 2.5 A between adsorbate and substrate.
+        Checks if the precursor is truly CHEMISORBED to the substrate.
+        Criteria: At least one bond shorter than 2.5 A between precursor and substrate.
         """
         from ase.neighborlist import neighbor_list
-        substrate_indices = [i for i in range(len(atoms)) if i not in adsorbate_indices]
+        substrate_indices = [i for i in range(len(atoms)) if i not in precursor_indices]
         
         # Use a tighter cutoff for true chemisorption (e.g., 2.5 A)
         i, j, d = neighbor_list('ijd', atoms, 2.5)
         
         for idx_i, idx_j, dist in zip(i, j, d):
             # Check if one index is in adsorbate and other in substrate
-            is_cross_bond = (idx_i in adsorbate_indices and idx_j in substrate_indices) or \
-                            (idx_j in adsorbate_indices and idx_i in substrate_indices)
+            is_cross_bond = (idx_i in precursor_indices and idx_j in substrate_indices) or \
+                            (idx_j in precursor_indices and idx_i in substrate_indices)
             
             if is_cross_bond:
                 # Further check: is it the Ti atom bonding? (Usually atom 0 in TiCl4)

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import shutil
 
 import numpy as np
@@ -9,6 +9,7 @@ from ase.io import write
 from ase.optimize import FIRE
 from ase.vibrations import Vibrations
 
+from .knowledge_engine import chem_kb
 from .logger_utils import get_workflow_logger
 
 
@@ -68,7 +69,7 @@ class VibrationalAnalyzer:
             mask = self.atoms.positions[:, 2] >= z_min + frozen_z
             indices_set &= set(np.where(mask)[0])
 
-        # 2. If radius is set, focus on adsorbate + neighbors
+        # 2. If radius is set, focus on precursor + neighbors
         if radius is not None:
             from .surface_utils import identify_protectors
 
@@ -77,19 +78,19 @@ class VibrationalAnalyzer:
             if len(ads_idx) > 0:
                 from ase.neighborlist import neighbor_list
 
-                # Build neighborhood around adsorbate
+                # Build neighborhood around precursor
                 i_list, j_list = neighbor_list("ij", self.atoms, radius)
                 neighbor_set = set()
                 for a_idx in ads_idx:
                     neighbor_set.update(j_list[i_list == a_idx])
 
-                # Combine adsorbate + its neighbors within radius,
+                # Combine precursor + its neighbors within radius,
                 # then intersect with non-frozen indices
                 phva_set = set(ads_idx) | neighbor_set
                 indices_set &= phva_set
             else:
                 self.logger.warning(
-                    "  [VibAnalyzer] PHVA radius requested but no adsorbate found. Using height-based selection."
+                    "  [VibAnalyzer] PHVA radius requested but no precursor found. Using height-based selection."
                 )
 
         # Convert to sorted list
@@ -271,14 +272,14 @@ def calculate_thermo(freqs_thz, T):
     return float(G_vib_J / eV_to_J_mol), float(ZPE_J / eV_to_J_mol)
 
 
-def build_phva_active_indices(atoms, n_adsorbate, cutoff_angstrom):
+def build_phva_active_indices(atoms, n_precursor, cutoff_angstrom):
     from ase.neighborlist import neighbor_list
 
     n_total = len(atoms)
-    ads_set = set(range(n_total - n_adsorbate, n_total))
+    pre_set = set(range(n_total - n_precursor, n_total))
     i_arr, j_arr = neighbor_list("ij", atoms, cutoff_angstrom)
-    slab_neighbors = {int(j_arr[k]) for k, i in enumerate(i_arr) if i in ads_set and j_arr[k] not in ads_set}
-    return sorted(ads_set | slab_neighbors)
+    slab_neighbors = {int(j_arr[k]) for k, i in enumerate(i_arr) if i in pre_set and j_arr[k] not in pre_set}
+    return sorted(pre_set | slab_neighbors)
 
 
 from .qpoint_handler import QPointParser
@@ -437,7 +438,7 @@ class GradientFlippingCalculator(Calculator):
     Given the true force vector  **g** = -∇E  and the unit eigenvector **v_TS**
     corresponding to the target transition-mode, the modified force is:
 
-        **f_mod** = **g** - 2 (g · v_TS) v_TS          [units: eV/Å]
+        **f_mod** = **g** - 2 (g · v_TS) v_TS          [units: eV/A]
 
     This inverts the force component along **v_TS** so that the FIRE optimizer
     *climbs* the PES along the TS direction while relaxing in all perpendicular
@@ -469,11 +470,11 @@ class GradientFlippingCalculator(Calculator):
         self.base_calc.calculate(atoms, properties, system_changes)
 
         energy = self.base_calc.results["energy"]  # units: eV
-        g = self.base_calc.results["forces"].ravel()  # units: eV/Å, shape (3N,)
+        g = self.base_calc.results["forces"].ravel()  # units: eV/A, shape (3N,)
 
         # Gradient-flipping: f_mod = g - 2(g · v_TS) v_TS
-        overlap = np.dot(g, self.v_ts)  # scalar projection  [eV/Å]
-        f_mod = g - 2.0 * overlap * self.v_ts  # modified force     [eV/Å]
+        overlap = np.dot(g, self.v_ts)  # scalar projection  [eV/A]
+        f_mod = g - 2.0 * overlap * self.v_ts  # modified force     [eV/A]
 
         self.results["energy"] = energy
         self.results["forces"] = f_mod.reshape(atoms.positions.shape)
@@ -487,7 +488,7 @@ class GradientFlippingCalculator(Calculator):
 class AdaptiveGradientFlippingCalculator(Calculator):
     """Gradient-flipping calculator whose climbing direction is recomputed at
     every force evaluation as the current unit vector along the bond being
-    broken (central_idx → ligand_idx).
+    broken (central_idx -> ligand_idx).
 
     Motivation
     ----------
@@ -523,10 +524,10 @@ class AdaptiveGradientFlippingCalculator(Calculator):
         if properties is None:
             properties = self.implemented_properties
 
-        # --- Dynamic climbing direction: current Si→N unit vector in 3N space ---
+        # --- Dynamic climbing direction: current Si->N unit vector in 3N space ---
         r_c = atoms.positions[self.c_idx]
         r_l = atoms.positions[self.l_idx]
-        v_dir = r_l - r_c  # units: Å
+        v_dir = r_l - r_c  # units: A
         v_hat = v_dir / np.linalg.norm(v_dir)  # dimensionless unit vector
 
         n = len(atoms)
@@ -539,7 +540,7 @@ class AdaptiveGradientFlippingCalculator(Calculator):
         # --- Base forces (do NOT set atoms.calc — see GradientFlippingCalculator) ---
         self.base_calc.calculate(atoms, properties, system_changes)
         energy = self.base_calc.results["energy"]  # units: eV
-        g = self.base_calc.results["forces"].ravel()  # units: eV/Å
+        g = self.base_calc.results["forces"].ravel()  # units: eV/A
 
         # Cache energy so the FIRE observer can read it reliably via closure.
         # (self.atoms.calc.results is not guaranteed to be populated when the
@@ -566,12 +567,12 @@ class TSSearcher:
     Algorithm Overview
     ------------------
     1. Compute the full molecular Hessian at the initial geometry via
-       VibrationalAnalyzer (finite-difference, δ = 0.01 Å).
+       VibrationalAnalyzer (finite-difference, δ = 0.01 A).
     2. Identify the ligand fragment attached to bond_indices[1] through
        graph partitioning of the covalent-bond adjacency matrix (bond to
        be broken is excluded from the graph).
     3. Compute the dissociation direction:
-           V_dir = COM(Ligand) - r(central_atom)          [units: Å]
+           V_dir = COM(Ligand) - r(central_atom)          [units: A]
            V_hat = V_dir / |V_dir|                        [dimensionless]
     4. Select the target TS eigenvector **v_TS** by maximum dot-product
        overlap with V_hat:
@@ -607,7 +608,6 @@ class TSSearcher:
         Returns:
             Sorted list of atom indices in the ligand fragment.
         """
-        from ase.data import covalent_radii
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
 
@@ -622,7 +622,7 @@ class TSSearcher:
                 if (i == c_idx and j == l_idx) or (i == l_idx and j == c_idx):
                     continue
                 dist = np.linalg.norm(pos[i] - pos[j])
-                cutoff = covalent_radii[atoms.numbers[i]] + covalent_radii[atoms.numbers[j]] + 0.3  # units: Å
+                cutoff = chem_kb.get_radius(atoms.symbols[i], "covalent") + chem_kb.get_radius(atoms.symbols[j], "covalent") + 0.3  # units: A
                 if dist < cutoff:
                     adj[i, j] = adj[j, i] = 1
 
@@ -638,27 +638,27 @@ class TSSearcher:
         -------
         The Hessian element is approximated by central differences:
 
-            H_{ij} = [ F_i(+δ_j) - F_i(-δ_j) ] / (2δ)     [units: eV/Å²]
+            H_{ij} = [ F_i(+δ_j) - F_i(-δ_j) ] / (2δ)     [units: eV/A2]
 
         Diagonalisation:  H v_k = λ_k v_k
 
         Args:
             atoms:       ASE Atoms object with calculator attached.
-            displacement: Finite-difference step δ  (units: Å, default 0.01 Å).
+            displacement: Finite-difference step δ  (units: A, default 0.01 A).
 
         Returns:
-            eigenvalues:  shape (3N,)    [units: eV/Å²]
+            eigenvalues:  shape (3N,)    [units: eV/A2]
             eigenvectors: shape (3N, 3N) [dimensionless], columns are modes
         """
         self.logger.info(
             f"  [TSSearch] Computing full Hessian "
-            f"(δ={displacement} Å, N={len(atoms)} atoms, "
+            f"(δ={displacement} A, N={len(atoms)} atoms, "
             f"{2 * 3 * len(atoms)} MACE evaluations)..."
         )
 
         n_atoms = len(atoms)
         dof = 3 * n_atoms
-        H = np.zeros((dof, dof))  # units: eV/Å²
+        H = np.zeros((dof, dof))  # units: eV/A2
         pos0 = atoms.get_positions().copy()
 
         for atom_i in range(n_atoms):
@@ -667,18 +667,18 @@ class TSSearcher:
 
                 # Forward displacement
                 pos_fwd = pos0.copy()
-                pos_fwd[atom_i, cart] += displacement  # units: Å
+                pos_fwd[atom_i, cart] += displacement  # units: A
                 atoms.set_positions(pos_fwd)
-                f_fwd = atoms.get_forces().ravel()  # units: eV/Å
+                f_fwd = atoms.get_forces().ravel()  # units: eV/A
 
                 # Backward displacement
                 pos_bwd = pos0.copy()
-                pos_bwd[atom_i, cart] -= displacement  # units: Å
+                pos_bwd[atom_i, cart] -= displacement  # units: A
                 atoms.set_positions(pos_bwd)
-                f_bwd = atoms.get_forces().ravel()  # units: eV/Å
+                f_bwd = atoms.get_forces().ravel()  # units: eV/A
 
                 # Central-difference gradient of force = -Hessian column
-                H[:, col] = -(f_fwd - f_bwd) / (2.0 * displacement)  # units: eV/Å²
+                H[:, col] = -(f_fwd - f_bwd) / (2.0 * displacement)  # units: eV/A2
 
         # Restore original positions
         atoms.set_positions(pos0)
@@ -734,7 +734,7 @@ class TSSearcher:
 
         Args:
             bond_indices: [central_atom_idx, ligand_start_idx]  (e.g. [Si, N]).
-            fmax:         Force convergence threshold   (units: eV/Å).
+            fmax:         Force convergence threshold   (units: eV/A).
             steps:        Maximum FIRE optimizer steps.
             trajectory:   Optional path to save the optimisation trajectory.
 
@@ -743,7 +743,7 @@ class TSSearcher:
         """
         c_idx, l_idx = bond_indices
         n_atoms = len(self.atoms)
-        displacement = self.config.get("hessian_displacement", 0.01)  # units: Å
+        displacement = self.config.get("hessian_displacement", 0.01)  # units: A
 
         # --- Step 1: Attach calculator and compute Hessian ---
         self.atoms.calc = self.engine.get_calculator()
@@ -752,25 +752,25 @@ class TSSearcher:
         # --- Step 2: Identify ligand fragment ---
         self.logger.info(f"  [TSSearch] Identifying ligand fragment (central={c_idx}, ligand_start={l_idx})...")
         ligand_indices = self._identify_ligand_fragment(self.atoms, bond_indices)
-        self.logger.info(f"  [TSSearch] Fragment: {len(ligand_indices)} atoms → indices {ligand_indices}")
+        self.logger.info(f"  [TSSearch] Fragment: {len(ligand_indices)} atoms -> indices {ligand_indices}")
 
         # --- Step 3: Build 3N dissociation direction vector ---
         # Use only the two bond atoms (central and ligand-start) moving in opposite
         # directions. Distributing the direction across the whole ligand fragment gives
         # a large net-drift vector that inadvertently overlaps with translational
         # zero-modes instead of the actual bond-stretching mode.
-        pos_central = self.atoms.positions[c_idx]  # units: Å
-        pos_ligstart = self.atoms.positions[l_idx]  # units: Å
-        v_dir_3d = pos_ligstart - pos_central  # units: Å
+        pos_central = self.atoms.positions[c_idx]  # units: A
+        pos_ligstart = self.atoms.positions[l_idx]  # units: A
+        v_dir_3d = pos_ligstart - pos_central  # units: A
         v_hat = v_dir_3d / np.linalg.norm(v_dir_3d)  # unit vector
 
-        v_dir_3n = np.zeros((n_atoms, 3))  # units: Å
+        v_dir_3n = np.zeros((n_atoms, 3))  # units: A
         v_dir_3n[l_idx] = v_hat  # ligand-start atom moves away from central
         v_dir_3n[c_idx] = -v_hat  # central atom moves away from ligand-start
         v_dir_3n = v_dir_3n.ravel()
 
         self.logger.info(
-            f"  [TSSearch] Dissociation direction |V_dir| = {np.linalg.norm(v_dir_3d):.3f} Å (Si-N bond vector)"
+            f"  [TSSearch] Dissociation direction |V_dir| = {np.linalg.norm(v_dir_3d):.3f} A (Si-N bond vector)"
         )
 
         # --- Step 4: Select TS mode by maximum overlap ---
@@ -779,16 +779,16 @@ class TSSearcher:
         n_imag_init = int(np.sum(eigenvalues < 0.0))
         self.logger.info(
             f"  [TSSearch] Initial Hessian: {n_imag_init} negative eigenvalue(s). "
-            f"Selected mode eigenvalue λ_{k_star} = {eigenvalues[k_star]:.4f} eV/Å²"
+            f"Selected mode eigenvalue λ_{k_star} = {eigenvalues[k_star]:.4f} eV/A2"
         )
 
         # --- Step 5: Apply initial perturbation along v_TS ---
-        disp_ang = self.config.get("displacement_ang", 0.2)  # units: Å
+        disp_ang = self.config.get("displacement_ang", 0.2)  # units: A
         perturbation = v_ts.reshape(n_atoms, 3) * np.sign(np.dot(v_ts, v_dir_3n))  # align sign with direction
         self.atoms.set_positions(
-            self.atoms.positions + disp_ang * perturbation  # units: Å
+            self.atoms.positions + disp_ang * perturbation  # units: A
         )
-        self.logger.info(f"  [TSSearch] Applied perturbation: {disp_ang} Å along v_TS.")
+        self.logger.info(f"  [TSSearch] Applied perturbation: {disp_ang} A along v_TS.")
 
         # --- Step 6: Adaptive Gradient-Flipping optimisation with FIRE ---
         # AdaptiveGradientFlippingCalculator recomputes the climbing direction
@@ -799,7 +799,7 @@ class TSSearcher:
         gf_calc = AdaptiveGradientFlippingCalculator(base_calc=base_calc, central_idx=c_idx, ligand_idx=l_idx)
         self.atoms.calc = gf_calc
 
-        max_bond_dist = self.config.get("max_bond_dist", 3.5)  # Å
+        max_bond_dist = self.config.get("max_bond_dist", 3.5)  # A
         log_interval = self.config.get("log_interval", 10)  # steps
 
         r_init = float(np.linalg.norm(self.atoms.positions[l_idx] - self.atoms.positions[c_idx]))
@@ -904,3 +904,5 @@ def calculate_atomic_participation(eig: np.ndarray, n_atoms: int) -> np.ndarray:
     if total < 1e-12:
         return participation
     return participation / total
+
+

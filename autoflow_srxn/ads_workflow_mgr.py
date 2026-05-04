@@ -1,4 +1,4 @@
-from itertools import combinations
+﻿from itertools import combinations
 
 import numpy as np
 import spglib
@@ -6,26 +6,9 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from .knowledge_engine import chem_kb
 from .logger_utils import get_workflow_logger
 from .surface_utils import calculate_haptic_normal, calculate_haptic_vbs
-
-# Alvarez (2013) van der Waals radii in Angstroms.
-# Source: Dalton Trans. 42, 8617-8636 (2013). DOI: 10.1039/c3dt50599e
-# Used as the default pair-wise overlap threshold: dist < overlap_scale * (r_i + r_j)
-ALVAREZ_VDW_RADII = {
-    'H': 1.20, 'He': 1.43, 'Li': 2.12, 'Be': 1.98, 'B': 1.91, 'C': 1.77,
-    'N': 1.66, 'O': 1.50, 'F': 1.46, 'Ne': 1.58, 'Na': 2.50, 'Mg': 2.51,
-    'Al': 2.25, 'Si': 2.19, 'P': 1.90, 'S': 1.89, 'Cl': 1.82, 'Ar': 1.83,
-    'K': 2.73, 'Ca': 2.62, 'Sc': 2.58, 'Ti': 2.46, 'V': 2.42, 'Cr': 2.45,
-    'Mn': 2.45, 'Fe': 2.44, 'Co': 2.40, 'Ni': 2.40, 'Cu': 2.38, 'Zn': 2.39,
-    'Ga': 2.32, 'Ge': 2.29, 'As': 1.88, 'Se': 1.82, 'Br': 1.86, 'Kr': 2.25,
-    'Rb': 3.21, 'Sr': 2.84, 'Y': 2.75, 'Zr': 2.52, 'Nb': 2.56, 'Mo': 2.45,
-    'Ru': 2.46, 'Rh': 2.44, 'Pd': 2.15, 'Ag': 2.53, 'Cd': 2.49,
-    'In': 2.43, 'Sn': 2.42, 'Sb': 2.47, 'Te': 1.99, 'I': 2.04, 'Xe': 2.06,
-    'Cs': 3.48, 'Ba': 3.03, 'Hf': 2.63, 'Ta': 2.53, 'W': 2.57, 'Re': 2.49,
-    'Os': 2.48, 'Ir': 2.41, 'Pt': 2.29, 'Au': 2.32, 'Hg': 2.45,
-    'Tl': 2.47, 'Pb': 2.60, 'Bi': 2.54,
-}
 
 
 class AdsorptionWorkflowManager:
@@ -39,25 +22,26 @@ class AdsorptionWorkflowManager:
         self.symprec = symprec
         self.logger = get_workflow_logger()
 
-        tags = slab.get_tags()
-        # Identify substrate surface (tags < 2)
-        sub_mask = (tags < 2)
+        tags = self.slab.get_tags()
+        self.slab_tags = set(tags)
+        # Identify substrate surface (tags < 2 or tag 4)
+        sub_mask = (tags < 2) | (tags == 4)
         if np.any(sub_mask):
-            z_max_sub = slab.positions[sub_mask, 2].max()
-            sub_surface = np.where(sub_mask & (slab.positions[:, 2] > z_max_sub - 1.5))[0]
+            z_max_sub = self.slab.positions[sub_mask, 2].max()
+            sub_surface = np.where(sub_mask & (self.slab.positions[:, 2] > z_max_sub - 1.5))[0]
         else:
             sub_surface = np.array([], dtype=int)
 
-        # Identify inhibitor surface (tags >= 2)
-        inh_mask = (tags >= 2)
+        # Identify inhibitor surface (tags in [2, 3])
+        inh_mask = (tags == 2) | (tags == 3)
         if np.any(inh_mask):
-            z_max_inh = slab.positions[inh_mask, 2].max()
-            inh_surface = np.where(inh_mask & (slab.positions[:, 2] > z_max_inh - 1.5))[0]
+            z_max_inh = self.slab.positions[inh_mask, 2].max()
+            inh_surface = np.where(inh_mask & (self.slab.positions[:, 2] > z_max_inh - 1.5))[0]
         else:
             inh_surface = np.array([], dtype=int)
 
         all_surface = np.unique(np.concatenate([sub_surface, inh_surface]))
-        self.surface_indices = self.get_unique_surface_indices(slab, all_surface, symprec=self.symprec)
+        self.surface_indices = self.get_unique_surface_indices(self.slab, all_surface, symprec=self.symprec)
         self.logger.info(
             f"Surface Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites."
         )
@@ -220,9 +204,9 @@ class AdsorptionWorkflowManager:
         - ``overlap_scale`` (default): pair threshold = overlap_scale * (r_vdw_i + r_vdw_j)
           using ALVAREZ_VDW_RADII.  ``overlap_scale`` defaults to
           ``config.reaction_search.candidate_filter.overlap_scale`` (fallback 0.65).
-        - ``cutoff`` (Å): explicit flat threshold applied to every pair, regardless of
+        - ``cutoff`` (A): explicit flat threshold applied to every pair, regardless of
           element identity.  Useful for chemisorption geometry checks where the newly
-          formed bond length is already known (e.g. cutoff=1.4 Å).  If both are supplied,
+          formed bond length is already known (e.g. cutoff=1.4 A).  If both are supplied,
           ``cutoff`` takes precedence.
 
         Z-periodicity is disabled to avoid spurious collisions with the slab bottom image.
@@ -230,13 +214,13 @@ class AdsorptionWorkflowManager:
         from ase.geometry import get_distances
 
         tags = atoms.get_tags()
-        max_tag = np.max(tags)
-        if max_tag < 2:
-            return False
+        # New atoms are those whose tags were not in the original slab
+        new_idx = np.array([i for i, t in enumerate(tags) if t not in self.slab_tags], dtype=int)
+        env_idx = np.array([i for i, t in enumerate(tags) if t in self.slab_tags], dtype=int)
 
-        new_idx = np.where(tags == max_tag)[0]
-        env_idx = np.where(tags < max_tag)[0]
         if len(new_idx) == 0:
+            # Fallback for when tags are not maintained: assume last atoms are new
+            # (But this shouldn't happen with our workflow)
             return False
 
         pos = atoms.positions
@@ -249,15 +233,17 @@ class AdsorptionWorkflowManager:
                 "candidate_filter", {}).get("overlap_scale", 0.65)
 
         def _thresh(i, j):
-            """Return the overlap threshold (Å) for atom pair (i, j)."""
+            """Return the overlap threshold (A) for atom pair (i, j)."""
             if cutoff is not None:
                 return cutoff
-            ri = ALVAREZ_VDW_RADII.get(symbols[i], 2.0)
-            rj = ALVAREZ_VDW_RADII.get(symbols[j], 2.0)
+            ri = chem_kb.get_radius(symbols[i], "vdw")
+            rj = chem_kb.get_radius(symbols[j], "vdw")
             return overlap_scale * (ri + rj)
 
         # Disable Z-periodicity to avoid wrap-around hits with slab bottom
         effective_pbc = [True, True, False]
+        
+        # print(f"DEBUG check_overlap: check_internal={check_internal}")
 
         # 1. Internal check (new atoms vs. each other)
         if check_internal and len(new_idx) > 1:
@@ -267,7 +253,10 @@ class AdsorptionWorkflowManager:
                     idx_i, idx_j = new_idx[i], new_idx[j]
                     if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs:
                         continue
-                    if int_dists[i, j] < _thresh(idx_i, idx_j):
+                    thresh = _thresh(idx_i, idx_j)
+                    if int_dists[i, j] < thresh:
+                        if verbose:
+                            self.logger.info(f"  [Overlap] Internal clash: {symbols[idx_i]}({idx_i}) - {symbols[idx_j]}({idx_j}) | Dist: {int_dists[i, j]:.2f} < {thresh:.2f} A")
                         return True
 
         # 2. External check (new atoms vs. environment)
@@ -281,7 +270,10 @@ class AdsorptionWorkflowManager:
                         continue
                     if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs:
                         continue
-                    if ext_dists[i, j] < _thresh(idx_i, idx_j):
+                    thresh = _thresh(idx_i, idx_j)
+                    if ext_dists[i, j] < thresh:
+                        if verbose:
+                            self.logger.info(f"  [Overlap] External clash: {symbols[idx_i]}({idx_i}) - {symbols[idx_j]}({idx_j}) | Dist: {ext_dists[i, j]:.2f} < {thresh:.2f} A")
                         return True
         return False
 
@@ -366,20 +358,20 @@ class AdsorptionWorkflowManager:
         Parameters
         ----------
         height : float
-            Placement height in Å, interpreted according to ``height_mode``.
+            Placement height in A, interpreted according to ``height_mode``.
         height_mode : str
             ``"clearance"`` (default) — lowest atom of the molecule sits exactly
-            ``height`` Å above the substrate surface.  Physically correct for large
+            ``height`` A above the substrate surface.  Physically correct for large
             molecules where the COM can be far above the binding atom.
             ``"center"`` — rotation center (COM or specified element) is placed at
-            ``height`` Å above the surface.  Useful when comparing multiple molecules
+            ``height`` A above the surface.  Useful when comparing multiple molecules
             at a consistent center-to-surface distance.
         gravity_pull : dict or None
             Optional downward-descent after initial placement.  Example::
 
                 {"enabled": True, "step_size": 0.2}
 
-            The molecule descends by ``step_size`` Å per step until either the first
+            The molecule descends by ``step_size`` A per step until either the first
             vdW contact (Alvarez radii, ``overlap_scale``) or the substrate surface
             (hard floor at z_surface_ref) is encountered.  Default: disabled.
         """
@@ -417,26 +409,33 @@ class AdsorptionWorkflowManager:
             if target_centers:
                 target_centers = [c + np.array([0, 0, 0.5]) for c in target_centers]
 
-        # --- Regular surface-atom sites (already symmetry-reduced in __init__) ---
+        # --- Regular surface-atom sites ---
         if not target_centers:
-            for idx in self.surface_indices:
-                site_xy = self.slab.positions[idx, :2].copy()
-                target_centers.append(np.array([site_xy[0], site_xy[1], z_surface_ref + height]))
+            from .surface_utils import find_surface_indices
+            all_surface = find_surface_indices(self.slab, side="top")
+            raw_target_centers = []
 
-            # Also add hollow mid-points for slabs with multiple unique sites
-            if len(self.surface_indices) >= 2:
-                for i in range(len(self.surface_indices)):
-                    for j in range(i + 1, len(self.surface_indices)):
-                        p1 = self.slab.positions[self.surface_indices[i]]
-                        p2 = self.slab.positions[self.surface_indices[j]]
+            for idx in all_surface:
+                site_xy = self.slab.positions[idx, :2].copy()
+                raw_target_centers.append(np.array([site_xy[0], site_xy[1], z_surface_ref + height]))
+
+            # Add bridge/hollow mid-points for all adjacent surface atoms
+            if len(all_surface) >= 2:
+                for i in range(len(all_surface)):
+                    for j in range(i + 1, len(all_surface)):
+                        p1 = self.slab.positions[all_surface[i]]
+                        p2 = self.slab.positions[all_surface[j]]
                         if 2.0 < np.linalg.norm(p1 - p2) < 5.0:
                             hollow = np.array([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2, z_surface_ref + height])
-                            target_centers.append(hollow)
+                            raw_target_centers.append(hollow)
+
+            # Apply symmetry reduction AFTER topological generation
+            target_centers = self.get_unique_coordinates(self.slab, raw_target_centers, symprec=self.symprec)
 
         self.logger.info(
             f"  [Physisorption] {len(target_centers)} placement sites "
-            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} Å [{height_mode}], "
-            f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}Å'.format(grav_step) if grav_enabled else 'off'})"
+            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} A [{height_mode}], "
+            f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}A'.format(grav_step) if grav_enabled else 'off'})"
         )
 
         # --- Fibonacci-sphere rotation + Spin sampling ---
@@ -529,7 +528,6 @@ class AdsorptionWorkflowManager:
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
         if verbose is None: verbose = self.verbose
-        from ase.data import covalent_radii
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
         from ase.geometry import get_distances
@@ -547,7 +545,7 @@ class AdsorptionWorkflowManager:
 
         for i in range(n_atoms):
             for j in range(i + 1, n_atoms):
-                dist_cutoff = covalent_radii[molecule.numbers[i]] + covalent_radii[molecule.numbers[j]] + skin
+                dist_cutoff = chem_kb.get_radius(molecule.symbols[i], "covalent") + chem_kb.get_radius(molecule.symbols[j], "covalent") + skin
                 if d[i, j] < dist_cutoff and d[i, j] > 0.1:
                     adj_matrix[i, j] = 1
                     adj_matrix[j, i] = 1
@@ -604,3 +602,4 @@ class AdsorptionWorkflowManager:
         h_pos = f.positions[binding_idx] + (internal_bond_vec / np.linalg.norm(internal_bond_vec)) * b_len
         f += Atoms("H", positions=[h_pos])
         return f
+

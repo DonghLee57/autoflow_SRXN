@@ -1,10 +1,10 @@
-# =============================================================================
+﻿# =============================================================================
 # Practical Config: Ethanol (Physi) + DIPAS (Physi/Chemi) on Si(110)
 # =============================================================================
 
 paths:
   substrate_bulk: "../../structures/Si_mp149.vasp"
-  adsorbate: "../../structures/DIPAS.vasp"
+  precursor: "../../structures/DIPAS.vasp"
   inhibitor: "../../structures/ethanol.vasp"
   include_no_inhibitor: true
   output_prefix: "results"
@@ -37,11 +37,11 @@ reaction_search:
       physisorption:
         enabled: true
         placement_height: 3.2
-        height_mode: "clearance"    # "clearance": lowest atom at height Å above surface
-                                    # "center":    rotation center at height Å above surface
+        height_mode: "clearance"    # "clearance": lowest atom at height A above surface
+                                    # "center":    rotation center at height A above surface
         gravity_pull:
           enabled: false            # descend until first vdW contact after initial placement
-          step_size: 0.2            # Å per descent step (only relevant if enabled: true)
+          step_size: 0.2            # A per descent step (only relevant if enabled: true)
       branching_limit: 1
       chemisorption:
         enabled: false
@@ -50,14 +50,20 @@ reaction_search:
       center: "Si"
       physisorption:
         enabled: true
+        verbose: true
         placement_height: 5.0
-        height_mode: "clearance"    # "clearance": lowest atom at height Å above surface
-                                    # "center":    rotation center at height Å above surface
+        height_mode: "clearance"    # "clearance": lowest atom at height A above surface
+                                    # "center":    rotation center at height A above surface
         gravity_pull:
           enabled: false            # descend until first vdW contact after initial placement
-          step_size: 0.2            # Å per descent step (only relevant if enabled: true)
+          step_size: 0.2            # A per descent step (only relevant if enabled: true)
       chemisorption:
         enabled: true
+        verbose: true
+        proximity_filter:
+          enabled: true
+          cutoff: 7.0
+          visualize: true
         rot_steps: 8
 
   candidate_filter:
@@ -73,9 +79,10 @@ verification:
     frozen_z_ang: 5.5 # Consistent fixing
 
 engine:
-  name: "mace"
-  parameters:
-    model: "medium"
-    device: "cpu"
-    dtype: "float64"
-    d3: true         # Enable dispersion for physisorption stability
+  potential:
+    backend:  "mace"
+    model:    "medium"
+    device:   "cpu"
+    dtype:    "float64"
+    d3:       true         # Enable dispersion for physisorption stability
+

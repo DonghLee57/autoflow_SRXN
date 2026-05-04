@@ -1,3 +1,4 @@
+﻿import os
 import numpy as np
 from ase import Atoms
 
@@ -5,9 +6,8 @@ from .ads_workflow_mgr import AdsorptionWorkflowManager
 from .knowledge_engine import chem_kb
 
 
-def analyze_surface_reactivity(surface, config, verbose=True):
+def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, results_dir=None):
     import numpy as np
-    from ase.data import covalent_radii
     from ase.neighborlist import neighbor_list
 
     from .surface_utils import identify_protectors
@@ -64,7 +64,7 @@ def analyze_surface_reactivity(surface, config, verbose=True):
         neighbors = []
         for n_i, n_j, dist in zip(i_list, j_list, d_list):
             if n_i == idx:
-                cutoff_val = covalent_radii[surface.numbers[n_i]] + covalent_radii[surface.numbers[n_j]] + 0.3
+                cutoff_val = chem_kb.get_radius(surface.symbols[n_i], "covalent") + chem_kb.get_radius(surface.symbols[n_j], "covalent") + 0.3
                 if dist < cutoff_val and dist > 0.1:
                     neighbors.append(n_j)
 
@@ -104,10 +104,47 @@ def analyze_surface_reactivity(surface, config, verbose=True):
                         )
                         break
 
-    if verbose:
-        print(
-            f"  [Generic Reactivity] Identified {len(dangling_sites)} undercoordinated surface sites and {len(exchange_sites)} protector exchange sites."
-        )
+    # --- Proximity Filtering Logic ---
+    mechs_cfg = config.get("reaction_search", {}).get("mechanisms", {})
+    pre_cfg = mechs_cfg.get("precursor", {})
+    prox_cfg = pre_cfg.get("chemisorption", {}).get("proximity_filter", {})
+    
+    if prox_cfg.get("enabled", False) and len(prot_idx) > 0:
+        from ase.geometry import get_distances
+        cutoff = prox_cfg.get("cutoff", 7.0)
+        
+        inh_pos = surface.positions[prot_idx]
+        
+        def filter_proximity(sites):
+            if not sites: return []
+            site_pos = np.array([s["pos"] for s in sites])
+            _, dists = get_distances(site_pos, inh_pos, cell=surface.cell, pbc=surface.pbc)
+            min_dists = np.min(dists, axis=1)
+            filtered = [s for s, d in zip(sites, min_dists) if d < cutoff]
+            return filtered
+
+        # Capture unfiltered sites for visualization
+        unfiltered_dan = list(dangling_sites)
+        unfiltered_exc = list(exchange_sites)
+
+        orig_dan = len(dangling_sites)
+        orig_exc = len(exchange_sites)
+        dangling_sites = filter_proximity(dangling_sites)
+        exchange_sites = filter_proximity(exchange_sites)
+        
+        if verbose:
+            print(f"  [Proximity Filter] Reduced sites based on distance to inhibitor (cutoff={cutoff} A):")
+            print(f"    - Dangling: {orig_dan} -> {len(dangling_sites)}")
+            print(f"    - Exchange: {orig_exc} -> {len(exchange_sites)}")
+
+        if prox_cfg.get("visualize", False) and results_dir:
+            from .viz_utils import plot_site_proximity
+            img_path = os.path.join(results_dir, "site_proximity_map.png")
+            all_sites = unfiltered_dan + unfiltered_exc
+            filt_sites = dangling_sites + exchange_sites
+            plot_site_proximity(surface, all_sites, filt_sites, prot_idx, cutoff, img_path)
+            if verbose:
+                print(f"  [Proximity Filter] Visualization saved to {img_path}")
 
     results = {"single": dangling_sites, "pairs": [], "exchange": exchange_sites}
 
@@ -170,7 +207,7 @@ def analyze_molecule_ligands(molecule, center_target="Si", verbose=True):
 
 
 def build_chemisorption_structures(
-    molecule, center_target="Si", surface=None, rot_steps=8, config=None, verbose=True, tag=2
+    molecule, center_target="Si", surface=None, rot_steps=8, config=None, verbose=True, tag=2, results_dir=None
 ):
     """Entry point for algorithmic chemisorption generation based on input molecule and surface.
     Identifies valid mechanisms based on available surface sites.
@@ -180,7 +217,16 @@ def build_chemisorption_structures(
 
     if config is None:
         config = {}
-    sites = analyze_surface_reactivity(surface, config, verbose=verbose)
+    
+    # Extract chemisorption verbose flag from config
+    mechs_cfg = config.get("reaction_search", {}).get("mechanisms", {})
+    pre_cfg = mechs_cfg.get("precursor", {})
+    chem_verbose = pre_cfg.get("chemisorption", {}).get("verbose", False)
+    
+    from .surface_utils import standardize_vasp_atoms
+    surface = standardize_vasp_atoms(surface)
+    
+    sites = analyze_surface_reactivity(surface, config, verbose=verbose, results_dir=results_dir)
     c_idx, ligands = analyze_molecule_ligands(molecule, center_target=center_target, verbose=verbose)
 
     candidates = []
@@ -197,13 +243,13 @@ def build_chemisorption_structures(
     if sites.get("pairs"):
         if verbose:
             print(f"  -> Routing to Generic Dissociative Chemisorption on {len(sites['pairs'])} Pairs...")
-        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites["pairs"], rot_steps, tag=tag)
+        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites["pairs"], rot_steps, tag=tag, verbose=chem_verbose)
         candidates.extend(d_cands)
 
     if sites.get("exchange"):
         if verbose:
             print(f"  -> Routing to Protector Exchange Chemisorption on {len(sites['exchange'])} Sites...")
-        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag)
+        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag, verbose=chem_verbose)
         candidates.extend(x_cands)
 
     if verbose:
@@ -215,7 +261,7 @@ def build_chemisorption_structures(
 def _min_nonbonded_clearance(combined, n_slab, skip_pairs=None, skip_indices=None):
     """Minimum distance between newly added atoms and the slab, excluding bonded pairs.
 
-    Used to rank valid poses: larger clearance → better initial geometry for relaxation.
+    Used to rank valid poses: larger clearance -> better initial geometry for relaxation.
     """
     from ase.geometry import get_distances
 
@@ -251,7 +297,6 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     Tries all rot_steps angles per site and keeps the pose with the largest
     minimum non-bonded clearance (best initial geometry for subsequent relaxation).
     """
-    from ase.data import covalent_radii
 
     candidates = []
     stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
@@ -277,9 +322,8 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
             si_pos = s["pos"]
             h_vec_norm = s["db_vector"]
 
-            # Element-specific bond length (center atom → surface atom)
-            surf_num = mgr.slab.numbers[s["index"]]
-            bond_len_a = covalent_radii[center_num] + covalent_radii[surf_num]
+            # Element-specific bond length (center atom -> surface atom)
+            bond_len_a = chem_kb.get_radius(molecule.symbols[c_idx], "covalent") + chem_kb.get_radius(mgr.slab.symbols[s["index"]], "covalent")
 
             best_pose = None
             best_clearance = -np.inf
@@ -333,17 +377,16 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     return candidates
 
 
-def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps, tag=2):
+def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps, tag=2, verbose=False):
     """Internal subroutine to execute Generic Dissociative Chemisorption on pairs of dangling bonds.
 
     Algorithmic improvements vs naive first-valid-angle approach:
-    - Element-specific bond length (covalent radii sum) for the center→surface bond.
-    - Both site permutations (s1→s2 and s2→s1) and all rot_steps angles are evaluated;
+    - Element-specific bond length (covalent radii sum) for the center->surface bond.
+    - Both site permutations (s1->s2 and s2->s1) and all rot_steps angles are evaluated;
       the pose with the largest minimum non-bonded clearance is selected.  This maximises
       the distance budget available for the subsequent MLIP relaxation and reduces the risk
       of energy blow-up from overlapping atoms.
     """
-    from ase.data import covalent_radii
 
     candidates = []
     stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
@@ -370,9 +413,9 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
             best_clearance = -np.inf
 
             for active_1, active_2 in [(s1, s2), (s2, s1)]:
-                # Element-specific bond length for frag_a center → surface site
+                # Element-specific bond length for frag_a center -> surface site
                 surf_num = mgr.slab.numbers[active_1["index"]]
-                bond_len_a = covalent_radii[center_num] + covalent_radii[surf_num]
+                bond_len_a = chem_kb.get_radius(molecule.symbols[c_idx], "covalent") + chem_kb.get_radius(mgr.slab.symbols[active_1["index"]], "covalent")
 
                 bond_len_b = 2.1
                 if l_info["hapticity"] == 1 and frag_b.symbols[binding_idx_b[0]] == "H":
@@ -426,7 +469,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                         for j in range(i + 1, len(frag_b_indices)):
                             skip_pairs.append((frag_b_indices[i], frag_b_indices[j]))
 
-                    if not mgr.check_overlap(combined, skip_pairs=skip_pairs, cutoff=1.4, verbose=False):
+                    if not mgr.check_overlap(combined, skip_pairs=skip_pairs, verbose=verbose, check_internal=False):
                         clearance = _min_nonbonded_clearance(combined, new_start, skip_pairs=skip_pairs)
                         if clearance > best_clearance:
                             best_clearance = clearance
@@ -450,12 +493,12 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
     return candidates
 
 
-def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3):
+def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3, verbose=False):
     """Internal subroutine to execute Ligand Exchange with Protector leaves.
 
     Tries all rot_steps angles and keeps the pose with the largest minimum
     non-bonded clearance (same best-clearance strategy as _execute_generic_dissociation).
-    Bond length for the new center→backbone bond uses covalent radii.
+    Bond length for the new center->backbone bond uses covalent radii.
     """
     from ase.data import covalent_radii
 
@@ -483,9 +526,9 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
             backbone_pos = s["pos"]
             h_vec_norm = s["db_vector"]  # points AWAY from surface
 
-            # Element-specific bond length (center → backbone atom)
+            # Element-specific bond length (center -> backbone atom)
             backbone_num = mgr.slab.numbers[s["backbone_idx"]]
-            bond_len_a = covalent_radii[center_num] + covalent_radii[backbone_num]
+            bond_len_a = chem_kb.get_radius(molecule.symbols[c_idx], "covalent") + chem_kb.get_radius(mgr.slab.symbols[s["backbone_idx"]], "covalent")
 
             best_pose = None
             best_clearance = -np.inf
@@ -530,7 +573,7 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                     for j in range(i + 1, len(frag_a_indices)):
                         skip_pairs.append((frag_a_indices[i], frag_a_indices[j]))
 
-                if not mgr.check_overlap(combined, skip_pairs=skip_pairs, cutoff=1.4, verbose=False):
+                if not mgr.check_overlap(combined, skip_pairs=skip_pairs, verbose=verbose, check_internal=False):
                     clearance = _min_nonbonded_clearance(combined, n_slab_trimmed, skip_pairs=skip_pairs)
                     if clearance > best_clearance:
                         best_clearance = clearance
@@ -550,3 +593,4 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                 candidates.append(best_pose)
 
     return candidates
+

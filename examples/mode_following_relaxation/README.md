@@ -1,4 +1,4 @@
-# Mode-Following Structural Relaxation: Stability Refinement of DIPAS Molecule
+﻿# Mode-Following Structural Relaxation: Stability Refinement of DIPAS Molecule
 
 This example demonstrates the automated refinement of molecular structures by following imaginary vibrational modes. The primary objective is to transcend saddle points on the potential energy surface (PES) to reach a true local minimum, ensuring thermodynamic stability for subsequent chemical reaction modeling.
 
@@ -24,13 +24,13 @@ The refinement workflow follows a "Perturb-and-Relax" cycle:
 
 ### A. Sensitivity-Driven Phonon Analysis
 We utilize the finite displacement method to construct the Hessian. To differentiate between actual PES curvature and numerical artifacts (noise), we performed a sensitivity study across varying displacement scales ($u$):
-- **Displacement Parameter ($u$)**: Tested at $0.01, 0.005, \text{ and } 0.001$ Å.
+- **Displacement Parameter ($u$)**: Tested at $0.01, 0.005, \text{ and } 0.001$ A.
 
 ### B. Hierarchical Relaxation Scheme
 To ensure the system reaches the deepest part of the local potential well, we implement a two-stage relaxation:
 1. **Conjugate Gradient (CG)**: Utilized for rapid initial descent from the high-energy perturbed state.
 2. **FIRE (Fast Inertial Relaxation Engine)**: A robust inertia-based optimizer used for final convergence to an ultra-tight threshold.
-- **Convergence Criterion**: $f_{max} < 0.001 \text{ eV/Å}$.
+- **Convergence Criterion**: $f_{max} < 0.001 \text{ eV/A}$.
 
 ### C. Mode-Following Perturbation
 Stability refinement is achieved by updating the atomic coordinates $\mathbf{R}$ through a controlled displacement along the unstable normal modes:
@@ -39,7 +39,7 @@ $$\mathbf{R}_{\text{new}} = \mathbf{R}_{\text{old}} + \alpha \cdot \mathbf{e}_{\
 
 The criteria and parameters for this perturbation are defined as follows:
 - **Identification Threshold**: Modes are selected for refinement if the frequency $\nu$ is less than $-0.1$ THz.
-- **Perturbation Scale ($\alpha$)**: An initial displacement factor of $0.1$ Å is applied to move the system away from the saddle point.
+- **Perturbation Scale ($\alpha$)**: An initial displacement factor of $0.1$ A is applied to move the system away from the saddle point.
 - **Directional Vector ($\mathbf{e}_{\text{imag}}$)**: The normalized eigenvector associated with the specific imaginary frequency.
 
 ## 3. Simulation Results and Analysis
@@ -89,3 +89,4 @@ The script will generate:
 - **Phonon Engine**: Phonopy.
 - **Optimizer**: ASE (Atomic Simulation Environment).
 - **Logic**: AutoFlow-SRXN Stability Module.
+

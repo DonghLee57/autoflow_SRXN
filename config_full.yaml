@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # AutoFlow-SRXN — Full Configuration Reference
 # =============================================================================
 # Package purpose:
@@ -24,13 +24,13 @@
 paths:
   # ── Substrate Definitions ─────────────────────────────────────────────────
   substrate_bulk:  "structures/SiO2_mp-546794.vasp"  # Bulk crystal (VASP).
-  substrate_slab:  null                              # Pre-built slab (skips generation).
+  input_structure: null                              # Pre-built slab (skips generation).
 
   # ── Batch Discovery & Screening ──────────────────────────────────────────
   # AutoFlow-SRXN supports automated large-scale screening by scanning 
   # directories for molecular structures.
   #
-  # 1. Directory Scanning: If adsorbates_dir/inhibitors_dir are set, all 
+  # 1. Directory Scanning: If precursors_dir/inhibitors_dir are set, all 
   #    .vasp, .xyz, and .extxyz files within them are automatically detected.
   # 2. Cross-Product Pairing: The tool performs discovery for ALL possible 
   #    combinations (Precursor X Inhibitor). e.g., 2 precursors and 3 
@@ -40,13 +40,13 @@ paths:
   # 4. Baseline Comparison: Set 'include_no_inhibitor: true' to automatically 
   #    include a 'Pure Surface' (no inhibitor) case for each precursor.
 
-  adsorbates_dir:  "inputs/precursors"  # Path to dir for automated scanning.
+  precursors_dir:  "inputs/precursors"  # Path to dir for automated scanning.
   inhibitors_dir:  "inputs/inhibitors"  # Path to dir for automated scanning.
   include_no_inhibitor: true            # Include 'None_on_Precursor' baseline.
 
   # ── Individual File Options (Fallback/Legacy) ─────────────────────────────
   # Used if directory scanning is not active or for single-target runs.
-  adsorbate:       "structures/DIPAS.vasp"
+  precursor:       "structures/DIPAS.vasp"
   inhibitor:       null
 
   # ── Output Management ─────────────────────────────────────────────────────
@@ -100,17 +100,17 @@ engine:
     # Selects which pretrained weights to load.
     #
     # MACE options
-    #   null              → "medium-mpa-0" (Materials Project + Alexandria; default)
-    #   "small"           → lighter model, faster but slightly less accurate
-    #   "medium"          → original MACE-MP-0 medium (mace_mp_0)
-    #   "large"           → original MACE-MP-0 large
-    #   "medium-0b3"      → MACE-MP-0b3, improved coverage of organic chemistry
-    #   "/path/model.pt"  → local checkpoint; must be a MACE-compatible .model file
+    #   null              -> "medium-mpa-0" (Materials Project + Alexandria; default)
+    #   "small"           -> lighter model, faster but slightly less accurate
+    #   "medium"          -> original MACE-MP-0 medium (mace_mp_0)
+    #   "large"           -> original MACE-MP-0 large
+    #   "medium-0b3"      -> MACE-MP-0b3, improved coverage of organic chemistry
+    #   "/path/model.pt"  -> local checkpoint; must be a MACE-compatible .model file
     #
     # SevenNet options
-    #   null              → "7net-0" (universal potential for 89 elements)
-    #   "7net-omat24"     → fine-tuned on Open Materials 2024 dataset
-    #   "/path/ckpt.pth"  → local SevenNet checkpoint (.pth)
+    #   null              -> "7net-0" (universal potential for 89 elements)
+    #   "7net-omat24"     -> fine-tuned on Open Materials 2024 dataset
+    #   "/path/ckpt.pth"  -> local SevenNet checkpoint (.pth)
     model:    null
 
     # ── Floating-point precision ───────────────────────────────────────────────
@@ -118,10 +118,10 @@ engine:
     #
     # "float32"  Faster (≈2× on CPU, ≈4× on GPU), lower memory.
     #            Sufficient for NVT-MD and coarse geometry screening.
-    #            Typical force error vs float64: < 1 meV/Å.
+    #            Typical force error vs float64: < 1 meV/A.
     #
     # "float64"  Double precision.  Required when:
-    #            • Geometry optimisation to tight fmax (< 0.05 eV/Å)
+    #            • Geometry optimisation to tight fmax (< 0.05 eV/A)
     #            • Hessian / vibrational-frequency calculations
     #            • Thermodynamic free-energy comparisons (PHVA / FHVA)
     #            Numerical second derivatives amplify any single-precision noise.
@@ -129,7 +129,7 @@ engine:
 
     # ── D3 dispersion correction ───────────────────────────────────────────────
     # Adds Grimme's D3(BJ) empirical van der Waals correction to the potential.
-    # Improves description of physisorption and π–π stacking interactions
+    # Improves description of physisorption and π-π stacking interactions
     # that are under-bound by most GGA-based MLIP training sets.
     #
     # MACE    — uses TorchDFTD3Calculator (pip install torch-dftd).
@@ -150,7 +150,7 @@ engine:
 
     # enable_cueq
     #   Activates the cuEquivariance CUDA kernel for equivariant tensor
-    #   contractions.  Provides 2–5× speedup on NVIDIA GPUs.
+    #   contractions.  Provides 2-5× speedup on NVIDIA GPUs.
     #   Requires: pip install cuequivariance cuequivariance-torch
     #   Has no effect on CPU or with EMT / MACE backends.
     enable_cueq:  false
@@ -168,7 +168,7 @@ engine:
     # Background
     # ----------
     # ML potentials are trained on near-equilibrium structures.  At very short
-    # interatomic distances (sub-bonding, r < ~1.5 Å) encountered during
+    # interatomic distances (sub-bonding, r < ~1.5 A) encountered during
     # aggressive MD or geometry searches, the MLIP energy surface can be
     # unphysical — sometimes even attractive — because no such configurations
     # appeared in the training data.  The ZBL potential provides the correct
@@ -186,10 +186,10 @@ engine:
     # Physics
     # -------
     # Pair energy:
-    #   V_ZBL(r) = (Z_i · Z_j · e²) / (4πε₀ · r) · Φ(r / a_ij)
+    #   V_ZBL(r) = (Z_i · Z_j · e2) / (4πε₀ · r) · Φ(r / a_ij)
     #
     # Universal screening length:
-    #   a_ij = 0.4685 Å / (Z_i^0.23 + Z_j^0.23)
+    #   a_ij = 0.4685 A / (Z_i^0.23 + Z_j^0.23)
     #
     # Universal screening function (4-term fit, ZBL 1985):
     #   Φ(x) = 0.1818·e^(−3.200·x) + 0.5099·e^(−0.9423·x)
@@ -197,45 +197,45 @@ engine:
     #
     # Switching function (cubic Hermite, C¹-smooth):
     #   S(r) = 1                              r ≤ cutoff_inner
-    #   S(r) = 1 − 3t² + 2t³  (t normalised) cutoff_inner < r < cutoff_outer
+    #   S(r) = 1 − 3t2 + 2t³  (t normalised) cutoff_inner < r < cutoff_outer
     #   S(r) = 0                              r ≥ cutoff_outer
     # Forces are derived analytically from dV/dr · S(r) + V · dS/dr.
     #
     # Supported backend combinations
     # --------------------------------
-    #   backend: "mace"     + zbl.enabled: true   →  MACE-MP  + ZBL
-    #   backend: "sevennet" + zbl.enabled: true   →  SevenNet + ZBL
-    #   backend: "mace", d3: true, zbl.enabled: true  →  MACE + D3 + ZBL
-    #   backend: "emt"      + zbl.enabled: true   →  EMT + ZBL (testing only)
+    #   backend: "mace"     + zbl.enabled: true   ->  MACE-MP  + ZBL
+    #   backend: "sevennet" + zbl.enabled: true   ->  SevenNet + ZBL
+    #   backend: "mace", d3: true, zbl.enabled: true  ->  MACE + D3 + ZBL
+    #   backend: "emt"      + zbl.enabled: true   ->  EMT + ZBL (testing only)
     #
     # Per-pair outer cutoff database
     # --------------------------------
     # src/zbl_pairs.json stores element-pair-specific outer switching distances
     # for 14 chemically relevant elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P,
     # S, Si, Ti, Zr).  Each value is set to approximately the equilibrium bond
-    # length (R_cov_i + R_cov_j × 1.056, capped at 0.8–2.8 Å) so that ZBL is
+    # length (R_cov_i + R_cov_j × 1.056, capped at 0.8-2.8 A) so that ZBL is
     # essentially inactive at normal bonding distances and only activates at
     # sub-bonding close contacts.  Element pairs not listed in the file fall
     # back to the global cutoff_outer parameter defined below.
     #
     # Cutoff guidelines for surface chemistry
     # -----------------------------------------
-    #   Reference bond lengths:  Si–Si 2.35 Å · Si–O 1.64 Å · C–H 1.09 Å
-    #                            N–H  1.01 Å · Si–N 1.73 Å · Si–H 1.48 Å
+    #   Reference bond lengths:  Si-Si 2.35 A · Si-O 1.64 A · C-H 1.09 A
+    #                            N-H  1.01 A · Si-N 1.73 A · Si-H 1.48 A
     #
-    #   cutoff_inner: 0.5 Å  — well below any covalent bond; ZBL is fully
+    #   cutoff_inner: 0.5 A  — well below any covalent bond; ZBL is fully
     #                           active only at extreme nuclear overlap.
-    #                           Short bonds (N–H 1.01 Å, O–H 0.96 Å) sit near
+    #                           Short bonds (N-H 1.01 A, O-H 0.96 A) sit near
     #                           the outer switching end where S ≈ 0, so ZBL
     #                           does not perturb equilibrium geometries.
-    #   cutoff_outer: 2.5 Å  — global fallback for pairs absent from the DB.
+    #   cutoff_outer: 2.5 A  — global fallback for pairs absent from the DB.
     #                           Per-pair values in src/zbl_pairs.json typically
-    #                           range from 0.8 Å (H–H) to 2.8 Å (heavy metals),
+    #                           range from 0.8 A (H-H) to 2.8 A (heavy metals),
     #                           keeping ZBL inactive at normal bonded distances.
     zbl:
-      enabled:       false   # false → pure MLIP  |  true → MLIP + ZBL combination
-      cutoff_inner:  0.5     # Å. ZBL weight = 1 (fully active)  for r ≤ cutoff_inner.
-      cutoff_outer:  2.5     # Å. Global fallback outer cutoff for pairs not found in
+      enabled:       false   # false -> pure MLIP  |  true -> MLIP + ZBL combination
+      cutoff_inner:  0.5     # A. ZBL weight = 1 (fully active)  for r ≤ cutoff_inner.
+      cutoff_outer:  2.5     # A. Global fallback outer cutoff for pairs not found in
                              #    src/zbl_pairs.json.  ZBL weight = 0 for r ≥ this value.
                              #    Weight transitions smoothly via cubic Hermite between
                              #    cutoff_inner and the pair-specific (or fallback) outer
@@ -244,7 +244,7 @@ engine:
   # Default geometry optimization settings.
   # Inherited by surface_prep.slab_relaxation and verification.relaxation.
   relaxation:
-    fmax:      0.05    # Max-force convergence criterion (eV/Å). Recommended: 0.05 (coarse), 0.01 (tight).
+    fmax:      0.05    # Max-force convergence criterion (eV/A). Recommended: 0.05 (coarse), 0.01 (tight).
     steps:     200     # Max optimization steps.
     
     # --- Relaxation Algorithms (Optimizers) ---
@@ -274,8 +274,8 @@ engine:
 
     # Atom-freezing constraints applied during every relax() call.
     # Merged additively with any FixAtoms constraints already set on the atoms object.
-    # null → no additional constraint is applied.
-    frozen_z_ang:     null   # Fix atoms whose z < z_min(atoms) + this value (Å).
+    # null -> no additional constraint is applied.
+    frozen_z_ang:     null   # Fix atoms whose z < z_min(atoms) + this value (A).
     fix_atom_indices: null   # Fix atoms by explicit index list, e.g. [0, 1, 2, 100].
 
   # Default NVT molecular dynamics settings.
@@ -292,6 +292,108 @@ engine:
 
 
 # -----------------------------------------------------------------------------
+# Stage 0a — Heterointerface Slab Generation  (optional, requires pymatgen)
+# -----------------------------------------------------------------------------
+# This stage runs BEFORE the main slab generation step (surface_prep).
+# It uses the 2D ZSL lattice-match algorithm to find the lowest-strain
+# supercell pair between a substrate and a film bulk crystal, builds a
+# symmetric sub|film|sub sandwich slab, and optionally feeds it directly
+# into the reaction-search stages as the working substrate.
+#
+# Atom-tag convention in the built slab:
+#   tag = 0  substrate atoms (bottom and top layers)
+#   tag = 1  epitaxial film atoms (centre)
+#   tag = 2  inhibitor (Stage 1)     ← assigned later by the workflow
+#   tag = 3  precursor (Stage 2)     ← assigned later by the workflow
+#
+# When use_as_substrate is true:
+#   surface_prep.slab_generation.enabled is internally overridden to false
+#   and the interface-built slab is loaded directly as paths.input_structure.
+#
+# Minimal example — TiN substrate / HfO2 film:
+#   interface:
+#     enabled:       true
+#     sub_path:      "structures/TiN.cif"
+#     film_path:     "structures/HfO2.cif"
+#     sub_millers:   [[0,0,1]]
+#     film_millers:  [[0,0,1], [1,1,0]]
+#     strain_cutoff: 0.06
+#     max_atoms:     400
+#     build_top_k:   1
+#     use_as_substrate: true
+#
+interface:
+  enabled:       false           # true -> run Stage 0a before surface_prep
+
+  # ── Input structures ────────────────────────────────────────────────────────
+  # Full paths to bulk crystal files.  Accepted formats: CIF, POSCAR/CONTCAR,
+  # CSSR, or any format understood by pymatgen.core.Structure.from_file().
+  sub_path:  "structures/substrate_bulk.cif"   # Substrate bulk crystal
+  film_path: "structures/film_bulk.cif"        # Epitaxial film bulk crystal
+
+  # Human-readable labels for log messages and output filenames.
+  # null -> derived automatically from the file stem (e.g. "TiN" from "TiN.cif").
+  sub_name:  null
+  film_name: null
+
+  # ── Surface orientation search space ────────────────────────────────────────
+  # List of (h,k,l) Miller index tuples to consider for each material.
+  # Tip: start with the low-index faces of each crystal system.
+  sub_millers:  [[0,0,1], [1,1,0], [1,0,0]]
+  film_millers: [[0,0,1], [1,1,0], [1,0,0]]
+
+  # ── ZSL lattice-match parameters ────────────────────────────────────────────
+  # max_det:       Maximum Hermite Normal Form determinant to enumerate.
+  #                Higher values find smaller-strain matches but cost O(n^2) work.
+  #                Typical range: 16 (fast) – 64 (exhaustive).
+  max_det:       36
+
+  # strain_cutoff: Discard coincidences with von Mises strain above this value.
+  #                0.05 (5 %) is a physically reasonable starting point for
+  #                pseudomorphic growth.  Relax to 0.10–0.15 if no matches appear.
+  strain_cutoff: 0.10
+
+  # ── Slab thickness ──────────────────────────────────────────────────────────
+  sub_layers:  6   # Substrate layers per side (bottom + top, each this thick)
+  film_layers: 8   # Film layers in the centre
+
+  # ── Elastic relaxation ──────────────────────────────────────────────────────
+  # Poisson's ratio used for out-of-plane c-relaxation of the strained film.
+  #   eps_c = -nu / (1 - nu) * (eps1 + eps2)
+  # Default 0.25 is appropriate for most oxides and nitrides.
+  nu: 0.25
+
+  # ── Candidate filtering ─────────────────────────────────────────────────────
+  # max_atoms: Discard candidates whose estimated total atom count exceeds this.
+  #            Keep this below ~600 for MLIP-based workflows.
+  max_atoms: 500
+
+  # top_k: Maximum candidates kept per (sub_miller, film_miller) orientation pair.
+  #        0 or negative -> keep all (potentially many hundreds).
+  top_k: 10
+
+  # ── Output & downstream integration ─────────────────────────────────────────
+  # build_top_k: Number of top-ranked candidates to actually build as ASE slabs.
+  #              Each slab is written as "interface_N.extxyz" in the output dir.
+  #              Set to 0 to only run the search without building any slabs.
+  build_top_k: 1
+
+  # use_as_substrate: If true, the best built slab (rank 0) is injected as
+  #                   paths.input_structure and surface_prep.slab_generation is
+  #                   disabled automatically.  The reaction search then runs on
+  #                   the film surface of the heterointerface.
+  use_as_substrate: false
+
+  # plot: Generate an interactive Plotly HTML scatter-plot of all candidates
+  #       (VM strain vs. supercell size) in the output directory.
+  plot: true
+
+  # output_dir: Where to write interface_*.extxyz and interface_candidates.html.
+  #             null -> uses the run's output directory (paths.output_dir).
+  output_dir: null
+
+
+# -----------------------------------------------------------------------------
 # Stage 1 — Surface Preparation
 # -----------------------------------------------------------------------------
 surface_prep:
@@ -299,11 +401,11 @@ surface_prep:
   # ── Geometry-only ──────────────────────────────────────────────────────────
 
   slab_generation:
-    enabled:            true          # false → load slab directly from paths.substrate_slab
+    enabled:            true          # false -> load slab directly from paths.input_structure
     miller:             [0, 0, 1]     # Miller indices [h, k, l]
-    thickness_ang:      15.0          # Slab thickness (Å)
-    vacuum_ang:         15.0          # Vacuum padding above and below slab (Å)
-    target_area_ang2:   200.0         # Target supercell XY area (Å²). null → minimal unit cell.
+    thickness_ang:      15.0          # Slab thickness (A)
+    vacuum_ang:         15.0          # Vacuum padding above and below slab (A)
+    target_area_ang2:   200.0         # Target supercell XY area (A2). null -> minimal unit cell.
                                       # The engine selects the largest possible supercell that does NOT
                                       # exceed this value (<= target_area), while optimizing for a
                                       # square-like aspect ratio.
@@ -343,21 +445,21 @@ surface_prep:
       side:     "top"
 
       # --- Strategy-specific Hyperparameters ---
-      # Magnitude of vertical displacement (Å) for buckling or rumpling patterns.
+      # Magnitude of vertical displacement (A) for buckling or rumpling patterns.
       buckling_dist: 0.4
-      # Magnitude of lateral displacement (Å) for dimerization (pulling pairs together).
+      # Magnitude of lateral displacement (A) for dimerization (pulling pairs together).
       dimer_dist:    0.6
-      # Amplitude (Å) for random displacements in 'random_noise' or 'auto' metallic modes.
+      # Amplitude (A) for random displacements in 'random_noise' or 'auto' metallic modes.
       amplitude:     0.1
 
   passivation:
     enabled:   true
     element:   "H"
     side:      "bottom"  # "top" | "bottom" | "both"
-    coverage:  1.0       # Fraction of dangling bonds to saturate (0.0–1.0)
+    coverage:  1.0       # Fraction of dangling bonds to saturate (0.0-1.0)
 
   surface_analysis:
-    symprec:             0.2    # Symmetry precision for surface site equivalence (Å)
+    symprec:             0.2    # Symmetry precision for surface site equivalence (A)
     ideal_coordination:         # Expected coordination numbers for VSEPR dangling-bond detection
       Si: 4
       O:  2
@@ -370,9 +472,9 @@ surface_prep:
   slab_relaxation:               # [REQUIRES POTENTIAL]
     # Equilibration of the substrate surface before adsorption search begins.
     enabled: true
-    fmax:    0.05    # Force convergence (eV/Å). Inherits engine.relaxation.fmax if null.
+    fmax:    0.05    # Force convergence (eV/A). Inherits engine.relaxation.fmax if null.
     steps:   100     # Max steps. Inherits engine.relaxation.steps if null.
-    frozen_z_ang: 4.0 # Fix bottom layers of the slab during relaxation (Å).
+    frozen_z_ang: 4.0 # Fix bottom layers of the slab during relaxation (A).
 
   equilibration:                 # [REQUIRES POTENTIAL]
     enabled:      true
@@ -403,34 +505,38 @@ reaction_search:
       # Search Mechanisms for Stage 1 (Inhibitor)
       physisorption:
         enabled:          true
-        placement_height: 3.5   # Initial height above top surface layer (Å), see height_mode
+        placement_height: 3.5   # Initial height above top surface layer (A), see height_mode
         rot_steps:        8     # Fibonacci-sphere sampling orientations
         center:           "com" # "com", "closest", element symbol, or atom index
 
         # ── Height interpretation mode ──────────────────────────────────────
         # "clearance" (default)
-        #   Lowest atom of the molecule is placed exactly placement_height Å
+        #   Lowest atom of the molecule is placed exactly placement_height A
         #   above the top substrate layer.  Physically correct for large
-        #   molecules (e.g., DIPAS, ~8 Å extent) where the COM can be far
+        #   molecules (e.g., DIPAS, ~8 A extent) where the COM can be far
         #   above the binding atom.  Prevents accidental embedding.
         # "center"
         #   Rotation center (COM or the element specified by `center`) is
-        #   placed at placement_height Å above the surface.  Use when you need
+        #   placed at placement_height A above the surface.  Use when you need
         #   a consistent center-to-surface reference across multiple molecules.
         height_mode:      "clearance"
 
         # ── Optional gravity pull ────────────────────────────────────────────
-        # After initial placement, descend the molecule step_size Å per step
+        # After initial placement, descend the molecule step_size A per step
         # until the first Alvarez vdW contact (overlap_scale × (r_i + r_j)) or
-        # the hard floor (substrate surface + 0.3 Å) is reached.
+        # the hard floor (substrate surface + 0.3 A) is reached.
         # Disabled by default; useful for compact molecules or tight cavities.
         gravity_pull:
           enabled:    false
-          step_size:  0.2       # Å per descent step
+          step_size:  0.2       # A per descent step
 
       chemisorption:
         enabled:          true
         rot_steps:        8     # Rotation attempts for bond-alignment
+        proximity_filter:
+          enabled:   false      # false -> check all sites | true -> check only near inhibitors
+          cutoff:    7.0        # A, max distance from any inhibitor atom to site
+          visualize: true       # true -> generate site_proximity_map.png in results dir
 
     # [STAGE 2: MAIN PRECURSOR DISCOVERY]
     # This stage simulates the adsorption of the target ALD/CVD precursor
@@ -451,18 +557,22 @@ reaction_search:
         # ── Optional gravity pull ────────────────────────────────────────────
         gravity_pull:
           enabled:    false
-          step_size:  0.2       # Å per descent step
+          step_size:  0.2       # A per descent step
 
       chemisorption:
         enabled:          true
         rot_steps:        8
+        proximity_filter:
+          enabled:   true       # Recommended for inhibited surfaces
+          cutoff:    7.0        # A
+          visualize: true       # Generate proximity map visualization
 
     # [SPECIAL MECHANISM: PROTECTOR EXCHANGE]
     # Simulates exchange reactions within established protector layers.
     protector_exchange:
       enabled:         false
       reactive_leaves: []       # e.g. ["CH3", "H"]
-      cavity_grid_ang: 0.2      # Resolution for void-center search (Å)
+      cavity_grid_ang: 0.2      # Resolution for void-center search (A)
 
   candidate_filter:
     # ── Overlap criterion — Alvarez (2013) vdW radii ─────────────────────────
@@ -473,7 +583,7 @@ reaction_search:
     # where r_vdW values are taken from the Alvarez (2013) database
     # (Dalton Trans. 42, 8617-8636, DOI: 10.1039/c3dt50599e).
     # This element-aware criterion automatically accounts for the different
-    # spatial extents of H (1.20 Å), Si (2.19 Å), N (1.66 Å), etc.,
+    # spatial extents of H (1.20 A), Si (2.19 A), N (1.66 A), etc.,
     # replacing the previous single-value `overlap_cutoff` distance.
     #
     # overlap_scale guidelines:
@@ -484,12 +594,12 @@ reaction_search:
     #           molecules with compact geometries
     #
     # For chemisorption geometry checks, an explicit flat cutoff (e.g.,
-    # cutoff=1.4 Å) can still be passed directly to check_overlap(); it
+    # cutoff=1.4 A) can still be passed directly to check_overlap(); it
     # overrides the vdW-based threshold for that call only.
     overlap_scale:  0.65
 
-    symprec:        0.2    # Symmetry equivalence cutoff for site deduplication (Å)
-    max_pair_dist:  5.0    # Max distance between two dangling-bond sites to form a reaction pair (Å)
+    symprec:        0.2    # Symmetry equivalence cutoff for site deduplication (A)
+    max_pair_dist:  5.0    # Max distance between two dangling-bond sites to form a reaction pair (A)
 
   # ── Potential-required ─────────────────────────────────────────────────────
 
@@ -500,7 +610,7 @@ reaction_search:
     # ── Geometry Optimization ───────────────────────────────────────────────
     relaxation:
       enabled: true
-      fmax:    0.05    # Force convergence threshold (eV/Å).
+      fmax:    0.05    # Force convergence threshold (eV/A).
       steps:   50      # Max optimization steps.
       verbose: false
 
@@ -513,7 +623,7 @@ reaction_search:
       md_steps:       1000     # Integration steps.
       timestep_fs:    1.0      # Timestep (fs).
       damping:        100.0    # Langevin friction (fs).
-      frozen_z_ang:   4.0      # Fix bottom layers during MD (Å).
+      frozen_z_ang:   4.0      # Fix bottom layers during MD (A).
       post_relax:     true     # Perform final relaxation after MD.
 
     # ── Selection Filter ────────────────────────────────────────────────────
@@ -532,16 +642,16 @@ analysis:
   # ── Potential-required ─────────────────────────────────────────────────────
 
   vibrational:                   # [REQUIRES POTENTIAL]
-    displacement_ang:  0.01      # Finite-difference step for Hessian construction (Å).
+    displacement_ang:  0.01      # Finite-difference step for Hessian construction (A).
     
     # --- PHVA (Partial Hessian Vibrational Analysis) Logic ---
     # The analyzer intelligently decides the calculation scope based on these params:
     # 1. If both are null -> FHVA (Full Hessian, all atoms active).
-    # 2. If phva_radius_ang is set -> Include adsorbate + substrate atoms within radius (Å).
-    # 3. If frozen_z_ang is set -> Exclude bottom substrate atoms below z_min + threshold (Å).
+    # 2. If phva_radius_ang is set -> Include precursor + substrate atoms within radius (A).
+    # 3. If frozen_z_ang is set -> Exclude bottom substrate atoms below z_min + threshold (A).
     #    This is particularly useful to remove noisy imaginary modes from fixed slab parts.
-    phva_radius_ang:   6.0       # Neighborhood radius around adsorbate (Å).
-    frozen_z_ang:      3.0       # Exclude atoms below this relative height (Å).
+    phva_radius_ang:   6.0       # Neighborhood radius around precursor (A).
+    frozen_z_ang:      3.0       # Exclude atoms below this relative height (A).
     
     # Control displacement cache behavior:
     # true  -> Re-calculate all displacements (deletes existing cache).
@@ -559,11 +669,11 @@ analysis:
       max_iter:           10
       freq_threshold_thz: -0.1   # Follow modes with frequency below this value (THz).
       max_modes:          3      # Max simultaneous modes to follow.
-      perturbation_alpha: 0.1    # Displacement magnitude along eigenvector (Å).
-      max_displacement:   0.3    # Per-atom displacement safety cap (Å).
+      perturbation_alpha: 0.1    # Displacement magnitude along eigenvector (A).
+      max_displacement:   0.3    # Per-atom displacement safety cap (A).
       
       # Tighter relaxation than engine.relaxation — explicitly overridden here:
-      fmax:  0.005               # eV/Å. High precision required for mode following.
+      fmax:  0.005               # eV/A. High precision required for mode following.
       steps: 500
 
     visualization:
@@ -579,7 +689,7 @@ analysis:
     temperatures_K: [298.15, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0]
 
     gas:
-      # Auto-derived via spglib point-group analysis from paths.adsorbate.
+      # Auto-derived via spglib point-group analysis from paths.precursor.
       mass:    null
       moments: null
       sigma:   null
@@ -587,3 +697,4 @@ analysis:
     adsorbent:
       # Reference electronic energy (eV), usually from MLIP single-point.
       electronic_energy: 0.0
+

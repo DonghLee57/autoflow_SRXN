@@ -3,8 +3,7 @@ import unittest
 from ase.build import bulk
 
 # Add src to sys.path
-from autoflow_srxn.si_surface_utils import build_si100_slab
-from autoflow_srxn.surface_utils import passivate_surface_coverage_general
+from autoflow_srxn.surface_utils import build_si100_slab, passivate_surface_coverage_general
 
 
 class TestSurfaceConstruction(unittest.TestCase):

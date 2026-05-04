@@ -1,8 +1,8 @@
-# Example: DIPAS Precursor Stability Analysis
+﻿# Example: DIPAS Precursor Stability Analysis
 # Vibrational analysis and automated mode-following structural refinement.
 
 paths:
-  adsorbate:      "../../structures/DIPAS.vasp"
+  precursor:      "../../structures/DIPAS.vasp"
   output_prefix:  "dipas_stability"
 
 engine:
@@ -10,7 +10,7 @@ engine:
     backend: "mace"
     device:  "cpu"
     dtype:   "float32"
-    model:   null     # null → mace-mp "medium"
+    model:   null     # null -> mace-mp "medium"
 
   relaxation:
     optimizer: "CG_FIRE"
@@ -41,3 +41,4 @@ analysis:
     symmetry:
       enabled: true
       symprec: 1.0e-5
+

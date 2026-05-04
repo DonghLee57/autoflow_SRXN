@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import sys
 
@@ -9,10 +9,8 @@ from ase.data import chemical_symbols as _CHEM_SYMS
 from ase.optimize import BFGS, FIRE, LBFGS, GPMin
 from ase.optimize.sciopt import SciPyFminCG
 
+from .knowledge_engine import chem_kb
 from .logger_utils import get_workflow_logger
-
-# Absolute path to the per-pair ZBL outer cutoff database
-_ZBL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zbl_pairs.json")
 
 
 class ZBLCalculator(Calculator):
@@ -41,18 +39,9 @@ class ZBLCalculator(Calculator):
     # Universal ZBL screening-function coefficients (ZBL 1985)
     _C = np.array([0.1818, 0.5099, 0.2802, 0.02817])
     _ETA = np.array([3.2000, 0.9423, 0.4029, 0.2016])
-    # e² / (4πε₀) in eV·Å
+    # e2 / (4πε₀) in eV·A
     _KE = 14.3996
 
-    @classmethod
-    def _load_pair_db(cls) -> dict:
-        """Load per-pair outer cutoffs from zbl_pairs.json (skips _meta block)."""
-        try:
-            with open(_ZBL_DB_PATH, encoding="utf-8") as fh:
-                raw = json.load(fh)
-            return {k: float(v) for k, v in raw.items() if not k.startswith("_")}
-        except FileNotFoundError:
-            return {}
 
     def __init__(self, cutoff_inner: float = 0.5, cutoff_outer: float = 2.5, **kwargs):
         super().__init__(**kwargs)
@@ -61,10 +50,7 @@ class ZBLCalculator(Calculator):
         self.cutoff_inner = cutoff_inner
         self.cutoff_outer = cutoff_outer  # global fallback for pairs absent from DB
 
-        self._pair_db = self._load_pair_db()
-        # NeighborList must cover all known pair cutoffs so no pair is missed
-        all_r_out = list(self._pair_db.values()) + [cutoff_outer]
-        self._nl_cutoff = max(all_r_out)
+        self._nl_cutoff = cutoff_outer # NeighborList fallback
 
         self._a_cache: dict = {}
 
@@ -79,11 +65,10 @@ class ZBLCalculator(Calculator):
         key convention (e.g. ``"H-Si"``).  Falls back to ``self.cutoff_outer``
         for pairs not present in the database.
         """
-        key = "-".join(sorted([_CHEM_SYMS[Z1], _CHEM_SYMS[Z2]]))
-        return self._pair_db.get(key, self.cutoff_outer)
+        return chem_kb.get_zbl_cutoff(_CHEM_SYMS[Z1], _CHEM_SYMS[Z2])
 
     def _screening_length(self, Z1: int, Z2: int) -> float:
-        """Universal ZBL screening length a (Å)."""
+        """Universal ZBL screening length a (A)."""
         key = (min(Z1, Z2), max(Z1, Z2))
         if key not in self._a_cache:
             self._a_cache[key] = 0.4685 / (float(Z1) ** 0.23 + float(Z2) ** 0.23)
@@ -109,7 +94,7 @@ class ZBLCalculator(Calculator):
         if r >= r_out:
             return 0.0, 0.0
         t = (r - r_in) / (r_out - r_in)
-        # smoothstep (1→0): 1 - 3t² + 2t³
+        # smoothstep (1->0): 1 - 3t2 + 2t³
         s = 1.0 - t * t * (3.0 - 2.0 * t)
         ds_dr = -6.0 * t * (1.0 - t) / (r_out - r_in)
         return s, ds_dr
@@ -179,7 +164,7 @@ class ZBLCalculator(Calculator):
                 dE_dr = dV_dr * s + V * ds_dr
                 r_hat = r_vecs[k] / r
 
-                # Force on i (repulsive → away from j)
+                # Force on i (repulsive -> away from j)
                 forces[i] += dE_dr * r_hat
                 # Newton's 3rd law
                 forces[j] -= dE_dr * r_hat
@@ -253,7 +238,7 @@ class SimulationEngine:
     ZBL repulsion can be layered on top of any backend by setting
     ``engine.potential.zbl.enabled: true`` in the configuration.  The ZBL
     contribution is active only at very short range (below *cutoff_outer*,
-    default 2.5 Å) so that it does not interfere with the MLIP at normal
+    default 2.5 A) so that it does not interfere with the MLIP at normal
     bonding distances.
 
     All settings are read from config['engine']['potential'].
@@ -263,9 +248,9 @@ class SimulationEngine:
 
     Supported potential.backend values
     ------------------------------------
-    * ``"mace"``      – MACE-MP foundation model (mace_mp)
-    * ``"sevennet"``  – SevenNet calculator
-    * ``"emt"``       – ASE built-in EMT (fast, light-element only)
+    * ``"mace"``      - MACE-MP foundation model (mace_mp)
+    * ``"sevennet"``  - SevenNet calculator
+    * ``"emt"``       - ASE built-in EMT (fast, light-element only)
 
     ZBL configuration example (config.yaml)
     ----------------------------------------
@@ -277,8 +262,8 @@ class SimulationEngine:
         model:   null
         zbl:
           enabled:       true
-          cutoff_inner:  1.0     # Å  – ZBL fully active below this
-          cutoff_outer:  2.5     # Å  – ZBL switched off above this
+          cutoff_inner:  1.0     # A  - ZBL fully active below this
+          cutoff_outer:  2.5     # A  - ZBL switched off above this
     """
 
     def __init__(self, config=None):
@@ -394,7 +379,7 @@ class SimulationEngine:
             self._calculator = SumCalculator([base_calc, zbl_calc])
             logger.info(
                 f"  [Engine] Added ZBL repulsion "
-                f"(r_inner={self.zbl_cutoff_inner} Å, r_outer={self.zbl_cutoff_outer} Å)."
+                f"(r_inner={self.zbl_cutoff_inner} A, r_outer={self.zbl_cutoff_outer} A)."
             )
         else:
             self._calculator = base_calc
@@ -553,3 +538,5 @@ class SimulationEngine:
         calc = self.get_calculator()
         atoms.calc = calc
         return atoms.get_forces()
+
+

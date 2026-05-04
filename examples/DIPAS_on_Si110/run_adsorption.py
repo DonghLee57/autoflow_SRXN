@@ -15,12 +15,162 @@ from autoflow_srxn.surface_utils import (
     standardize_vasp_atoms,
 )
 
+def run_interface_stage(config, logger, out_dir):
+    """Stage 0a — Heterointerface slab generation via 2D ZSL lattice-match search.
+
+    Reads the ``interface`` config block, runs
+    :class:`~autoflow_srxn.interface.workflow.InterfaceWorkflow`, and writes:
+
+    * ``interface_candidates.html`` — interactive Plotly scatter-plot
+    * ``interface_<N>.extxyz``      — built slab(s)
+    * ``interface_summary.txt``     — plain-text candidate table
+
+    Parameters
+    ----------
+    config : dict
+        Full config dictionary.
+    logger : logging.Logger
+    out_dir : str
+        Base output directory for this run.
+
+    Returns
+    -------
+    ase.Atoms or None
+        The best built slab when ``interface.use_as_substrate`` is True
+        and at least one slab was built; otherwise ``None``.
+    """
+    iface_cfg = config.get("interface", {})
+    if not iface_cfg.get("enabled", False):
+        return None
+
+    # Graceful ImportError for missing pymatgen
+    try:
+        from autoflow_srxn.interface.workflow import InterfaceWorkflow
+    except ImportError as exc:
+        logger.error(
+            f"[Stage 0a] Could not import InterfaceWorkflow — "
+            f"install pymatgen with: pip install autoflow-srxn[interface]\n  ({exc})"
+        )
+        return None
+
+    log_stage_title(logger, "STAGE 0a", "Heterointerface lattice-match search")
+
+    # Resolve output directory
+    iface_out = iface_cfg.get("output_dir") or out_dir
+    os.makedirs(iface_out, exist_ok=True)
+
+    # Resolve input file paths relative to config location (already done by load_config
+    # for 'paths' keys, but interface paths need the same treatment here)
+    sub_path  = iface_cfg.get("sub_path", "")
+    film_path = iface_cfg.get("film_path", "")
+    if not os.path.isabs(sub_path) and not os.path.exists(sub_path):
+        # Try relative to CWD, already the common case
+        pass
+    if not os.path.exists(sub_path):
+        logger.error(f"[Stage 0a] Substrate bulk file not found: {sub_path}")
+        return None
+    if not os.path.exists(film_path):
+        logger.error(f"[Stage 0a] Film bulk file not found: {film_path}")
+        return None
+
+    # Build InterfaceWorkflow
+    wf_kwargs = dict(
+        sub_name      = iface_cfg.get("sub_name"),
+        film_name     = iface_cfg.get("film_name"),
+        sub_millers   = [tuple(m) for m in iface_cfg.get("sub_millers",  [[0,0,1]])],
+        film_millers  = [tuple(m) for m in iface_cfg.get("film_millers", [[0,0,1]])],
+        max_det       = iface_cfg.get("max_det",       36),
+        strain_cutoff = iface_cfg.get("strain_cutoff", 0.10),
+        sub_layers    = iface_cfg.get("sub_layers",    6),
+        film_layers   = iface_cfg.get("film_layers",   8),
+        nu            = iface_cfg.get("nu",            0.25),
+        max_atoms     = iface_cfg.get("max_atoms",     500),
+        top_k         = iface_cfg.get("top_k",         10),
+        logger        = logger,
+    )
+
+    try:
+        wf = InterfaceWorkflow.from_files(sub_path, film_path, **wf_kwargs)
+    except Exception as exc:
+        logger.error(f"[Stage 0a] Failed to initialise InterfaceWorkflow: {exc}")
+        return None
+
+    # Find candidates
+    candidates = wf.find_candidates()
+    if not candidates:
+        logger.warning("[Stage 0a] No matching candidates found — check strain_cutoff or max_atoms.")
+        return None
+
+    # Summary table
+    summary_str = wf.summary(n=20, candidates=candidates)
+    summary_path = os.path.join(iface_out, "interface_summary.txt")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(summary_str)
+    logger.info(f"[Stage 0a] Candidate summary written to: {summary_path}")
+
+    # Plotly scatter-plot
+    if iface_cfg.get("plot", True):
+        plot_path = os.path.join(iface_out, "interface_candidates.html")
+        wf.plot(output_path=plot_path, candidates=candidates)
+
+    # Build slabs
+    build_k = iface_cfg.get("build_top_k", 1)
+    if build_k <= 0:
+        logger.info("[Stage 0a] build_top_k=0 — skipping slab construction.")
+        return None
+
+    top_candidates = candidates[:build_k]
+    logger.info(f"[Stage 0a] Building {len(top_candidates)} slab(s)...")
+    built_slabs = wf.build(top_candidates)
+
+    best_slab = None
+    for idx, slab in enumerate(built_slabs):
+        slab_path = os.path.join(iface_out, f"interface_{idx}.extxyz")
+        from ase.io import write as ase_write
+        ase_write(slab_path, slab)
+        logger.info(
+            f"[Stage 0a] Slab {idx}: {len(slab)} atoms, "
+            f"vm={slab.info.get('vm_strain', 0):.4f}, "
+            f"eps1={slab.info.get('eps1', 0):+.4f} "
+            f"eps2={slab.info.get('eps2', 0):+.4f}  -> {slab_path}"
+        )
+        if idx == 0:
+            best_slab = slab
+
+    # If use_as_substrate, return the best slab so it feeds into Stage 0
+    if iface_cfg.get("use_as_substrate", False) and best_slab is not None:
+        logger.info(
+            "[Stage 0a] use_as_substrate=true — injecting interface slab as working substrate."
+        )
+        return best_slab
+
+    return None
+
+
 def load_config(config_path):
     with open(config_path, encoding='utf-8') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    
+    # Resolve relative paths in 'paths' section
+    config_dir = os.path.dirname(os.path.abspath(config_path))
+    paths = config.get("paths", {})
+    for key in ["precursor", "inhibitor", "substrate_bulk", "input_structure"]:
+        val = paths.get(key)
+        if val and isinstance(val, str) and not os.path.isabs(val):
+            # Check if it exists from CWD first, if not, try relative to config
+            if not os.path.exists(val):
+                alt = os.path.join(config_dir, val)
+                if os.path.exists(alt):
+                    paths[key] = alt
+    return config
 
 def calculate_gas_energy(mol, config, logger):
     """Calculates the potential energy of a molecule in vacuum after relaxation."""
+    run_relax = config.get("verification", {}).get("relaxation", {}).get("enabled", True)
+    if not run_relax:
+        logger.info(f"  [Gas Phase] Evaluation disabled by config. Skipping energy calculation for {mol.get_chemical_formula()}.")
+        return 0.0
+
     from autoflow_srxn.potentials import SimulationEngine
     mol_copy = mol.copy()
     mol_copy.center(vacuum=10.0)
@@ -83,8 +233,12 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     # candidates = candidates[:2] # TEMPORARY LIMIT FOR DEBUGGING
     results = []
 
-    engine = SimulationEngine(config)
-    calc = engine.get_calculator()
+    engine = None
+    calc = None
+    if run_relax:
+        engine = SimulationEngine(config)
+        calc = engine.get_calculator()
+
     processed_cands = []
     summary_data = []
     csv_rows = []
@@ -96,28 +250,31 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
         # Start from a standardized copy
         atoms_proc = standardize_vasp_atoms(atoms.copy(), z_min_offset=0.5)
         atoms_proc.info = atoms.info.copy()
-        atoms_proc.calc = calc
 
         try:
-            e_init = atoms_proc.get_potential_energy()
-
-            # --- 1. Initial Relaxation ---
             if run_relax:
+                atoms_proc.calc = calc
+                e_init = atoms_proc.get_potential_energy()
+
+                # --- 1. Initial Relaxation ---
                 r_cfg = verify_cfg.get("relaxation", {})
                 engine.relax(atoms_proc, steps=r_cfg.get("steps", 50), fmax=r_cfg.get("fmax", 0.05), verbose=False)
 
-            # --- 2. Thermal Equilibration (MD) ---
-            if run_equil:
-                e_cfg = verify_cfg.get("equilibration", {})
-                engine.run_md(atoms_proc, temp_K=e_cfg.get("temperature_K", 300), md_steps=e_cfg.get("md_steps", 1000))
-                if run_post:
-                    engine.relax(atoms_proc, steps=50, fmax=0.05, verbose=False)
+                # --- 2. Thermal Equilibration (MD) ---
+                if run_equil:
+                    e_cfg = verify_cfg.get("equilibration", {})
+                    engine.run_md(atoms_proc, temp_K=e_cfg.get("temperature_K", 300), md_steps=e_cfg.get("md_steps", 1000))
+                    if run_post:
+                        engine.relax(atoms_proc, steps=50, fmax=0.05, verbose=False)
 
-            # Final standardization after relaxation/MD
-            atoms_proc = standardize_vasp_atoms(atoms_proc, z_min_offset=0.5)
-            e_final = atoms_proc.get_potential_energy()
-            delta = e_final - e_init
-            e_ads = e_final - (e_gas + e_base)
+                # Final standardization after relaxation/MD
+                atoms_proc = standardize_vasp_atoms(atoms_proc, z_min_offset=0.5)
+                e_final = atoms_proc.get_potential_energy()
+                delta = e_final - e_init
+                e_ads = e_final - (e_gas + e_base)
+            else:
+                e_init, e_final, delta, e_ads = 0.0, 0.0, 0.0, 0.0
+
             mech = atoms.info.get("mechanism", "unknown")
 
             summary_data.append({
@@ -145,7 +302,8 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     log_to_csv(csv_path, csv_rows)
 
     if processed_cands:
-        write(f"{out_prefix}_relaxed.extxyz", processed_cands)
+        suffix = "_relaxed" if run_relax else "_evaluated"
+        write(f"{out_prefix}{suffix}.extxyz", processed_cands)
     return processed_cands
 
 def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center_target="Si", e_gas=0.0, e_base=0.0, stage_type="precursor"):
@@ -181,7 +339,8 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
     if chem_cfg.get("enabled", True):
         logger.info(f"  [Stage: {stage_type}] Chemisorption search for {mol.get_chemical_formula()} (center={center_target})...")
         chem_cands = build_chemisorption_structures(
-            molecule=mol, center_target=center_target, surface=slab, config=config, tag=tag
+            molecule=mol, center_target=center_target, surface=slab, config=config, tag=tag,
+            results_dir=os.path.dirname(out_prefix)
         )
         for c in chem_cands: c.info["mechanism"] = "chemisorption"
         all_cands.extend(chem_cands)
@@ -200,14 +359,25 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
     # Use 'inhibitor' instead of 'inhibition'
     inh_cfg = mechs_cfg.get("inhibitor", {})
 
-    mol_file = paths.get("adsorbate")
+    precursor_file = paths.get("precursor")
     inh_file = paths.get("inhibitor")
     out_dir = paths.get("output_prefix", "results") # Re-purposing as output base
-    mol = read(mol_file) if mol_file and os.path.exists(mol_file) else None
+    mol = read(precursor_file) if precursor_file and os.path.exists(precursor_file) else None
+
+    # --- 0a. Heterointerface slab generation (optional, requires pymatgen) ------
+    out_dir = paths.get("output_prefix", "results")
+    interface_slab = run_interface_stage(config, logger, out_dir)
+    if interface_slab is not None:
+        # Inject the built slab: bypass slab_generation and use this directly
+        paths["_interface_slab"] = interface_slab
+        sp_cfg.setdefault("slab_generation", {})["enabled"] = False
 
     # --- 1. Slab Generation & Standardization ---
     sub_gen_cfg = sp_cfg.get("slab_generation", {})
-    if sub_gen_cfg.get("enabled", False):
+    if paths.get("_interface_slab") is not None:
+        log_stage_title(logger, "STAGE 0", "Using interface-built slab from Stage 0a")
+        slab = standardize_vasp_atoms(paths["_interface_slab"], z_min_offset=0.5)
+    elif sub_gen_cfg.get("enabled", False):
         log_stage_title(logger, "STAGE 0", "Generating substrate slab...")
         slab = create_slab_from_bulk(
             bulk_atoms=read(paths["substrate_bulk"]),
@@ -218,14 +388,17 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
             verbose=True,
         )
     else:
-        slab = standardize_vasp_atoms(read(paths["substrate_slab"]), z_min_offset=0.5)
+        slab = standardize_vasp_atoms(read(paths["input_structure"]), z_min_offset=0.5)
     
     # Reset all substrate atoms to tag 0 to avoid mis-identification as inhibitors/adsorbates
     slab.set_tags(0)
 
     # --- 2. Rigorous Slab Relaxation ---
     slab_relax_cfg = sp_cfg.get("slab_relaxation", {})
-    if slab_relax_cfg.get("enabled", False):
+    verify_cfg = config.get("verification", {})
+    global_eval_enabled = verify_cfg.get("relaxation", {}).get("enabled", True)
+
+    if slab_relax_cfg.get("enabled", False) and global_eval_enabled:
         from autoflow_srxn.potentials import SimulationEngine
         log_stage_title(logger, "STAGE 0.5", "Performing slab relaxation...")
         engine = SimulationEngine(config)
@@ -237,11 +410,13 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
         log_energy_comparison(logger, "Slab Relax", e_init, slab_base_energy)
     else:
         slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
-        if not slab_base_energy:
+        if not slab_base_energy and global_eval_enabled:
             from autoflow_srxn.potentials import SimulationEngine
             engine = SimulationEngine(config)
             slab.calc = engine.get_calculator()
             slab_base_energy = slab.get_potential_energy()
+        else:
+            slab_base_energy = 0.0
 
     # --- 3. Inhibitor Discovery (Stage 1) ---
     base_slabs = [slab]
@@ -263,8 +438,8 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
 
     # --- 4. Precursor Discovery (Stage 2) ---
     if mol:
-        log_stage_title(logger, "STAGE 2", f"Main Precursor Discovery ({os.path.basename(mol_file)})")
-        e_gas_mol = gas_energy_map.get(mol_file, 0.0) if gas_energy_map else calculate_gas_energy(mol, config, logger)
+        log_stage_title(logger, "STAGE 2", f"Main Precursor Discovery ({os.path.basename(precursor_file)})")
+        e_gas_mol = gas_energy_map.get(precursor_file, 0.0) if gas_energy_map else calculate_gas_energy(mol, config, logger)
         all_final_results = []
         
         # Precursor-specific settings
@@ -272,7 +447,9 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
         pre_center = pre_cfg.get("center", "Si")
         
         for i, s in enumerate(base_slabs):
-            e_base_s2 = s.info.get("e_final", s.get_potential_energy())
+            e_base_s2 = s.info.get("e_final")
+            if e_base_s2 is None:
+                e_base_s2 = s.get_potential_energy() if s.calc is not None else slab_base_energy
             suffix = f"_branch{i}" if len(base_slabs) > 1 else ""
             results = execute_discovery_stage(
                 s, mol, config, os.path.join(out_dir, f"stage2_precursor{suffix}"), logger, tag=3,
@@ -299,13 +476,13 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             return sorted(files)
         return [p]
 
-    adsorbates = get_files(paths.get("adsorbate"))
+    precursors = get_files(paths.get("precursor") or paths.get("precursors_dir"))
     inhibitors = get_files(paths.get("inhibitor"))
     if paths.get("include_no_inhibitor", False): inhibitors = [None] + inhibitors
     elif not inhibitors: inhibitors = [None]
 
     global_prefix = paths.get("output_prefix", "discovery")
-    unique_mols = list(set([f for f in adsorbates + inhibitors if f and os.path.exists(f)]))
+    unique_mols = list(set([f for f in precursors + inhibitors if f and os.path.exists(f)]))
     gas_energy_map = {}
     if unique_mols:
         tmp_logger = setup_logger(log_path=os.path.join(global_prefix, "ref_energies.log"), mode="w")
@@ -313,21 +490,21 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, tmp_logger)
 
     for inh_path in inhibitors:
-        for ads_path in adsorbates:
-            if not ads_path: continue
+        for pre_path in precursors:
+            if not pre_path: continue
             inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "clean"
-            ads_name = os.path.splitext(os.path.basename(ads_path))[0]
+            pre_name = os.path.splitext(os.path.basename(pre_path))[0]
             
             # New naming convention: {inhibitor}_pretreated_{precursor}
-            run_name = f"{inh_name}_pretreated_{ads_name}"
+            run_name = f"{inh_name}_pretreated_{pre_name}"
             run_dir = os.path.join(global_prefix, run_name)
             os.makedirs(run_dir, exist_ok=True)
             
             logger = setup_logger(log_path=os.path.join(run_dir, "workflow.log"), mode="w")
-            log_stage_title(logger, "BATCH RUN", f"Sequence: {inh_name} -> {ads_name}")
+            log_stage_title(logger, "BATCH RUN", f"Sequence: {inh_name} -> {pre_name}")
             
             run_config = copy.deepcopy(config)
-            run_config["paths"]["adsorbate"] = ads_path
+            run_config["paths"]["precursor"] = pre_path
             run_config["paths"]["inhibitor"] = inh_path
             run_config["paths"]["output_prefix"] = run_dir # Pass run_dir as the base for files
             
