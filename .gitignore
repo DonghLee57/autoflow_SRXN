@@ -29,6 +29,8 @@ Library/
 micromamba
 relaxation.extxyz
 *.egg-info/
+build/
+dist/
 
 # Example outputs
 examples/**/*.vasp

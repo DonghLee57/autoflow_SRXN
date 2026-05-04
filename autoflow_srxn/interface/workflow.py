@@ -203,8 +203,14 @@ class InterfaceWorkflow:
             "-" * 80,
         ]
         for i, c in enumerate(candidates[:top_n]):
-            n_sub = get_slab_atom_count(self.sub, c.sub_miller, HNF=c.Na)
-            n_film = get_slab_atom_count(self.film, c.film_miller, HNF=c.Nb)
+            n_sub = get_slab_atom_count(
+                self.sub, c.sub_miller,
+                min_thickness_ang=self.min_slab_thickness, HNF=c.Na,
+            )
+            n_film = get_slab_atom_count(
+                self.film, c.film_miller,
+                min_thickness_ang=self.min_slab_thickness, HNF=c.Nb,
+            )
             notes_str = ", ".join(c.notes) if c.notes else "OK"
             lines.append(
                 f"{i + 1:>3}  "

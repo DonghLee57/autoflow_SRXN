@@ -93,10 +93,21 @@ def get_surface_lattice_2d(structure: Structure, miller: Sequence[int]) -> np.nd
     if not slabs:
         raise ValueError(f"SlabGenerator produced no slab for miller={miller}.")
     slab = slabs[0]
-    # The first two lattice vectors span the surface plane
+    # Extract the in-plane lattice vectors. For slabs whose lattice is
+    # already aligned with z along the surface normal, a[:2] and b[:2]
+    # give the correct 2D basis. For tilted cells we project onto the xy
+    # plane; the norm (and therefore the 2D area / strain) is preserved
+    # because SlabGenerator reorients so that c is perpendicular to the
+    # surface and a, b span the surface plane.
     a = slab.lattice.matrix[0, :2]
     b = slab.lattice.matrix[1, :2]
-    return np.array([a, b])
+    # Guard: if either 2D vector has near-zero length, fall back to 3D norms.
+    if np.linalg.norm(a) < 0.1 or np.linalg.norm(b) < 0.1:
+        a = slab.lattice.matrix[0, :]
+        b = slab.lattice.matrix[1, :]
+        a = a / np.linalg.norm(a) * np.linalg.norm(slab.lattice.matrix[0, :2])
+        b = b / np.linalg.norm(b) * np.linalg.norm(slab.lattice.matrix[1, :2])
+    return np.array([a[:2], b[:2]])
 
 
 def get_slab_atom_count(

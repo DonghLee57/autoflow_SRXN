@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # AutoFlow-SRXN — Full Configuration Reference
 # =============================================================================
 # Package purpose:
@@ -353,7 +353,7 @@ interface:
   sub_max_miller:  null   # e.g. 2  ->  max(|h|,|k|,|l|) <= 2
   film_max_miller: null   # e.g. 3  ->  max(|h|,|k|,|l|) <= 3
 
-  miller_mode: distinct   # "distinct" | "raw"
+  miller_mode: "distinct"   # "distinct" | "raw"
 
   # ── ZSL lattice-match parameters ────────────────────────────────────────────
   # max_det:       Maximum Hermite Normal Form determinant to enumerate per

@@ -392,16 +392,15 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
     # --- 0a. Heterointerface slab generation (optional, requires pymatgen) ------
     out_dir = paths.get("output_prefix", "results")
     interface_slab = run_interface_stage(config, logger, out_dir)
-    if interface_slab is not None:
-        # Inject the built slab: bypass slab_generation and use this directly
-        paths["_interface_slab"] = interface_slab
-        sp_cfg.setdefault("slab_generation", {})["enabled"] = False
+    # Store interface slab under a private key; do NOT mutate surface_prep to avoid
+    # side-effects when config is shared across multiple workflow runs.
+    _use_interface_slab = interface_slab is not None
 
     # --- 1. Slab Generation & Standardization ---
     sub_gen_cfg = sp_cfg.get("slab_generation", {})
-    if paths.get("_interface_slab") is not None:
+    if _use_interface_slab:
         log_stage_title(logger, "STAGE 0", "Using interface-built slab from Stage 0a")
-        slab = standardize_vasp_atoms(paths["_interface_slab"], z_min_offset=0.5)
+        slab = standardize_vasp_atoms(interface_slab, z_min_offset=0.5)
     elif sub_gen_cfg.get("enabled", False):
         log_stage_title(logger, "STAGE 0", "Generating substrate slab...")
         slab = create_slab_from_bulk(
