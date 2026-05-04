@@ -24,7 +24,7 @@ surface_prep:
     side: "bottom"
 
   slab_relaxation:
-    enabled: true
+    enabled: false
     fmax: 0.1
     steps: 50
     frozen_z_ang: 5.5 # Fix bottom 5.5A
@@ -67,7 +67,7 @@ reaction_search:
 
 verification:
   relaxation:
-    enabled: true
+    enabled: false
     steps: 100
     fmax: 0.05
     frozen_z_ang: 5.5 # Consistent fixing

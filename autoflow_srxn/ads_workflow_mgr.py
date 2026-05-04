@@ -439,16 +439,19 @@ class AdsorptionWorkflowManager:
             f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}Å'.format(grav_step) if grav_enabled else 'off'})"
         )
 
-        # --- Fibonacci-sphere rotation vectors ---
+        # --- Fibonacci-sphere rotation + Spin sampling ---
+        # To uniformly sample SO(3), we point the molecule's Z-axis to a Fibonacci sphere,
+        # and then spin it around that axis.
+        n_fib = n_rot
+        n_spin = 6
         phi = np.pi * (3.0 - np.sqrt(5.0))
         rot_vectors = []
-        for i in range(n_rot):
-            y = 1 - (i / float(max(n_rot - 1, 1))) * 2
+        for i in range(n_fib):
+            y = 1 - (i / float(max(n_fib - 1, 1))) * 2
             r = np.sqrt(max(0.0, 1 - y * y))
             theta = phi * i
             vec = np.array([np.cos(theta) * r, y, np.sin(theta) * r])
-            if not any(np.allclose(vec, rv, atol=0.01) for rv in rot_vectors):
-                rot_vectors.append(vec)
+            rot_vectors.append(vec)
 
         candidates = []
         stats = {"total": 0, "overlap": 0, "grav_steps": 0}
@@ -457,60 +460,57 @@ class AdsorptionWorkflowManager:
             current_site_poses = []
 
             for rv in rot_vectors:
-                stats["total"] += 1
-                m_copy = molecule.copy()
+                for spin_angle in np.linspace(0, 360, n_spin, endpoint=False):
+                    stats["total"] += 1
+                    m_copy = molecule.copy()
 
-                # Rotate molecule so [0,0,1] aligns with rv, pivoting around the rot_center
-                c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
-                m_copy.rotate([0, 0, 1], rv, center=c_pos_init)
+                    # Rotate molecule so [0,0,1] aligns with rv, then spin around rv
+                    c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
+                    m_copy.rotate([0, 0, 1], rv, center=c_pos_init)
+                    m_copy.rotate(spin_angle, rv, center=c_pos_init)
 
-                # Place rot_center at target_pos (XY of site, Z = z_surface_ref + height)
-                c_pos_rot = self._get_rotation_center(m_copy, mode=rot_center)
-                m_copy.translate(target_pos - c_pos_rot)
+                    # Place rot_center at target_pos (XY of site, Z = z_surface_ref + height)
+                    c_pos_rot = self._get_rotation_center(m_copy, mode=rot_center)
+                    m_copy.translate(target_pos - c_pos_rot)
 
-                # --- height_mode: apply correct Z-placement interpretation ---
-                if height_mode == "clearance":
-                    # Lift so the LOWEST ATOM is at z_surface_ref + height.
-                    # Physically correct for large molecules where the rot_center
-                    # may be several Å above the nearest surface-facing atom.
-                    z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
-                    extra_lift = (z_surface_ref + height) - z_mol_bottom
-                    if extra_lift > 0:
+                    # --- height_mode: apply correct Z-placement interpretation ---
+                    if height_mode == "clearance":
+                        z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
+                        extra_lift = (z_surface_ref + height) - z_mol_bottom
                         m_copy.translate([0, 0, extra_lift])
-                # else "center": rot_center already at z_surface_ref + height, no lift needed
 
-                # --- Gravity pull: descend until first vdW contact or surface floor ---
-                if grav_enabled:
-                    max_pull_steps = int(height / grav_step) + 100
-                    for _ in range(max_pull_steps):
-                        m_trial = m_copy.copy()
-                        m_trial.translate([0, 0, -grav_step])
-                        # Hard floor: lowest atom must remain above substrate surface
-                        if float(np.min(m_trial.positions[:, 2])) <= z_surface_ref + 0.3:
-                            break
-                        trial_combined = self.slab.copy()
-                        for a in m_trial:
-                            a.tag = tag
-                        trial_combined += m_trial
-                        trial_score = self._get_steric_fitness(
-                            trial_combined, overlap_scale=overlap_scale, check_internal=False)
-                        if trial_score <= -1e8:
-                            break  # first vdW contact detected — stop here
-                        m_copy = m_trial
-                        stats["grav_steps"] += 1
+                    # --- Gravity pull: descend until first vdW contact or surface floor ---
+                    if grav_enabled:
+                        max_pull_steps = int(height / grav_step) + 100
+                        for _ in range(max_pull_steps):
+                            m_trial = m_copy.copy()
+                            m_trial.translate([0, 0, -grav_step])
+                            # Hard floor: lowest atom must remain above substrate surface
+                            if float(np.min(m_trial.positions[:, 2])) <= z_surface_ref + 0.3:
+                                break
+                            trial_combined = self.slab.copy()
+                            for a in m_trial:
+                                a.tag = tag
+                            trial_combined += m_trial
+                            trial_score = self._get_steric_fitness(
+                                trial_combined, overlap_scale=overlap_scale, check_internal=False)
+                            if trial_score <= -1e8:
+                                break  # first vdW contact detected — stop here
+                            m_copy = m_trial
+                            stats["grav_steps"] += 1
 
-                # Build combined structure with correct tags
-                combined = self.slab.copy()
-                for a in m_copy:
-                    a.tag = tag
-                combined += m_copy
+                    # Build combined structure with correct tags
+                    combined = self.slab.copy()
+                    for a in m_copy:
+                        a.tag = tag
+                    combined += m_copy
 
-                score = self._get_steric_fitness(combined, overlap_scale=overlap_scale, check_internal=False)
-                if score > -1e8:
-                    combined.info["mechanism"] = f"Physisorption, rv={np.round(rv, 2).tolist()}, tag={tag}"
-                    current_site_poses.append((score, combined, rv))
-                else:
-                    stats["overlap"] += 1
+                    score = self._get_steric_fitness(combined, overlap_scale=overlap_scale, check_internal=False)
+                    if score > -1e8:
+                        combined.info["mechanism"] = f"Physisorption, rv={np.round(rv, 2).tolist()}, spin={spin_angle:.1f}, tag={tag}"
+                        current_site_poses.append((score, combined, rv))
+                    else:
+                        stats["overlap"] += 1
 
             # Keep up to 5 rotationally diverse poses per site
             best_poses = self._get_diverse_top_poses(current_site_poses, n_out=5)
