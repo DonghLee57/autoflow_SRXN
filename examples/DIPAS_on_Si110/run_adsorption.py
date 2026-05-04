@@ -80,7 +80,7 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     log_stage_title(logger, "VERIFICATION", f"Processing {n_target}/{n_total} sites")
     
     logger.info(f"VERIFICATION: Processing {len(candidates)} sites")
-    candidates = candidates[:2] # TEMPORARY LIMIT FOR DEBUGGING
+    # candidates = candidates[:2] # TEMPORARY LIMIT FOR DEBUGGING
     results = []
 
     engine = SimulationEngine(config)
@@ -168,7 +168,12 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
     if physi_cfg.get("enabled", False):
         logger.info(f"  [Stage: {stage_type}] Physisorption search for {mol.get_chemical_formula()}...")
         phy_cands = mgr.generate_physisorption_candidates(
-            mol, height=physi_cfg.get("placement_height", 3.5), tag=tag
+            mol,
+            height=physi_cfg.get("placement_height", 3.5),
+            tag=tag,
+            rot_center=physi_cfg.get("rotation_center", center_target),
+            height_mode=physi_cfg.get("height_mode", "clearance"),
+            gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False, "step_size": 0.2}),
         )
         for c in phy_cands: c.info["mechanism"] = "physisorption"
         all_cands.extend(phy_cands)

@@ -9,6 +9,24 @@ from rdkit.Chem import AllChem
 from .logger_utils import get_workflow_logger
 from .surface_utils import calculate_haptic_normal, calculate_haptic_vbs
 
+# Alvarez (2013) van der Waals radii in Angstroms.
+# Source: Dalton Trans. 42, 8617-8636 (2013). DOI: 10.1039/c3dt50599e
+# Used as the default pair-wise overlap threshold: dist < overlap_scale * (r_i + r_j)
+ALVAREZ_VDW_RADII = {
+    'H': 1.20, 'He': 1.43, 'Li': 2.12, 'Be': 1.98, 'B': 1.91, 'C': 1.77,
+    'N': 1.66, 'O': 1.50, 'F': 1.46, 'Ne': 1.58, 'Na': 2.50, 'Mg': 2.51,
+    'Al': 2.25, 'Si': 2.19, 'P': 1.90, 'S': 1.89, 'Cl': 1.82, 'Ar': 1.83,
+    'K': 2.73, 'Ca': 2.62, 'Sc': 2.58, 'Ti': 2.46, 'V': 2.42, 'Cr': 2.45,
+    'Mn': 2.45, 'Fe': 2.44, 'Co': 2.40, 'Ni': 2.40, 'Cu': 2.38, 'Zn': 2.39,
+    'Ga': 2.32, 'Ge': 2.29, 'As': 1.88, 'Se': 1.82, 'Br': 1.86, 'Kr': 2.25,
+    'Rb': 3.21, 'Sr': 2.84, 'Y': 2.75, 'Zr': 2.52, 'Nb': 2.56, 'Mo': 2.45,
+    'Ru': 2.46, 'Rh': 2.44, 'Pd': 2.15, 'Ag': 2.53, 'Cd': 2.49,
+    'In': 2.43, 'Sn': 2.42, 'Sb': 2.47, 'Te': 1.99, 'I': 2.04, 'Xe': 2.06,
+    'Cs': 3.48, 'Ba': 3.03, 'Hf': 2.63, 'Ta': 2.53, 'W': 2.57, 'Re': 2.49,
+    'Os': 2.48, 'Ir': 2.41, 'Pt': 2.29, 'Au': 2.32, 'Hg': 2.45,
+    'Tl': 2.47, 'Pb': 2.60, 'Bi': 2.54,
+}
+
 
 class AdsorptionWorkflowManager:
     """Generalized Adsorption Manager with Mechanistic Logging and Visual Clarity."""
@@ -194,57 +212,82 @@ class AdsorptionWorkflowManager:
         symbols = [a.GetSymbol() for a in mol.GetAtoms()]
         return Atoms(symbols=symbols, positions=positions)
 
-    def check_overlap(self, atoms, skip_indices=None, skip_pairs=None, cutoff=None, verbose=False, check_internal=True):
-        """Element-aware overlap check using VdW radii. 
-        Ignores Z-axis periodicity to avoid spurious collisions with slab bottom.
+    def check_overlap(self, atoms, skip_indices=None, skip_pairs=None,
+                      overlap_scale=None, cutoff=None, verbose=False, check_internal=True):
+        """Element-aware overlap check using Alvarez (2013) vdW radii by default.
+
+        Two mutually exclusive threshold modes:
+        - ``overlap_scale`` (default): pair threshold = overlap_scale * (r_vdw_i + r_vdw_j)
+          using ALVAREZ_VDW_RADII.  ``overlap_scale`` defaults to
+          ``config.reaction_search.candidate_filter.overlap_scale`` (fallback 0.65).
+        - ``cutoff`` (Å): explicit flat threshold applied to every pair, regardless of
+          element identity.  Useful for chemisorption geometry checks where the newly
+          formed bond length is already known (e.g. cutoff=1.4 Å).  If both are supplied,
+          ``cutoff`` takes precedence.
+
+        Z-periodicity is disabled to avoid spurious collisions with the slab bottom image.
         """
         from ase.geometry import get_distances
-        from .knowledge_engine import chem_kb
 
         tags = atoms.get_tags()
         max_tag = np.max(tags)
-        if max_tag < 2: return False
+        if max_tag < 2:
+            return False
 
         new_idx = np.where(tags == max_tag)[0]
         env_idx = np.where(tags < max_tag)[0]
-        if len(new_idx) == 0: return False
+        if len(new_idx) == 0:
+            return False
 
         pos = atoms.positions
         symbols = atoms.get_chemical_symbols()
         skip_pairs = set(tuple(sorted(p)) for p in (skip_pairs or []))
 
-        scale = cutoff if (cutoff is not None and cutoff < 1.0) else 0.4
-        unique_syms = set(symbols)
-        radii_map = {s: chem_kb.get_radius(s, rtype="vdw") for s in unique_syms}
+        # Resolve overlap_scale from config if not explicitly provided
+        if overlap_scale is None:
+            overlap_scale = self.config.get("reaction_search", {}).get(
+                "candidate_filter", {}).get("overlap_scale", 0.65)
 
-        # Use pbc=[True, True, False] for distance calculations
+        def _thresh(i, j):
+            """Return the overlap threshold (Å) for atom pair (i, j)."""
+            if cutoff is not None:
+                return cutoff
+            ri = ALVAREZ_VDW_RADII.get(symbols[i], 2.0)
+            rj = ALVAREZ_VDW_RADII.get(symbols[j], 2.0)
+            return overlap_scale * (ri + rj)
+
+        # Disable Z-periodicity to avoid wrap-around hits with slab bottom
         effective_pbc = [True, True, False]
 
+        # 1. Internal check (new atoms vs. each other)
         if check_internal and len(new_idx) > 1:
             _, int_dists = get_distances(pos[new_idx], pos[new_idx], cell=atoms.cell, pbc=effective_pbc)
             for i in range(len(new_idx)):
                 for j in range(i + 1, len(new_idx)):
                     idx_i, idx_j = new_idx[i], new_idx[j]
-                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
-                    pair_cutoff = (radii_map[symbols[idx_i]] + radii_map[symbols[idx_j]]) * scale
-                    if int_dists[i, j] < pair_cutoff:
+                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs:
+                        continue
+                    if int_dists[i, j] < _thresh(idx_i, idx_j):
                         return True
 
+        # 2. External check (new atoms vs. environment)
         if len(env_idx) > 0:
             _, ext_dists = get_distances(pos[new_idx], pos[env_idx], cell=atoms.cell, pbc=effective_pbc)
             for i, idx_i in enumerate(new_idx):
-                if skip_indices and idx_i in skip_indices: continue
-                r_i = radii_map[symbols[idx_i]]
+                if skip_indices and idx_i in skip_indices:
+                    continue
                 for j, idx_j in enumerate(env_idx):
-                    if skip_indices and idx_j in skip_indices: continue
-                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs: continue
-                    pair_cutoff = (r_i + radii_map[symbols[idx_j]]) * scale
-                    if ext_dists[i, j] < pair_cutoff:
+                    if skip_indices and idx_j in skip_indices:
+                        continue
+                    if skip_pairs and tuple(sorted((idx_i, idx_j))) in skip_pairs:
+                        continue
+                    if ext_dists[i, j] < _thresh(idx_i, idx_j):
                         return True
         return False
 
-    def _get_steric_fitness(self, atoms, cutoff=None, check_internal=True):
-        if self.check_overlap(atoms, cutoff=cutoff, verbose=True, check_internal=check_internal):
+    def _get_steric_fitness(self, atoms, overlap_scale=None, cutoff=None, check_internal=True):
+        if self.check_overlap(atoms, overlap_scale=overlap_scale, cutoff=cutoff,
+                              verbose=True, check_internal=check_internal):
             return -1e9
 
         from ase.geometry import get_distances
@@ -315,25 +358,48 @@ class AdsorptionWorkflowManager:
         m.translate(-c_pos)
         return m
 
-    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=32, rot_center="com", config=None, tag=2):
+    def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=32, rot_center="com",
+                                           height_mode="clearance", gravity_pull=None,
+                                           config=None, tag=2):
         """Generate physisorption candidate structures using Fibonacci-sphere orientational sampling.
 
-        `height` is interpreted as the **minimum atom–surface clearance** (Å): after each
-        rotation the molecule is lifted so its lowest atom sits exactly `height` Å above the
-        top of the substrate.  This avoids the COM-height mis-interpretation that caused
-        large molecules (DIPAS, ~8 Å extent) to embed into the surface.
+        Parameters
+        ----------
+        height : float
+            Placement height in Å, interpreted according to ``height_mode``.
+        height_mode : str
+            ``"clearance"`` (default) — lowest atom of the molecule sits exactly
+            ``height`` Å above the substrate surface.  Physically correct for large
+            molecules where the COM can be far above the binding atom.
+            ``"center"`` — rotation center (COM or specified element) is placed at
+            ``height`` Å above the surface.  Useful when comparing multiple molecules
+            at a consistent center-to-surface distance.
+        gravity_pull : dict or None
+            Optional downward-descent after initial placement.  Example::
+
+                {"enabled": True, "step_size": 0.2}
+
+            The molecule descends by ``step_size`` Å per step until either the first
+            vdW contact (Alvarez radii, ``overlap_scale``) or the substrate surface
+            (hard floor at z_surface_ref) is encountered.  Default: disabled.
         """
         from .surface_utils import CavityDetector, identify_protectors
 
-        # --- Overlap cutoff: use config value or fall back to a physically reasonable default ---
-        # 1.2 Å is tight enough to reject genuine clashes (Si–H covalent = 1.48 Å)
-        # while permitting all valid physisorption starting geometries.
-        global_overlap = self.config.get("reaction_search", {}).get("candidate_filter", {}).get("overlap_cutoff", 1.2)
+        # --- Overlap scale: Alvarez (2013) vdW fraction from config ---
+        overlap_scale = self.config.get("reaction_search", {}).get(
+            "candidate_filter", {}).get("overlap_scale", 0.65)
+
+        # --- Gravity pull settings ---
+        _grav = gravity_pull if gravity_pull is not None else {}
+        grav_enabled = _grav.get("enabled", False)
+        grav_step = float(_grav.get("step_size", 0.2))
 
         # --- Identify the substrate surface Z reference (top of substrate atoms, tag < 2) ---
         sub_tags = self.slab.get_tags()
         sub_mask_z = sub_tags < 2
-        z_surface_ref = float(np.max(self.slab.positions[sub_mask_z, 2])) if np.any(sub_mask_z) else float(np.max(self.slab.positions[:, 2]))
+        z_surface_ref = (float(np.max(self.slab.positions[sub_mask_z, 2]))
+                         if np.any(sub_mask_z)
+                         else float(np.max(self.slab.positions[:, 2])))
 
         # --- CavityDetector path (only when inhibitor atoms are ACTUALLY in the slab) ---
         _protex = self.config.get("reaction_search", {}).get("mechanisms", {}).get("protector", {})
@@ -354,7 +420,6 @@ class AdsorptionWorkflowManager:
         # --- Regular surface-atom sites (already symmetry-reduced in __init__) ---
         if not target_centers:
             for idx in self.surface_indices:
-                # XY = surface atom position; Z = surface_ref + height (starting guess)
                 site_xy = self.slab.positions[idx, :2].copy()
                 target_centers.append(np.array([site_xy[0], site_xy[1], z_surface_ref + height]))
 
@@ -370,7 +435,8 @@ class AdsorptionWorkflowManager:
 
         self.logger.info(
             f"  [Physisorption] {len(target_centers)} placement sites "
-            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} Å min-clearance, cutoff={global_overlap:.2f} Å)"
+            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} Å [{height_mode}], "
+            f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}Å'.format(grav_step) if grav_enabled else 'off'})"
         )
 
         # --- Fibonacci-sphere rotation vectors ---
@@ -385,7 +451,7 @@ class AdsorptionWorkflowManager:
                 rot_vectors.append(vec)
 
         candidates = []
-        stats = {"total": 0, "overlap": 0}
+        stats = {"total": 0, "overlap": 0, "grav_steps": 0}
 
         for target_pos in target_centers:
             current_site_poses = []
@@ -402,14 +468,36 @@ class AdsorptionWorkflowManager:
                 c_pos_rot = self._get_rotation_center(m_copy, mode=rot_center)
                 m_copy.translate(target_pos - c_pos_rot)
 
-                # KEY FIX: lift molecule so its LOWEST ATOM is at z_surface_ref + height.
-                # This makes `height` mean "minimum atom–surface clearance" rather than
-                # "rot_center-to-surface distance", which is the physically correct
-                # interpretation for a large molecule like DIPAS (iPr2NSiH3).
-                z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
-                extra_lift = (z_surface_ref + height) - z_mol_bottom
-                if extra_lift > 0:
-                    m_copy.translate([0, 0, extra_lift])
+                # --- height_mode: apply correct Z-placement interpretation ---
+                if height_mode == "clearance":
+                    # Lift so the LOWEST ATOM is at z_surface_ref + height.
+                    # Physically correct for large molecules where the rot_center
+                    # may be several Å above the nearest surface-facing atom.
+                    z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
+                    extra_lift = (z_surface_ref + height) - z_mol_bottom
+                    if extra_lift > 0:
+                        m_copy.translate([0, 0, extra_lift])
+                # else "center": rot_center already at z_surface_ref + height, no lift needed
+
+                # --- Gravity pull: descend until first vdW contact or surface floor ---
+                if grav_enabled:
+                    max_pull_steps = int(height / grav_step) + 100
+                    for _ in range(max_pull_steps):
+                        m_trial = m_copy.copy()
+                        m_trial.translate([0, 0, -grav_step])
+                        # Hard floor: lowest atom must remain above substrate surface
+                        if float(np.min(m_trial.positions[:, 2])) <= z_surface_ref + 0.3:
+                            break
+                        trial_combined = self.slab.copy()
+                        for a in m_trial:
+                            a.tag = tag
+                        trial_combined += m_trial
+                        trial_score = self._get_steric_fitness(
+                            trial_combined, overlap_scale=overlap_scale, check_internal=False)
+                        if trial_score <= -1e8:
+                            break  # first vdW contact detected — stop here
+                        m_copy = m_trial
+                        stats["grav_steps"] += 1
 
                 # Build combined structure with correct tags
                 combined = self.slab.copy()
@@ -417,7 +505,7 @@ class AdsorptionWorkflowManager:
                     a.tag = tag
                 combined += m_copy
 
-                score = self._get_steric_fitness(combined, cutoff=global_overlap, check_internal=False)
+                score = self._get_steric_fitness(combined, overlap_scale=overlap_scale, check_internal=False)
                 if score > -1e8:
                     combined.info["mechanism"] = f"Physisorption, rv={np.round(rv, 2).tolist()}, tag={tag}"
                     current_site_poses.append((score, combined, rv))
@@ -431,9 +519,11 @@ class AdsorptionWorkflowManager:
         from .surface_utils import standardize_vasp_atoms
         standardized_candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
 
+        grav_note = f", gravity {stats['grav_steps']} descent steps" if grav_enabled else ""
         self.logger.info(
             f"  [Physisorption] {len(standardized_candidates)} candidates from {len(target_centers)} sites "
-            f"({stats['total']} orientations tried, {stats['overlap']} rejected by overlap={global_overlap:.2f} Å)."
+            f"({stats['total']} orientations tried, {stats['overlap']} rejected by "
+            f"overlap_scale={overlap_scale:.2f}{grav_note})."
         )
         return standardized_candidates
 

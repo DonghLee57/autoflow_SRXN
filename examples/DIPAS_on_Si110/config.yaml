@@ -7,7 +7,7 @@ paths:
   adsorbate: "../../structures/DIPAS.vasp"
   inhibitor: "../../structures/ethanol.vasp"
   include_no_inhibitor: true
-  output_prefix: "results_si110"
+  output_prefix: "results"
   restart: true
 
 surface_prep:
@@ -37,6 +37,11 @@ reaction_search:
       physisorption:
         enabled: true
         placement_height: 3.2
+        height_mode: "clearance"    # "clearance": lowest atom at height Å above surface
+                                    # "center":    rotation center at height Å above surface
+        gravity_pull:
+          enabled: false            # descend until first vdW contact after initial placement
+          step_size: 0.2            # Å per descent step (only relevant if enabled: true)
       branching_limit: 1
       chemisorption:
         enabled: false
@@ -45,14 +50,20 @@ reaction_search:
       center: "Si"
       physisorption:
         enabled: true
-        placement_height: 3.8
+        placement_height: 5.0
+        height_mode: "clearance"    # "clearance": lowest atom at height Å above surface
+                                    # "center":    rotation center at height Å above surface
+        gravity_pull:
+          enabled: false            # descend until first vdW contact after initial placement
+          step_size: 0.2            # Å per descent step (only relevant if enabled: true)
       chemisorption:
         enabled: true
         rot_steps: 8
 
   candidate_filter:
     symprec: 0.2
-    # Removed manual overlap_cutoff to use robust Bondi radii
+    overlap_scale: 0.65             # Alvarez (2013) vdW fraction: overlap if dist < scale*(r_i+r_j)
+                                    # 0.65 ≈ tight physisorption threshold; raise to 0.75 for stricter
 
 verification:
   relaxation:
