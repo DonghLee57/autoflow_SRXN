@@ -295,100 +295,100 @@ engine:
 # Stage 0a — Heterointerface Slab Generation  (optional, requires pymatgen)
 # -----------------------------------------------------------------------------
 # This stage runs BEFORE the main slab generation step (surface_prep).
-# It uses the 2D ZSL lattice-match algorithm to find the lowest-strain
-# supercell pair between a substrate and a film bulk crystal, builds a
-# symmetric sub|film|sub sandwich slab, and optionally feeds it directly
-# into the reaction-search stages as the working substrate.
+# It uses the 2D ZSL (Zur-Schilling) lattice-match algorithm to find the
+# lowest-strain supercell pair between a substrate and a film bulk crystal,
+# builds separate symmetric substrate and film slabs, and optionally feeds
+# the substrate slab directly into the reaction-search stages.
 #
-# Atom-tag convention in the built slab:
-#   tag = 0  substrate atoms (bottom and top layers)
-#   tag = 1  epitaxial film atoms (centre)
-#   tag = 2  inhibitor (Stage 1)     ← assigned later by the workflow
-#   tag = 3  precursor (Stage 2)     ← assigned later by the workflow
+# build() returns two independent ASE Atoms objects:
+#   sub_slab   — symmetric substrate slab with vacuum
+#   film_slab  — symmetric film slab with vacuum (same in-plane cell)
 #
 # When use_as_substrate is true:
 #   surface_prep.slab_generation.enabled is internally overridden to false
-#   and the interface-built slab is loaded directly as paths.input_structure.
+#   and the substrate slab is used as the working substrate for Stage 1/2.
 #
 # Minimal example — TiN substrate / HfO2 film:
 #   interface:
-#     enabled:       true
-#     sub_path:      "structures/TiN.cif"
-#     film_path:     "structures/HfO2.cif"
-#     sub_millers:   [[0,0,1]]
-#     film_millers:  [[0,0,1], [1,1,0]]
-#     strain_cutoff: 0.06
-#     max_atoms:     400
-#     build_top_k:   1
-#     use_as_substrate: true
+#     enabled:            true
+#     sub_path:           "structures/TiN.cif"
+#     film_path:          "structures/HfO2.cif"
+#     sub_millers:        [[0,0,1]]
+#     film_millers:       [[0,0,1], [1,1,0]]
+#     strain_cutoff:      0.05
+#     max_atoms:          400
+#     build_top_k:        1
+#     use_as_substrate:   true
 #
 interface:
   enabled:       false           # true -> run Stage 0a before surface_prep
 
   # ── Input structures ────────────────────────────────────────────────────────
   # Full paths to bulk crystal files.  Accepted formats: CIF, POSCAR/CONTCAR,
-  # CSSR, or any format understood by pymatgen.core.Structure.from_file().
+  # or any format understood by pymatgen.core.Structure.from_file().
   sub_path:  "structures/substrate_bulk.cif"   # Substrate bulk crystal
   film_path: "structures/film_bulk.cif"        # Epitaxial film bulk crystal
 
-  # Human-readable labels for log messages and output filenames.
-  # null -> derived automatically from the file stem (e.g. "TiN" from "TiN.cif").
-  sub_name:  null
-  film_name: null
-
   # ── Surface orientation search space ────────────────────────────────────────
-  # List of (h,k,l) Miller index tuples to consider for each material.
-  # Tip: start with the low-index faces of each crystal system.
+  # Three ways to specify Miller indices (priority: explicit > *_max_miller > default):
+  #
+  #   A. Explicit list — only these faces are searched:
+  #        sub_millers:  [[0,0,1], [1,1,0], [1,0,0]]
+  #        film_millers: [[0,0,1], [1,1,0]]
+  #
+  #   B. Auto-enumerate — all faces with max(|h|,|k|,|l|) <= N (inclusive):
+  #        sub_millers: null
+  #        sub_max_miller: 2
+  #
+  #   C. Omit both — falls back to default: (0,0,1), (1,1,0), (1,1,1)
+  #
+  # miller_mode: "distinct"  pymatgen symmetry reduction (default, recommended)
+  #              "raw"       all (h,k,l) with h,k,l in [0,N] and gcd(h,k,l)=1
+
+  # Explicit lists (non-empty list takes priority over *_max_miller):
   sub_millers:  [[0,0,1], [1,1,0], [1,0,0]]
   film_millers: [[0,0,1], [1,1,0], [1,0,0]]
 
+  # Auto-enumerate (used only when the corresponding *_millers is null or absent):
+  sub_max_miller:  null   # e.g. 2  ->  max(|h|,|k|,|l|) <= 2
+  film_max_miller: null   # e.g. 3  ->  max(|h|,|k|,|l|) <= 3
+
+  miller_mode: distinct   # "distinct" | "raw"
+
   # ── ZSL lattice-match parameters ────────────────────────────────────────────
-  # max_det:       Maximum Hermite Normal Form determinant to enumerate.
-  #                Higher values find smaller-strain matches but cost O(n^2) work.
-  #                Typical range: 16 (fast) – 64 (exhaustive).
-  max_det:       36
+  # max_det:       Maximum Hermite Normal Form determinant to enumerate per
+  #                material.  Larger values find smaller-strain matches at
+  #                the cost of O(max_det^4) work.  Typical range: 4–8.
+  max_det: 6
 
   # strain_cutoff: Discard coincidences with von Mises strain above this value.
   #                0.05 (5 %) is a physically reasonable starting point for
-  #                pseudomorphic growth.  Relax to 0.10–0.15 if no matches appear.
-  strain_cutoff: 0.10
+  #                pseudomorphic growth.  Relax to 0.10 if no matches appear.
+  strain_cutoff: 0.05
 
-  # ── Slab thickness ──────────────────────────────────────────────────────────
-  sub_layers:  6   # Substrate layers per side (bottom + top, each this thick)
-  film_layers: 8   # Film layers in the centre
+  # max_atoms: Candidates whose estimated total atom count exceeds this value
+  #            are flagged with a WARN note (not rejected).
+  max_atoms: 400
 
-  # ── Elastic relaxation ──────────────────────────────────────────────────────
-  # Poisson's ratio used for out-of-plane c-relaxation of the strained film.
-  #   eps_c = -nu / (1 - nu) * (eps1 + eps2)
-  # Default 0.25 is appropriate for most oxides and nitrides.
-  nu: 0.25
+  # ── Slab construction ────────────────────────────────────────────────────────
+  # min_slab_thickness:  Minimum physical slab thickness (Angstrom).
+  min_slab_thickness: 12.0
 
-  # ── Candidate filtering ─────────────────────────────────────────────────────
-  # max_atoms: Discard candidates whose estimated total atom count exceeds this.
-  #            Keep this below ~600 for MLIP-based workflows.
-  max_atoms: 500
-
-  # top_k: Maximum candidates kept per (sub_miller, film_miller) orientation pair.
-  #        0 or negative -> keep all (potentially many hundreds).
-  top_k: 10
+  # vacuum:  Vacuum layer thickness (Angstrom) added above each slab.
+  vacuum: 15.0
 
   # ── Output & downstream integration ─────────────────────────────────────────
-  # build_top_k: Number of top-ranked candidates to actually build as ASE slabs.
-  #              Each slab is written as "interface_N.extxyz" in the output dir.
-  #              Set to 0 to only run the search without building any slabs.
+  # build_top_k: Number of top-ranked candidates to build as ASE slab pairs.
+  #              Writes sub_slab_<N>.extxyz and film_slab_<N>.extxyz per rank.
+  #              Set to 0 to only run the screening without building slabs.
   build_top_k: 1
 
-  # use_as_substrate: If true, the best built slab (rank 0) is injected as
-  #                   paths.input_structure and surface_prep.slab_generation is
-  #                   disabled automatically.  The reaction search then runs on
-  #                   the film surface of the heterointerface.
+  # use_as_substrate: If true, the best built substrate slab (rank 0) is
+  #                   injected as the working substrate and
+  #                   surface_prep.slab_generation.enabled is set to false.
   use_as_substrate: false
 
-  # plot: Generate an interactive Plotly HTML scatter-plot of all candidates
-  #       (VM strain vs. supercell size) in the output directory.
-  plot: true
-
-  # output_dir: Where to write interface_*.extxyz and interface_candidates.html.
+  # output_dir: Where to write slab files and interface_summary.txt.
   #             null -> uses the run's output directory (paths.output_dir).
   output_dir: null
 

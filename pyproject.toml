@@ -24,11 +24,13 @@ mlip = [
     "sevenn"
 ]
 
-[tool.setuptools]
-packages = ["autoflow_srxn"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autoflow_srxn*"]
 
 [tool.setuptools.package-data]
 autoflow_srxn = ["*.json"]
+"autoflow_srxn.interface" = ["*.json"]
 
 [tool.ruff]
 # Target PEP8 and Google Style

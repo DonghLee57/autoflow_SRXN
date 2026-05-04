@@ -21,9 +21,9 @@ def run_interface_stage(config, logger, out_dir):
     Reads the ``interface`` config block, runs
     :class:`~autoflow_srxn.interface.workflow.InterfaceWorkflow`, and writes:
 
-    * ``interface_candidates.html`` — interactive Plotly scatter-plot
-    * ``interface_<N>.extxyz``      — built slab(s)
-    * ``interface_summary.txt``     — plain-text candidate table
+    * ``sub_slab_<N>.extxyz``   — substrate slab for candidate N
+    * ``film_slab_<N>.extxyz``  — film slab for candidate N
+    * ``interface_summary.txt`` — plain-text candidate table
 
     Parameters
     ----------
@@ -36,8 +36,8 @@ def run_interface_stage(config, logger, out_dir):
     Returns
     -------
     ase.Atoms or None
-        The best built slab when ``interface.use_as_substrate`` is True
-        and at least one slab was built; otherwise ``None``.
+        The best substrate slab (rank 0) when ``interface.use_as_substrate``
+        is True and at least one slab was built; otherwise ``None``.
     """
     iface_cfg = config.get("interface", {})
     if not iface_cfg.get("enabled", False):
@@ -45,11 +45,12 @@ def run_interface_stage(config, logger, out_dir):
 
     # Graceful ImportError for missing pymatgen
     try:
-        from autoflow_srxn.interface.workflow import InterfaceWorkflow
+        from pymatgen.core import Structure
+        from autoflow_srxn.interface import InterfaceWorkflow
     except ImportError as exc:
         logger.error(
             f"[Stage 0a] Could not import InterfaceWorkflow — "
-            f"install pymatgen with: pip install autoflow-srxn[interface]\n  ({exc})"
+            f"install pymatgen with: pip install pymatgen\n  ({exc})"
         )
         return None
 
@@ -59,90 +60,114 @@ def run_interface_stage(config, logger, out_dir):
     iface_out = iface_cfg.get("output_dir") or out_dir
     os.makedirs(iface_out, exist_ok=True)
 
-    # Resolve input file paths relative to config location (already done by load_config
-    # for 'paths' keys, but interface paths need the same treatment here)
+    # Validate input bulk crystal paths
     sub_path  = iface_cfg.get("sub_path", "")
     film_path = iface_cfg.get("film_path", "")
-    if not os.path.isabs(sub_path) and not os.path.exists(sub_path):
-        # Try relative to CWD, already the common case
-        pass
     if not os.path.exists(sub_path):
-        logger.error(f"[Stage 0a] Substrate bulk file not found: {sub_path}")
+        logger.error(f"[Stage 0a] Substrate bulk file not found: {sub_path!r}")
         return None
     if not os.path.exists(film_path):
-        logger.error(f"[Stage 0a] Film bulk file not found: {film_path}")
+        logger.error(f"[Stage 0a] Film bulk file not found: {film_path!r}")
         return None
 
-    # Build InterfaceWorkflow
-    wf_kwargs = dict(
-        sub_name      = iface_cfg.get("sub_name"),
-        film_name     = iface_cfg.get("film_name"),
-        sub_millers   = [tuple(m) for m in iface_cfg.get("sub_millers",  [[0,0,1]])],
-        film_millers  = [tuple(m) for m in iface_cfg.get("film_millers", [[0,0,1]])],
-        max_det       = iface_cfg.get("max_det",       36),
-        strain_cutoff = iface_cfg.get("strain_cutoff", 0.10),
-        sub_layers    = iface_cfg.get("sub_layers",    6),
-        film_layers   = iface_cfg.get("film_layers",   8),
-        nu            = iface_cfg.get("nu",            0.25),
-        max_atoms     = iface_cfg.get("max_atoms",     500),
-        top_k         = iface_cfg.get("top_k",         10),
-        logger        = logger,
+    # Load pymatgen Structure objects
+    try:
+        sub_struct  = Structure.from_file(sub_path)
+        film_struct = Structure.from_file(film_path)
+    except Exception as exc:
+        logger.error(f"[Stage 0a] Failed to load bulk structures: {exc}")
+        return None
+
+    logger.info(
+        "[Stage 0a] Substrate: %s  (%s)",
+        sub_struct.formula, sub_struct.get_space_group_info()[0],
+    )
+    logger.info(
+        "[Stage 0a] Film:      %s  (%s)",
+        film_struct.formula, film_struct.get_space_group_info()[0],
     )
 
+    # Build InterfaceWorkflow with new API
     try:
-        wf = InterfaceWorkflow.from_files(sub_path, film_path, **wf_kwargs)
+        wf = InterfaceWorkflow(
+            sub_structure      = sub_struct,
+            film_structure     = film_struct,
+            sub_millers        = [tuple(m) for m in iface_cfg.get("sub_millers",  [[0, 0, 1]])],
+            film_millers       = [tuple(m) for m in iface_cfg.get("film_millers", [[0, 0, 1]])],
+            max_det            = iface_cfg.get("max_det",            6),
+            strain_cutoff      = iface_cfg.get("strain_cutoff",      0.05),
+            max_atoms          = iface_cfg.get("max_atoms",          400),
+            min_slab_thickness = iface_cfg.get("min_slab_thickness", 12.0),
+            vacuum             = iface_cfg.get("vacuum",             15.0),
+        )
     except Exception as exc:
         logger.error(f"[Stage 0a] Failed to initialise InterfaceWorkflow: {exc}")
         return None
 
-    # Find candidates
-    candidates = wf.find_candidates()
+    # Screen coincidence lattices
+    candidates = wf.screen()
     if not candidates:
-        logger.warning("[Stage 0a] No matching candidates found — check strain_cutoff or max_atoms.")
+        logger.warning("[Stage 0a] No matching candidates found — try increasing strain_cutoff or max_det.")
         return None
 
-    # Summary table
-    summary_str = wf.summary(n=20, candidates=candidates)
+    logger.info("[Stage 0a] Found %d candidate(s).", len(candidates))
+
+    # Write summary table
+    summary_str = wf.summary(candidates, top_n=20)
     summary_path = os.path.join(iface_out, "interface_summary.txt")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary_str)
     logger.info(f"[Stage 0a] Candidate summary written to: {summary_path}")
 
-    # Plotly scatter-plot
-    if iface_cfg.get("plot", True):
-        plot_path = os.path.join(iface_out, "interface_candidates.html")
-        wf.plot(output_path=plot_path, candidates=candidates)
-
-    # Build slabs
-    build_k = iface_cfg.get("build_top_k", 1)
+    # Build top-k substrate/film slab pairs
+    build_k = int(iface_cfg.get("build_top_k", 1))
     if build_k <= 0:
         logger.info("[Stage 0a] build_top_k=0 — skipping slab construction.")
         return None
 
+    from ase.io import write as ase_write
+
+    best_sub_slab = None
     top_candidates = candidates[:build_k]
-    logger.info(f"[Stage 0a] Building {len(top_candidates)} slab(s)...")
-    built_slabs = wf.build(top_candidates)
+    logger.info(f"[Stage 0a] Building slabs for top {len(top_candidates)} candidate(s)…")
 
-    best_slab = None
-    for idx, slab in enumerate(built_slabs):
-        slab_path = os.path.join(iface_out, f"interface_{idx}.extxyz")
-        from ase.io import write as ase_write
-        ase_write(slab_path, slab)
+    for idx, cand in enumerate(top_candidates):
+        try:
+            sub_slab, film_slab = wf.build(cand)
+        except Exception as exc:
+            logger.error(f"[Stage 0a] Build failed for candidate {idx}: {exc}")
+            continue
+
+        # Attach metadata
+        for slab, role in [(sub_slab, "substrate"), (film_slab, "film")]:
+            slab.info["vm_strain"] = float(cand.vm)
+            slab.info["eps1"]      = float(cand.eps1)
+            slab.info["eps2"]      = float(cand.eps2)
+            slab.info["role"]      = role
+
+        sub_out  = os.path.join(iface_out, f"sub_slab_{idx}.extxyz")
+        film_out = os.path.join(iface_out, f"film_slab_{idx}.extxyz")
+        ase_write(sub_out,  sub_slab)
+        ase_write(film_out, film_slab)
         logger.info(
-            f"[Stage 0a] Slab {idx}: {len(slab)} atoms, "
-            f"vm={slab.info.get('vm_strain', 0):.4f}, "
-            f"eps1={slab.info.get('eps1', 0):+.4f} "
-            f"eps2={slab.info.get('eps2', 0):+.4f}  -> {slab_path}"
+            f"[Stage 0a] Candidate {idx}: "
+            f"sub{cand.sub_miller}|film{cand.film_miller}  "
+            f"vm={cand.vm:.4f}  "
+            f"sub={len(sub_slab)} atoms -> {os.path.basename(sub_out)}  "
+            f"film={len(film_slab)} atoms -> {os.path.basename(film_out)}"
         )
+        if cand.notes:
+            logger.warning(f"[Stage 0a]   Notes: {', '.join(cand.notes)}")
+
         if idx == 0:
-            best_slab = slab
+            best_sub_slab = sub_slab
 
-    # If use_as_substrate, return the best slab so it feeds into Stage 0
-    if iface_cfg.get("use_as_substrate", False) and best_slab is not None:
+    # If use_as_substrate, return the best substrate slab to feed into Stage 0
+    if iface_cfg.get("use_as_substrate", False) and best_sub_slab is not None:
         logger.info(
-            "[Stage 0a] use_as_substrate=true — injecting interface slab as working substrate."
+            "[Stage 0a] use_as_substrate=true — injecting substrate slab as working substrate."
         )
-        return best_slab
+        return best_sub_slab
 
     return None
 
