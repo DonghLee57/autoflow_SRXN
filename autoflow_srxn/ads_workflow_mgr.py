@@ -1,4 +1,4 @@
-﻿from itertools import combinations
+from itertools import combinations
 
 import numpy as np
 import spglib
@@ -438,93 +438,127 @@ class AdsorptionWorkflowManager:
             f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}A'.format(grav_step) if grav_enabled else 'off'})"
         )
 
-        # --- Fibonacci-sphere rotation + Spin sampling ---
-        # To uniformly sample SO(3), we point the molecule's Z-axis to a Fibonacci sphere,
-        # and then spin it around that axis.
-        n_fib = n_rot
-        n_spin = 6
-        phi = np.pi * (3.0 - np.sqrt(5.0))
-        rot_vectors = []
-        for i in range(n_fib):
-            y = 1 - (i / float(max(n_fib - 1, 1))) * 2
-            r = np.sqrt(max(0.0, 1 - y * y))
-            theta = phi * i
-            vec = np.array([np.cos(theta) * r, y, np.sin(theta) * r])
-            rot_vectors.append(vec)
-
+        # --- Roll + Tilt sampling (32 orientations total) ---
+        n_rolls = 8
+        n_tilts = 4
+        
         candidates = []
         stats = {"total": 0, "overlap": 0, "grav_steps": 0}
 
+        # Align molecule once: center at [0,0,0] with anchor element/COM strategy
+        m_aligned = self._get_physi_alignment(molecule, mode=rot_center)
+
         for target_pos in target_centers:
             current_site_poses = []
-
-            for rv in rot_vectors:
-                for spin_angle in np.linspace(0, 360, n_spin, endpoint=False):
+            
+            # Safe sampling height (far enough to rotate freely)
+            # We use 10.0A as a safe ceiling for initial rotation
+            safe_height = 10.0
+            
+            for i_roll in range(n_rolls):
+                roll_angle = (360.0 / n_rolls) * i_roll
+                for i_tilt in range(n_tilts):
                     stats["total"] += 1
-                    m_copy = molecule.copy()
-
-                    # Rotate molecule so [0,0,1] aligns with rv, then spin around rv
-                    c_pos_init = self._get_rotation_center(m_copy, mode=rot_center)
-                    m_copy.rotate([0, 0, 1], rv, center=c_pos_init)
-                    m_copy.rotate(spin_angle, rv, center=c_pos_init)
-
-                    # Place rot_center at target_pos (XY of site, Z = z_surface_ref + height)
-                    c_pos_rot = self._get_rotation_center(m_copy, mode=rot_center)
-                    m_copy.translate(target_pos - c_pos_rot)
-
-                    # --- height_mode: apply correct Z-placement interpretation ---
-                    if height_mode == "clearance":
-                        z_mol_bottom = float(np.min(m_copy.positions[:, 2]))
-                        extra_lift = (z_surface_ref + height) - z_mol_bottom
-                        m_copy.translate([0, 0, extra_lift])
-
-                    # --- Gravity pull: descend until first vdW contact or surface floor ---
-                    if grav_enabled:
-                        max_pull_steps = int(height / grav_step) + 100
-                        for _ in range(max_pull_steps):
-                            m_trial = m_copy.copy()
-                            m_trial.translate([0, 0, -grav_step])
-                            # Hard floor: lowest atom must remain above substrate surface
-                            if float(np.min(m_trial.positions[:, 2])) <= z_surface_ref + 0.3:
-                                break
-                            trial_combined = self.slab.copy()
-                            for a in m_trial:
-                                a.tag = tag
-                            trial_combined += m_trial
-                            trial_score = self._get_steric_fitness(
-                                trial_combined, overlap_scale=overlap_scale, check_internal=False)
-                            if trial_score <= -1e8:
-                                break  # first vdW contact detected — stop here
-                            m_copy = m_trial
-                            stats["grav_steps"] += 1
-
-                    # Build combined structure with correct tags
-                    combined = self.slab.copy()
-                    for a in m_copy:
-                        a.tag = tag
-                    combined += m_copy
-
-                    score = self._get_steric_fitness(combined, overlap_scale=overlap_scale, check_internal=False)
-                    if score > -1e8:
-                        combined.info["mechanism"] = f"Physisorption, rv={np.round(rv, 2).tolist()}, spin={spin_angle:.1f}, tag={tag}"
-                        current_site_poses.append((score, combined, rv))
+                    tilt_angle = 15.0 * i_tilt
+                    
+                    m_pose = m_aligned.copy()
+                    m_pose.rotate(roll_angle, [0, 0, 1], center=[0, 0, 0])
+                    if tilt_angle > 0:
+                        m_pose.rotate(tilt_angle, [1, 0, 0], center=[0, 0, 0])
+                    
+                    # Start at safe height above the target site
+                    # Initial placement for descent
+                    m_pose.translate(target_pos + np.array([0, 0, safe_height - height]))
+                    
+                    # --- Gravity Pulling: descend until first vdW contact ---
+                    step_size = grav_step if grav_enabled else 0.2
+                    last_safe_atoms = None
+                    final_step = 0
+                    
+                    # Descend from safe_height (10A) down to surface (approx 0A relative)
+                    max_steps = int(safe_height / step_size) + 5
+                    for step in range(max_steps):
+                        combined = self.slab.copy()
+                        for a in m_pose: a.tag = tag
+                        combined += m_pose
+                        
+                        if self.check_overlap(combined, overlap_scale=overlap_scale, check_internal=False):
+                            break
+                        else:
+                            last_safe_atoms = combined.copy()
+                            final_step = step
+                            m_pose.translate([0, 0, -step_size])
+                    
+                    if last_safe_atoms is not None:
+                        f_h = safe_height - (final_step * step_size)
+                        if self.verbose and stats["total"] % 8 == 0:
+                            self.logger.info(f"    [Gravity] Orientation {stats['total']}: Pulled down to h={f_h:.2f} A")
+                        
+                        last_safe_atoms.info["mechanism"] = f"Physisorption (Gravity), roll={roll_angle:.0f}, tilt={tilt_angle:.0f}, h={f_h:.2f}"
+                        # Save the pose
+                        candidates.append(last_safe_atoms)
                     else:
                         stats["overlap"] += 1
-
-            # Keep up to 5 rotationally diverse poses per site
-            best_poses = self._get_diverse_top_poses(current_site_poses, n_out=5)
-            candidates.extend(best_poses)
 
         from .surface_utils import standardize_vasp_atoms
         standardized_candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
 
-        grav_note = f", gravity {stats['grav_steps']} descent steps" if grav_enabled else ""
+        # --- Candidate Deduplication (Hungarian Algorithm + Site-Relative) ---
+        from scipy.optimize import linear_sum_assignment
+        from scipy.spatial.distance import cdist
+        
+        unique_candidates = []
+        unique_orientations = [] # List of (n_atoms, 3) arrays representing relative poses
+        
+        for cand in standardized_candidates:
+            # Identify adsorbate atoms and their relative positions to their anchor/center
+            ads_idx = np.where(cand.get_tags() >= 2)[0]
+            if len(ads_idx) == 0:
+                unique_candidates.append(cand)
+                continue
+            
+            # Use the center of the adsorbate as a reference for "orientation"
+            # Or better, the rotation center if we had it. 
+            # Let's use the average position of adsorbate atoms as a local origin.
+            ads_pos = cand.positions[ads_idx]
+            ads_symbols = cand.symbols[ads_idx]
+            local_origin = np.mean(ads_pos, axis=0)
+            rel_pos = ads_pos - local_origin
+            
+            is_duplicate = False
+            for target_rel_pos, target_symbols in unique_orientations:
+                if len(ads_symbols) != len(target_symbols):
+                    continue
+                if not np.array_equal(np.sort(ads_symbols), np.sort(target_symbols)):
+                    continue
+                
+                # Check element-wise matching
+                total_match = True
+                for sym in np.unique(ads_symbols):
+                    c_idx = [i for i, s in enumerate(ads_symbols) if s == sym]
+                    t_idx = [i for i, s in enumerate(target_symbols) if s == sym]
+                    
+                    d_matrix = cdist(rel_pos[c_idx], target_rel_pos[t_idx])
+                    row_ind, col_ind = linear_sum_assignment(d_matrix)
+                    if np.any(d_matrix[row_ind, col_ind] > 0.2):
+                        total_match = False
+                        break
+                
+                if total_match:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_candidates.append(cand)
+                unique_orientations.append((rel_pos, ads_symbols))
+
+        grav_note = f", using gravity descent" if grav_enabled else ""
         self.logger.info(
-            f"  [Physisorption] {len(standardized_candidates)} candidates from {len(target_centers)} sites "
-            f"({stats['total']} orientations tried, {stats['overlap']} rejected by "
+            f"  [Physisorption] {len(unique_candidates)} unique candidates from {len(target_centers)} sites "
+            f"(Reduced from {len(standardized_candidates)} initial poses, {stats['overlap']} rejected by "
             f"overlap_scale={overlap_scale:.2f}{grav_note})."
         )
-        return standardized_candidates
+        return unique_candidates
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
         if verbose is None: verbose = self.verbose

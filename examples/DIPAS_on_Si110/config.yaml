@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # Practical Config: Ethanol (Physi) + DIPAS (Physi/Chemi) on Si(110)
 # =============================================================================
 
@@ -39,10 +39,7 @@ reaction_search:
         placement_height: 3.2
         height_mode: "clearance"    # "clearance": lowest atom at height A above surface
                                     # "center":    rotation center at height A above surface
-        gravity_pull:
-          enabled: false            # descend until first vdW contact after initial placement
-          step_size: 0.2            # A per descent step (only relevant if enabled: true)
-      branching_limit: 1
+      branching_limit: 3
       chemisorption:
         enabled: false
 
@@ -55,7 +52,7 @@ reaction_search:
         height_mode: "clearance"    # "clearance": lowest atom at height A above surface
                                     # "center":    rotation center at height A above surface
         gravity_pull:
-          enabled: false            # descend until first vdW contact after initial placement
+          enabled: true
           step_size: 0.2            # A per descent step (only relevant if enabled: true)
       chemisorption:
         enabled: true
@@ -73,7 +70,7 @@ reaction_search:
 
 verification:
   relaxation:
-    enabled: false
+    enabled: true
     steps: 100
     fmax: 0.05
     frozen_z_ang: 5.5 # Consistent fixing
@@ -84,5 +81,5 @@ engine:
     model:    "medium"
     device:   "cpu"
     dtype:    "float64"
-    d3:       true         # Enable dispersion for physisorption stability
+    d3:       false        # Disable if torch-dftd is not installed
 

@@ -104,11 +104,13 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     # candidates = candidates[:2] # TEMPORARY LIMIT FOR DEBUGGING
     results = []
 
+    logger.info(f"DEBUG: run_relax={run_relax}, verify_cfg={verify_cfg}")
     engine = None
     calc = None
     if run_relax:
         engine = SimulationEngine(config)
         calc = engine.get_calculator()
+        logger.info(f"DEBUG: Engine initialized with calculator: {calc}")
 
     processed_cands = []
     summary_data = []
@@ -140,6 +142,7 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
 
                 # Final standardization after relaxation/MD
                 atoms_proc = standardize_vasp_atoms(atoms_proc, z_min_offset=0.5)
+                atoms_proc.calc = calc
                 e_final = atoms_proc.get_potential_energy()
                 delta = e_final - e_init
                 e_ads = e_final - (e_gas + e_base)
@@ -153,11 +156,13 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
                 "e_initial": e_init, "e_final": e_final, 
                 "delta": delta, "e_ads": e_ads
             })
-            csv_rows.append({
+            # Incremental Logging
+            csv_path = os.path.join(os.path.dirname(out_prefix), "energylog.csv")
+            log_to_csv(csv_path, [{
                 "tag": tag, "id": i, "mechanism": mech, 
                 "e_initial": e_init, "e_final": e_final, 
                 "delta": delta, "e_ads": e_ads
-            })
+            }])
             
             atoms_proc.info["e_initial"] = e_init
             atoms_proc.info["e_final"] = e_final
@@ -169,8 +174,6 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
             logger.error(f"  [Verification] Candidate {i} failed: {e}")
 
     log_results_table(logger, summary_data, title=f"Verification Summary (tag={tag})")
-    csv_path = os.path.join(os.path.dirname(out_prefix), "energylog.csv")
-    log_to_csv(csv_path, csv_rows)
 
     if processed_cands:
         suffix = "_relaxed" if run_relax else "_evaluated"
