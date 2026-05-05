@@ -24,17 +24,15 @@ except ImportError as e:
         f"(Original error: {e})"
     ) from e
 
-from autoflow_srxn.interface.lattice_match import (
-    find_coincidences,
-    miller_polar_inplane,
-    polar_axis_for_sg,
-    POLAR_SG,
-)
 from autoflow_srxn.interface.builder import (
     InterfaceCandidate,
     build_symmetric_slab,
+    find_coincidences,
     get_slab_atom_count,
     get_surface_lattice_2d,
+    miller_polar_inplane,
+    polar_axis_for_sg,
+    POLAR_SG,
 )
 
 logger = logging.getLogger(__name__)

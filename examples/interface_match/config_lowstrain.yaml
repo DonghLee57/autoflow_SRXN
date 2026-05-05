@@ -1,0 +1,20 @@
+
+# Si/SiO2 Low-Strain Example (Large Supercell)
+# Found via search: Sub(1,1,1) // Film(0,0,1) with ~3.9% strain
+
+sub_path:  "../../structures/Si_mp149.vasp"
+film_path: "../../structures/SiO2_mp-546794.vasp"
+
+# Limit indices for speed during building
+sub_millers: [[1, 1, 1]]
+film_millers: [[0, 0, 1]]
+
+max_det: 25
+strain_cutoff: 0.05
+
+min_thickness: 6.0   # Reduced thickness to keep atom count manageable
+vacuum:        15.0
+interface_gap: 2.0
+max_atoms:     2000
+
+out_dir: "results"

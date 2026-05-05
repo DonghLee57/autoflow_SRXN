@@ -14,7 +14,7 @@ import unittest
 import numpy as np
 
 from autoflow_srxn.interface import _HAS_PYMATGEN
-from autoflow_srxn.interface.lattice_match import (
+from autoflow_srxn.interface.builder import (
     POLAR_SG,
     find_coincidences,
     iter_hnf_2d,
@@ -29,7 +29,7 @@ from autoflow_srxn.interface.lattice_match import (
 # ===========================================================================
 
 class TestLatticeMatchNumpy(unittest.TestCase):
-    """Tests for lattice_match.py – no pymatgen dependency."""
+    """Tests for core lattice matching logic in builder.py."""
 
     # -----------------------------------------------------------------------
     # iter_hnf_2d

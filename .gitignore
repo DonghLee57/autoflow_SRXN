@@ -35,3 +35,8 @@ dist/
 # Example outputs
 examples/**/*.vasp
 examples/**/*.extxyz
+examples/**/*.html
+examples/**/*.json
+**/results/
+**/vibrations/
+**/discovery/

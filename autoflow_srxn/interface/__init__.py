@@ -17,21 +17,23 @@ from __future__ import annotations
 try:
     from pymatgen.core import Structure  # noqa: F401 – just a probe
 
-    from autoflow_srxn.interface.lattice_match import (
+    from autoflow_srxn.interface.builder import (
+        InterfaceCandidate,
+        build_symmetric_slab,
         find_coincidences,
+        get_slab_atom_count,
+        get_surface_lattice_2d,
         iter_hnf_2d,
         miller_polar_inplane,
         polar_axis_for_sg,
         strain_from_F,
         POLAR_SG,
     )
-    from autoflow_srxn.interface.builder import (
-        InterfaceCandidate,
-        build_symmetric_slab,
-        get_slab_atom_count,
-        get_surface_lattice_2d,
-    )
     from autoflow_srxn.interface.workflow import InterfaceWorkflow
+    from autoflow_srxn.interface.visualization import (
+        save_candidates_json,
+        save_candidates_html,
+    )
 
     _HAS_PYMATGEN = True
 
@@ -66,6 +68,8 @@ except ImportError as _err:
     strain_from_F = _MissingDependency  # type: ignore[assignment]
     polar_axis_for_sg = _MissingDependency  # type: ignore[assignment]
     miller_polar_inplane = _MissingDependency  # type: ignore[assignment]
+    save_candidates_json = _MissingDependency
+    save_candidates_html = _MissingDependency
     POLAR_SG = set()  # type: ignore[assignment]
 
 __all__ = [
@@ -79,6 +83,8 @@ __all__ = [
     "strain_from_F",
     "polar_axis_for_sg",
     "miller_polar_inplane",
+    "save_candidates_json",
+    "save_candidates_html",
     "POLAR_SG",
     "_HAS_PYMATGEN",
 ]

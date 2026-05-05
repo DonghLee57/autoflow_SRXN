@@ -1,88 +1,46 @@
 # =============================================================================
-# Interface Lattice-Match Example: Si substrate / SiO2 film
+# Interface Lattice-Match Example: Si substrate / SiO2 film (Low-Strain Search)
 # =============================================================================
 # Standalone config for autoflow_srxn.interface.InterfaceWorkflow.
-# This example is independent of the adsorption/reaction search workflow.
-#
-# Run with:
-#   python run_interface.py              (uses this file by default)
-#   python run_interface.py config.yaml  (explicit path)
-#
-# Requirements:
-#   pip install pymatgen ase
+# Optimized to find the ~3.9% strain match between Si(111) and SiO2(001).
 # =============================================================================
 
 # ── Input bulk crystal files ─────────────────────────────────────────────────
-# Accepted formats: CIF, POSCAR/CONTCAR, or any format supported by
-# pymatgen.core.Structure.from_file().
 sub_path:  "../../structures/Si_mp149.vasp"       # Substrate bulk crystal
 film_path: "../../structures/SiO2_mp-546794.vasp" # Film bulk crystal
 
 # ── Surface orientations to search ───────────────────────────────────────────
-# Three ways to specify Miller indices (priority: explicit > *_max_miller > default):
-#
-#   A. Explicit list — use exactly these faces:
-#        sub_millers:
-#          - [0, 0, 1]
-#          - [1, 1, 0]
-#
-#   B. Auto-enumerate — all symmetry-distinct faces with max(|h|,|k|,|l|) <= N:
-#        sub_millers: null
-#        sub_max_miller: 2
-#
-#   C. Omit both — falls back to default: (0,0,1), (1,1,0), (1,1,1)
-#
-# miller_mode controls how auto-enumeration works:
-#   "distinct"  pymatgen symmetry reduction (recommended — avoids redundant faces)
-#   "raw"       all (h,k,l) with h,k,l in [0,N] and gcd(h,k,l)=1
-
-# -- Explicit list (takes priority over *_max_miller when non-empty) ----------
-sub_millers: null
-film_millers: null
-
-# -- Auto-enumerate (used when sub/film_millers is null or omitted) -----------
-sub_max_miller: 2      # max(|h|,|k|,|l|) <= 2  (inclusive)
-film_max_miller: 2
-
-miller_mode: distinct  # "distinct" | "raw"
+# Targeted search for the known low-strain orientation pair.
+sub_millers:
+  - [1, 1, 1]
+film_millers:
+  - [0, 0, 1]
 
 # ── ZSL lattice-match parameters ─────────────────────────────────────────────
-# max_det:       Maximum Hermite Normal Form determinant to enumerate per
-#                material.  Larger values find smaller-strain matches at the
-#                cost of O(max_det^4) work.  Typical range: 4 (fast) – 8.
-max_det: 10
+# max_det:  25 is required to find the larger coincidence cell for Si(111)//SiO2(001).
+max_det: 25
 
-# strain_cutoff: Reject coincidences with von Mises strain above this value.
-#                Si/SiO2 have ~13.7% best-case mismatch, so 0.15 is required.
-#                For well-matched pairs (e.g. TiN/HfO2) use 0.05.
-strain_cutoff: 0.15
+# strain_cutoff: 0.05 (5%) is sufficient for this well-matched pair.
+strain_cutoff: 0.05
 
-# max_atoms:     Upper atom-count threshold for the combined interface cell.
-#                Candidates exceeding this are flagged, not rejected.
-max_atoms: 1000
+# max_atoms: 2000 - The coincidence cell for this match is quite large.
+max_atoms: 2000
 
 # ── Slab construction ─────────────────────────────────────────────────────────
-# min_slab_thickness:  Minimum physical slab thickness (Angstrom) when calling
-#                      build().  Internally passed to SlabGenerator.
-min_slab_thickness: 12.0
-
-# vacuum:  Vacuum layer added above (and below) each slab (Angstrom).
+# min_slab_thickness: 6.0 Angstrom (reduced to keep atom count manageable for large supercell).
+min_slab_thickness: 6.0
 vacuum: 15.0
 
 # ── Slab stacking ─────────────────────────────────────────────────────────────
-# interface_gap:  Rigid gap between the top of the substrate slab and the
-#                 bottom of the film slab in the stacked interface (Angstrom).
-interface_gap: 2.5
+interface_gap: 2.0
 
 # ── Output ───────────────────────────────────────────────────────────────────
-# build_top_k:  Number of top-ranked candidates to build.  Set to 0 to only
-#               screen without building any structures.
+# build_top_k: Number of top-ranked candidates to build.
+#              Set to -1 or null to build ALL candidates found.
 build_top_k: 3
 
-# verbose:  false (default) -> save only the stacked interface_<N>.extxyz
-#           true            -> also save sub_slab_<N>.extxyz and film_slab_<N>.extxyz
+# verbose: If true, saves individual sub/film slabs in addition to the stacked interface.
 verbose: false
 
-# output_dir:   Directory for output files.
-#               null -> write to current working directory.
+# output_dir: Directory for output files.
 output_dir: "results"

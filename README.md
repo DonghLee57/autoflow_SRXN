@@ -1,4 +1,4 @@
-﻿# AutoFlow-SRXN: Automated Surface Reaction Workflow
+# AutoFlow-SRXN: Automated Surface Reaction Workflow
 
 **AutoFlow-SRXN** is a high-fidelity, fully-automated framework designed for high-throughput exploration and generation of adsorption and reaction structures between arbitrary precursors and substrates. It leverages geometric coordination principles, machine learning interatomic potentials (MLIPs), and statistical mechanics to predict thermodynamic stability and reaction kinetics at material interfaces.
 
@@ -71,9 +71,8 @@ graph TD
     A[config.yaml] --> B(Structure Generation Interface)
     subgraph pkg [autoflow_srxn Package]
         subgraph IFACE [interface/ sub-package]
-            B -->|interface.enabled| LM[LatticeMatch ZSL]
-            LM --> IB[InterfaceBuilder]
-            IB -->|tag 0/1 ASE slab| PA
+            B -->|interface.enabled| IC[Interface Core]
+            IC -->|tag 0/1 ASE slab| PA
         end
         B --> P[Surface Utils]
         P -->|Asymmetric Control| PA[Standardized Substrate]
@@ -141,10 +140,9 @@ engine:
 ### 3.3 Directory Structure
 - `autoflow_srxn/`: Main package.
   - `interface/`: Heterointerface sub-package *(optional, requires pymatgen)*.
-    - `lattice_match.py`: Pure-NumPy ZSL coincidence search — `iter_hnf_2d`, `strain_from_F`, `find_coincidences`, `POLAR_SG`.
-    - `builder.py`: `build_symmetric_slab()` → ASE Atoms (tag 0=substrate, tag 1=film); `InterfaceCandidate` dataclass.
-    - `workflow.py`: `InterfaceWorkflow` — `from_files()`, `find_candidates()`, `build()`, `summary()`, `plot()`.
-    - `visualize.py`: Standalone Plotly helpers — `plot_candidates()`, `strain_heatmap()`, `make_summary_table()`.
+    - `builder.py`: Core construction and lattice matching — `InterfaceCandidate`, `find_coincidences()`, `build_symmetric_slab()`.
+    - `workflow.py`: `InterfaceWorkflow` — `from_files()`, `find_candidates()`, `build()`, `summary()`.
+    - `visualization.py`: Plotly-based HTML dashboard and JSON export utilities.
   - `core/`: Advanced sub-modules — `CoverageManager` (thermodynamic coverage), `knowledge.py` (chemical KB), `ts_engine.py` (transition-state utilities).
   - `zbl_pairs.json`: Per-pair ZBL outer switching cutoffs for 14 elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr).
 - `examples/`:
