@@ -16,7 +16,7 @@ class GlobalKnowledge:
     }
     
     # Covalent Radii (A) - Simplified
-    COVALVALENT_RADII = {
+    COVALENT_RADII = {
         'H': 0.31, 'He': 0.28, 'Li': 1.28, 'Be': 0.96, 'B': 0.84, 'C': 0.73, 'N': 0.71, 'O': 0.66, 'F': 0.57,
         'Na': 1.66, 'Mg': 1.41, 'Al': 1.21, 'Si': 1.11, 'P': 1.07, 'S': 1.05, 'Cl': 1.02,
         'K': 2.03, 'Ca': 1.76, 'Sc': 1.70, 'Ti': 1.60, 'V': 1.53, 'Cr': 1.39, 'Mn': 1.39, 'Fe': 1.32,
@@ -29,8 +29,7 @@ class GlobalKnowledge:
 
     @staticmethod
     def get_covalent_radius(symbol: str) -> float:
-        # Note: Typo fixed in the key name during rewrite
-        return GlobalKnowledge.COVALVALENT_RADII.get(symbol, 1.5)
+        return GlobalKnowledge.COVALENT_RADII.get(symbol, 1.5)
 
     @staticmethod
     def is_metal(symbol: str) -> bool:

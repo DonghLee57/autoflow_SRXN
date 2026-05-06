@@ -11,6 +11,7 @@ from ase.vibrations import Vibrations
 
 from .knowledge_engine import chem_kb
 from .logger_utils import get_workflow_logger
+from .qpoint_handler import QPointParser
 
 
 class VibrationalAnalyzer:
@@ -281,8 +282,6 @@ def build_phva_active_indices(atoms, n_precursor, cutoff_angstrom):
     slab_neighbors = {int(j_arr[k]) for k, i in enumerate(i_arr) if i in pre_set and j_arr[k] not in pre_set}
     return sorted(pre_set | slab_neighbors)
 
-
-from .qpoint_handler import QPointParser
 
 
 class MultiModeFollower:

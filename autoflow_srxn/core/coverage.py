@@ -60,30 +60,28 @@ class CoverageManager:
                 omega -= count * mu
         return omega
 
-    def is_adsorbed(self, atoms: Atoms, precursor_indices: list) -> bool:
-        """
-        Checks if the precursor is truly CHEMISORBED to the substrate.
-        Criteria: At least one bond shorter than 2.5 A between precursor and substrate.
+    def is_adsorbed(self, atoms: Atoms, precursor_indices: list, bond_cutoff: float = 2.5) -> bool:
+        """Checks if the precursor is chemisorbed to the substrate.
+
+        Criteria: at least one cross-bond shorter than *bond_cutoff* Å exists
+        between precursor and substrate atoms.
+
+        Args:
+            atoms: Combined slab+adsorbate structure.
+            precursor_indices: Indices that belong to the adsorbate.
+            bond_cutoff: Maximum bond length to classify as chemisorbed (Å).
         """
         from ase.neighborlist import neighbor_list
-        substrate_indices = [i for i in range(len(atoms)) if i not in precursor_indices]
-        
-        # Use a tighter cutoff for true chemisorption (e.g., 2.5 A)
-        i, j, d = neighbor_list('ijd', atoms, 2.5)
-        
-        for idx_i, idx_j, dist in zip(i, j, d):
-            # Check if one index is in adsorbate and other in substrate
-            is_cross_bond = (idx_i in precursor_indices and idx_j in substrate_indices) or \
-                            (idx_j in precursor_indices and idx_i in substrate_indices)
-            
+        precursor_set = set(precursor_indices)
+        substrate_set = set(range(len(atoms))) - precursor_set
+
+        i_arr, j_arr, d_arr = neighbor_list('ijd', atoms, bond_cutoff)
+
+        for idx_i, idx_j, dist in zip(i_arr, j_arr, d_arr):
+            is_cross_bond = (idx_i in precursor_set and idx_j in substrate_set) or \
+                            (idx_j in precursor_set and idx_i in substrate_set)
             if is_cross_bond:
-                # Further check: is it the Ti atom bonding? (Usually atom 0 in TiCl4)
-                # This ensures the molecule is not just 'touching' via Cl.
-                atom_i = atoms[idx_i]
-                atom_j = atoms[idx_j]
-                if atom_i.symbol == 'Ti' or atom_j.symbol == 'Ti':
-                    print(f"  [Check] Strong Chemisorption bond found: {atom_i.symbol}-{atom_j.symbol} @ {dist:.3f} A")
-                    return True
+                return True
         return False
 
     def is_physical(self, atoms: Atoms, prev_energy: float = None) -> bool:
@@ -113,10 +111,12 @@ class CoverageManager:
             
         return True
 
-    def predict_saturation(self, base_energy: float, current_stoich: dict, 
+    def predict_saturation(self, base_energy: float, current_stoich: dict,
                            dose_species: str, T: float, P_dict: dict):
+        """Decides if adding another dose molecule is thermodynamically favorable.
+
+        NOT YET IMPLEMENTED — returns None.  Future implementation should compare
+        the grand-canonical potential of the current surface coverage against the
+        potential after adding one more adsorbate unit.
         """
-        Decides if adding another dose molecule is favorable.
-        """
-        mu_dose = self.get_chemical_potential(dose_species, T, P_dict.get(dose_species, 101325.0))
-        pass
+        raise NotImplementedError("predict_saturation is not yet implemented.")

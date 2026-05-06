@@ -36,15 +36,6 @@ def find_surface_indices(atoms, side="top", threshold=1.0, species=None):
     mask = np.abs(z_coords - z_target) < threshold
     return indices[mask]
 
-def check_overlap(atoms, cutoff=1.2, verbose=False):
-    """Check for steric overlaps between atoms using a simple distance threshold."""
-    from ase.neighborlist import neighbor_list
-    i_list, j_list, dists = neighbor_list("ijd", atoms, cutoff)
-    if len(i_list) > 0:
-        if verbose: print(f"Overlap detected: {len(i_list) // 2} pairs closer than {cutoff}A")
-        return True
-    return False
-
 def calculate_haptic_vbs(atoms, indices):
     """Calculates the Virtual Bonding Site (centroid) for a set of atoms."""
     if not indices: return None
@@ -241,7 +232,7 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
     num_layers = int(math.ceil(thickness / d_hkl))
     if termination and not top_termination: top_termination = termination
     if termination and not bottom_termination: bottom_termination = termination
-    if any([termination, top_termination, bottom_termination]) or termination in ["symmetric", "uniform"]:
+    if any([termination, top_termination, bottom_termination]):
         test_slab = surface(bulk_atoms, miller_indices, layers=num_layers * 2, vacuum=0)
         test_slab.wrap()
         z = test_slab.positions[:, 2]; sort_idx = np.argsort(z); sorted_z = z[sort_idx]

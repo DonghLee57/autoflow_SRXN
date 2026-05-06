@@ -316,7 +316,6 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
         indices_a = list(set(range(len(molecule))) - set(indices_b))
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
-        center_num = molecule.numbers[c_idx]
 
         for s in sites:
             si_pos = s["pos"]
@@ -406,7 +405,6 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
         indices_a = list(set(range(len(molecule))) - set(indices_b))
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
-        center_num = molecule.numbers[c_idx]
 
         for s1, s2 in pairs:
             best_pose = None
@@ -414,7 +412,6 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
 
             for active_1, active_2 in [(s1, s2), (s2, s1)]:
                 # Element-specific bond length for frag_a center -> surface site
-                surf_num = mgr.slab.numbers[active_1["index"]]
                 bond_len_a = chem_kb.get_radius(molecule.symbols[c_idx], "covalent") + chem_kb.get_radius(mgr.slab.symbols[active_1["index"]], "covalent")
 
                 bond_len_b = 2.1
@@ -500,8 +497,6 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
     non-bonded clearance (same best-clearance strategy as _execute_generic_dissociation).
     Bond length for the new center->backbone bond uses covalent radii.
     """
-    from ase.data import covalent_radii
-
     candidates = []
     stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
     seen_formulas = set()
@@ -520,14 +515,12 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
         indices_a = list(set(range(len(molecule))) - set(indices_b))
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
-        center_num = molecule.numbers[c_idx]
 
         for s in exchange_sites:
             backbone_pos = s["pos"]
             h_vec_norm = s["db_vector"]  # points AWAY from surface
 
             # Element-specific bond length (center -> backbone atom)
-            backbone_num = mgr.slab.numbers[s["backbone_idx"]]
             bond_len_a = chem_kb.get_radius(molecule.symbols[c_idx], "covalent") + chem_kb.get_radius(mgr.slab.symbols[s["backbone_idx"]], "covalent")
 
             best_pose = None

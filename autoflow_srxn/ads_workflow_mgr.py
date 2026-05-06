@@ -188,7 +188,7 @@ class AdsorptionWorkflowManager:
         try:
             AllChem.EmbedMolecule(mol, AllChem.ETKDG())
             AllChem.MMFFOptimizeMolecule(mol)
-        except:
+        except Exception:
             pass
 
         conf = mol.GetConformer()
@@ -242,8 +242,6 @@ class AdsorptionWorkflowManager:
 
         # Disable Z-periodicity to avoid wrap-around hits with slab bottom
         effective_pbc = [True, True, False]
-        
-        # print(f"DEBUG check_overlap: check_internal={check_internal}")
 
         # 1. Internal check (new atoms vs. each other)
         if check_internal and len(new_idx) > 1:
@@ -535,10 +533,10 @@ class AdsorptionWorkflowManager:
                 # Check element-wise matching
                 total_match = True
                 for sym in np.unique(ads_symbols):
-                    c_idx = [i for i, s in enumerate(ads_symbols) if s == sym]
+                    cand_idx = [i for i, s in enumerate(ads_symbols) if s == sym]
                     t_idx = [i for i, s in enumerate(target_symbols) if s == sym]
-                    
-                    d_matrix = cdist(rel_pos[c_idx], target_rel_pos[t_idx])
+
+                    d_matrix = cdist(rel_pos[cand_idx], target_rel_pos[t_idx])
                     row_ind, col_ind = linear_sum_assignment(d_matrix)
                     if np.any(d_matrix[row_ind, col_ind] > 0.2):
                         total_match = False
