@@ -9,8 +9,8 @@ from ase.data import chemical_symbols as _CHEM_SYMS
 from ase.optimize import BFGS, FIRE, LBFGS, GPMin
 from ase.optimize.sciopt import SciPyFminCG
 
-from .knowledge_engine import chem_kb
-from .logger_utils import get_workflow_logger
+from ..utils.knowledge_engine import chem_kb
+from ..utils.logger_utils import get_workflow_logger
 
 
 class ZBLCalculator(Calculator):

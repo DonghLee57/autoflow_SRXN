@@ -9,9 +9,9 @@ from ase.io import write
 from ase.optimize import FIRE
 from ase.vibrations import Vibrations
 
-from .knowledge_engine import chem_kb
-from .logger_utils import get_workflow_logger
-from .qpoint_handler import QPointParser
+from ..utils.knowledge_engine import chem_kb
+from ..utils.logger_utils import get_workflow_logger
+from ..simulation.qpoint_handler import QPointParser
 
 
 class VibrationalAnalyzer:
@@ -72,7 +72,7 @@ class VibrationalAnalyzer:
 
         # 2. If radius is set, focus on precursor + neighbors
         if radius is not None:
-            from .surface_utils import identify_protectors
+            from ..surface.surface_utils import identify_protectors
 
             _, ads_idx = identify_protectors(self.atoms, config)
 
@@ -265,7 +265,7 @@ class VibrationalAnalyzer:
 
 def calculate_thermo(freqs_thz, T):
     """Calculates vibrational free energy and ZPE given THz frequencies."""
-    from .thermo_engine import ThermoCalculator, eV_to_J_mol
+    from ..simulation.thermo_engine import ThermoCalculator, eV_to_J_mol
 
     thermo = ThermoCalculator(freqs_thz)
     G_vib_J = thermo.calculate_vib_free_energy(T)

@@ -1,6 +1,6 @@
 import numpy as np
 from ase import Atoms
-from autoflow_srxn.thermo_engine import ThermoCalculator, GasThermo
+from autoflow_srxn.simulation.thermo_engine import ThermoCalculator, GasThermo
 
 class CoverageManager:
     """

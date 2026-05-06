@@ -6,8 +6,8 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from .knowledge_engine import chem_kb
-from .logger_utils import get_workflow_logger
+from ..utils.knowledge_engine import chem_kb
+from ..utils.logger_utils import get_workflow_logger
 from .surface_utils import calculate_haptic_normal, calculate_haptic_vbs
 
 

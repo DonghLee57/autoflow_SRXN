@@ -3,7 +3,7 @@ import numpy as np
 from ase import Atoms
 
 from .ads_workflow_mgr import AdsorptionWorkflowManager
-from .knowledge_engine import chem_kb
+from ..utils.knowledge_engine import chem_kb
 
 
 def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, results_dir=None):
@@ -138,7 +138,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
             print(f"    - Exchange: {orig_exc} -> {len(exchange_sites)}")
 
         if prox_cfg.get("visualize", False) and results_dir:
-            from .viz_utils import plot_site_proximity
+            from ..utils.viz_utils import plot_site_proximity
             img_path = os.path.join(results_dir, "site_proximity_map.png")
             all_sites = unfiltered_dan + unfiltered_exc
             filt_sites = dangling_sites + exchange_sites

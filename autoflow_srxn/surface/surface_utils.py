@@ -3,7 +3,7 @@ import numpy as np
 from ase import Atoms
 from ase.build import make_supercell, surface
 from ase.geometry import get_distances
-from .knowledge_engine import chem_kb
+from ..utils.knowledge_engine import chem_kb
 
 def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     """Standardize Atoms object for VASP export:

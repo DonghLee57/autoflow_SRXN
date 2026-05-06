@@ -100,14 +100,14 @@ graph TD
 
 ### 3.2 Simulation Backend Design
 
-All relaxation and force calculations are routed through `SimulationEngine` (`src/potentials.py`), which selects an ASE-compatible backend based on `engine.potential.backend` in the configuration. The framework follows a **pure ASE (In-process) architecture**, eliminating external binary dependencies (like LAMMPS) for improved portability and stability.
+All relaxation and force calculations are routed through `SimulationEngine` (`simulation/potentials.py`), which selects an ASE-compatible backend based on `engine.potential.backend` in the configuration. The framework follows a **pure ASE (In-process) architecture**, eliminating external binary dependencies (like LAMMPS) for improved portability and stability.
 
 | Backend | Model | Runtime | Interface |
 | :--- | :--- | :--- | :--- |
 | **MACE** | MACE-MP-0 | In-process Python | `mace.calculators.mace_mp` |
 | **SevenNet** | 7net-0 / multifidelity | In-process Python | `sevenn.calculator.SevenNetCalculator` |
 | **EMT** | Standard EMT | In-process Python | `ase.calculators.emt.EMT` |
-| **ZBL** | Screened Coulomb (any backend) | In-process Python | `src/potentials.ZBLCalculator` |
+| **ZBL** | Screened Coulomb (any backend) | In-process Python | `simulation/potentials.ZBLCalculator` |
 
 **MACE** is loaded as an ASE calculator and runs entirely within the Python process. It supports both `float32` (for fast MD) and `float64` (for precise vibrations). D3 dispersion correction is enabled via `TorchDFTD3Calculator` when `d3: true`.
 
@@ -115,7 +115,7 @@ All relaxation and force calculations are routed through `SimulationEngine` (`sr
 
 **ZBL repulsion** (Ziegler-Biersack-Littmark screened Coulomb) can be layered on top of any backend via `zbl.enabled: true`. The ZBL contribution is active only at very short range and is smoothly switched off so it does not interfere with the MLIP at ordinary bonding distances. Internally the engine uses ASE's `SumCalculator([base_calc, ZBLCalculator(...)])` so both MACE and SevenNet are fully supported.
 
-Per-pair outer switching distances are stored in `src/zbl_pairs.json` for 14 chemically relevant elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr). Each value is set to approximately the equilibrium bond length (Pyykko & Atsumi single-bond radii, scaled by 1.056) so ZBL is essentially inactive at normal bonding distances and only activates at sub-bonding close contacts. Element pairs absent from the file fall back to the global `cutoff_outer` parameter.
+Per-pair outer switching distances are stored in `utils/zbl_pairs.json` for 14 chemically relevant elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr). Each value is set to approximately the equilibrium bond length (Pyykko & Atsumi single-bond radii, scaled by 1.056) so ZBL is essentially inactive at normal bonding distances and only activates at sub-bonding close contacts. Element pairs absent from the file fall back to the global `cutoff_outer` parameter.
 
 **ExplosionMonitor** is automatically attached to every optimizer and MD integrator. It checks the per-atom energy at each step and raises a `RuntimeError` (gracefully caught by the engine) if: the energy turns positive, jumps by more than 10 eV/atom, or shifts by an order of magnitude relative to the initial value. This prevents MLIP instabilities at the strained geometries produced by the structure search from consuming the full step budget.
 
@@ -138,18 +138,79 @@ engine:
 ```
 
 ### 3.3 Directory Structure
-- `autoflow_srxn/`: Main package.
-  - `interface/`: Heterointerface sub-package *(optional, requires pymatgen)*.
-    - `builder.py`: Core construction and lattice matching — `InterfaceCandidate`, `find_coincidences()`, `build_symmetric_slab()`.
-    - `workflow.py`: `InterfaceWorkflow` — `from_files()`, `find_candidates()`, `build()`, `summary()`.
-    - `visualization.py`: Plotly-based HTML dashboard and JSON export utilities.
-  - `core/`: Advanced sub-modules — `CoverageManager` (thermodynamic coverage), `knowledge.py` (chemical KB), `ts_engine.py` (transition-state utilities).
-  - `zbl_pairs.json`: Per-pair ZBL outer switching cutoffs for 14 elements (Al, C, Cl, Cu, Fe, H, Hf, N, O, P, S, Si, Ti, Zr).
+
+```
+autoflow_srxn/               # Main package
+│
+├── utils/                   # 공통 유틸리티 — 의존성 없는 기반 모듈
+│   ├── knowledge_engine.py  #   KnowledgeBase: Alvarez vdW radii, covalent radii, ZBL cutoffs
+│   ├── logger_utils.py      #   Workflow logger (file + console), formatted result tables
+│   ├── viz_utils.py         #   2D site proximity map (matplotlib)
+│   ├── chem_data.json       #   Per-element covalent radii, vdW radii, ideal coordination
+│   └── zbl_pairs.json       #   Per-pair ZBL outer switching cutoffs (14 elements)
+│
+├── surface/                 # 표면 반응 구조 탐색 — 흡착·반응 구조 생성
+│   ├── surface_utils.py     #   Slab building, reconstruction (Si(100) 2×1, ionic, metal),
+│   │                        #   passivation, oxidation, VSEPR dangling-bond vectors
+│   ├── ads_workflow_mgr.py  #   AdsorptionWorkflowManager: symmetry-aware site enumeration,
+│   │                        #   gravity-pull physisorption, Hungarian deduplication
+│   └── chemisorption_builder.py
+│                            #   Algorithmic chemisorption: dissociative, exchange, single-site
+│
+├── simulation/              # 시뮬레이션 엔진 — 포텐셜·열역학·진동 데이터
+│   ├── potentials.py        #   SimulationEngine (MACE/SevenNet/EMT), ZBLCalculator,
+│   │                        #   ExplosionMonitor, structural relaxation, NVT-MD
+│   ├── thermo_engine.py     #   ThermoCalculator (HO approximation), GasThermo
+│   │                        #   (Sackur-Tetrode, rotational entropy, symmetry number σ)
+│   └── qpoint_handler.py   #   Phonopy qpoints.yaml parser — imaginary-mode extraction
+│
+├── analysis/                # 분석 도구 — 진동·전이상태 분석
+│   └── vibrational_analyzer.py
+│                            #   VibrationalAnalyzer (PHVA/FHVA), MultiModeFollower,
+│                            #   GradientFlippingCalculator, AdaptiveGradientFlippingCalculator,
+│                            #   TSSearcher (Hessian-based gradient flipping), MAC, participation
+│
+├── metadynamics/            # 자동 반응 탐색 — 메타다이나믹스 기반 반응 경로 탐색 (개발 중)
+│   ├── coverage.py          #   CoverageManager: 표면 피복 열역학, μ(T,P), 그랜드 퍼텐셜
+│   ├── knowledge.py         #   GlobalKnowledge (전기음성도·금속 판별), KnowledgeManager
+│   └── ts_engine.py         #   TSSearcher re-export (vibrational_analyzer의 정식 구현 참조)
+│
+└── interface/               # 계면 구조 매칭 (optional — pymatgen 필요)
+    ├── builder.py           #   HNF 격자 일치 탐색, 변형률 계산, InterfaceCandidate
+    ├── workflow.py          #   InterfaceWorkflow: 기판/막 조합 스크리닝, 슬랩 빌드
+    └── visualization.py    #   Plotly HTML 대시보드, JSON 내보내기
+```
+
+#### 3.3.1 `metadynamics/` — 자동 반응 탐색 모듈 (개발 로드맵)
+
+`metadynamics/`는 메타다이나믹스(MetaDynamics) 기반의 자동 반응 경로 탐색 기능을 집중 개발할 서브패키지입니다.
+현재는 표면 피복 열역학(`CoverageManager`)과 전이상태 탐색 유틸리티(`TSSearcher`)를 포함하며,
+향후 다음 기능이 추가될 예정입니다.
+
+| 계획 모듈 | 역할 |
+|-----------|------|
+| `metadynamics/bias_engine.py` | Collective Variable(CV) 정의 및 가우시안 편향 포텐셜 인가 |
+| `metadynamics/fes_estimator.py` | 자유 에너지 면(FES) 재구성 — Sum-of-Hills |
+| `metadynamics/reaction_finder.py` | FES에서 최소값·안장점 자동 탐색 |
+| `metadynamics/path_optimizer.py` | NEB/string method 기반 반응 경로 최적화 |
+| `metadynamics/coverage.py` *(현재)* | 그랜드 퍼텐셜 기반 표면 안정성 평가 |
+
+**기존 `core/` 디렉터리 사용자를 위한 안내:**
+`core/`는 `metadynamics/`로 이름이 바뀌었습니다. 임포트 경로를 아래와 같이 변경하세요.
+```python
+# 이전
+from autoflow_srxn.core import CoverageManager
+# 이후
+from autoflow_srxn.metadynamics import CoverageManager
+```
+
 - `examples/`:
     - `DIPAS_on_Si110/`: Ethanol inhibitor + DIPAS precursor on Si(110) — physisorption + dissociative chemisorption discovery.
     - `physisorption_vibration/`: Physisorption vibrational analysis (PHVA / FHVA benchmarking).
+    - `mode_following_relaxation/`: Multi-mode imaginary frequency refinement workflow.
+    - `interface_match/`: Heteroepitaxial interface coincidence-lattice screening.
 - `structures/`: Base crystal and precursor configurations (VASP format).
-- `unittests/`: Unit test suite for potential engines and ZBL calculator.
+- `unittests/`: Unit test suite for potential engines, ZBL calculator, and vibrational analysis.
 
 ---
 
