@@ -3,9 +3,9 @@ import os
 import yaml
 import sys
 from ase.io import read
-from autoflow_srxn.potentials import SimulationEngine
-from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer
-from autoflow_srxn.logger_utils import setup_logger
+from autoflow_srxn.simulation.potentials import SimulationEngine
+from autoflow_srxn.analysis.vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.utils.logger_utils import setup_logger
 
 def main():
     parser = argparse.ArgumentParser(description="Run Vibrational Analysis with specific config.")

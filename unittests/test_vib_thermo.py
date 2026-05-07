@@ -6,9 +6,9 @@ import yaml
 from ase.build import molecule
 from ase.calculators.emt import EMT
 
-from autoflow_srxn.qpoint_handler import QPointParser
-from autoflow_srxn.thermo_engine import ThermoCalculator
-from autoflow_srxn.vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.simulation.qpoint_handler import QPointParser
+from autoflow_srxn.simulation.thermo_engine import ThermoCalculator
+from autoflow_srxn.analysis.vibrational_analyzer import VibrationalAnalyzer
 
 
 class TestVibrationAndThermo(unittest.TestCase):

@@ -2,14 +2,14 @@ import unittest
 
 from ase.build import bulk
 
-from autoflow_srxn.ads_workflow_mgr import AdsorptionWorkflowManager
-from autoflow_srxn.chemisorption_builder import (
+from autoflow_srxn.surface.ads_workflow_mgr import AdsorptionWorkflowManager
+from autoflow_srxn.surface.chemisorption_builder import (
     analyze_surface_reactivity,
     build_chemisorption_structures,
 )
 
 # Add src to sys.path
-from autoflow_srxn.surface_utils import build_si100_slab
+from autoflow_srxn.surface.surface_utils import build_si100_slab
 
 
 class TestAdsorption(unittest.TestCase):
@@ -61,7 +61,7 @@ class TestAdsorption(unittest.TestCase):
 
     def test_chemisorption_on_passivated_surface(self):
         """Test if chemisorption builder identifies exchange sites on H-passivated Si."""
-        from autoflow_srxn.surface_utils import passivate_surface_coverage_general
+        from autoflow_srxn.surface.surface_utils import passivate_surface_coverage_general
 
         slab = build_si100_slab(self.bulk_si, size=(2, 2), layers=4)
         # Passivate top with H
@@ -94,7 +94,7 @@ class TestAdsorption(unittest.TestCase):
         candidates_clean = build_chemisorption_structures(dipas, center_target="Si", surface=slab, config=self.config)
 
         # Case 2: Passivated surface (should trigger protector exchange)
-        from autoflow_srxn.surface_utils import passivate_surface_coverage_general
+        from autoflow_srxn.surface.surface_utils import passivate_surface_coverage_general
 
         passivated = passivate_surface_coverage_general(slab, h_coverage=1.0, valence_map={"Si": 4, "H": 1}, side="top")
         # Tag H atoms as 10 for 'tag' heuristic

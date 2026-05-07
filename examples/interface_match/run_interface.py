@@ -25,7 +25,7 @@ import numpy as np
 import ase
 from ase.io import write as ase_write
 
-from autoflow_srxn.logger_utils import setup_logger
+from autoflow_srxn.utils.logger_utils import setup_logger
 from autoflow_srxn.interface import (
     InterfaceWorkflow,
     save_candidates_json,

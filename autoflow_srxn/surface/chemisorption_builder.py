@@ -1,9 +1,32 @@
 ﻿import os
+from itertools import combinations
+
 import numpy as np
 from ase import Atoms
 
 from .ads_workflow_mgr import AdsorptionWorkflowManager
 from ..utils.knowledge_engine import chem_kb
+
+
+def _bond_length_to_h(symbol: str) -> float:
+    """Returns the X-H bond length (A) used for byproduct/passivation placement."""
+    if symbol in ("N", "O"):
+        return 1.0
+    if symbol == "C":
+        return 1.1
+    return 1.5
+
+
+def _unique_ligands(ligands: list) -> list:
+    """Returns ligands de-duplicated by chemical formula (first occurrence wins)."""
+    seen = set()
+    result = []
+    for l in ligands:
+        f = l.get("formula", "Unknown")
+        if f not in seen:
+            seen.add(f)
+            result.append(l)
+    return result
 
 
 def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, results_dir=None):
@@ -169,8 +192,6 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
         except Exception:
             pass
 
-    from itertools import combinations
-
     unique_pairs = {}
     pair_count = 0
 
@@ -299,15 +320,9 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     """
 
     candidates = []
-    stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
-    seen_formulas = set()
+    stats = {"overlap": 0, "total_tries": 0}
 
-    for l_info in ligands:
-        formula = l_info.get("formula", "Unknown")
-        if formula in seen_formulas:
-            stats["deduplicated"] += 1
-            continue
-        seen_formulas.add(formula)
+    for l_info in _unique_ligands(ligands):
 
         indices_b = l_info["indices"]
         frag_b = molecule[indices_b]
@@ -388,16 +403,9 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
     """
 
     candidates = []
-    stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
-    seen_formulas = set()
+    stats = {"overlap": 0, "total_tries": 0}
 
-    for l_info in ligands:
-        formula = l_info.get("formula", "Unknown")
-        if formula in seen_formulas:
-            stats["deduplicated"] += 1
-            continue
-        seen_formulas.add(formula)
-
+    for l_info in _unique_ligands(ligands):
         indices_b = l_info["indices"]
         frag_b = molecule[indices_b]
         binding_idx_b = [indices_b.index(idx) for idx in l_info["binding_atoms"]]
@@ -459,12 +467,8 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                         (active_1["index"], new_start + binding_idx_a),
                         (active_2["index"], new_start + len(frag_a) + binding_idx_b[0]),
                     ]
-                    for i in range(len(frag_a_indices)):
-                        for j in range(i + 1, len(frag_a_indices)):
-                            skip_pairs.append((frag_a_indices[i], frag_a_indices[j]))
-                    for i in range(len(frag_b_indices)):
-                        for j in range(i + 1, len(frag_b_indices)):
-                            skip_pairs.append((frag_b_indices[i], frag_b_indices[j]))
+                    skip_pairs += list(combinations(frag_a_indices, 2))
+                    skip_pairs += list(combinations(frag_b_indices, 2))
 
                     if not mgr.check_overlap(combined, skip_pairs=skip_pairs, verbose=verbose, check_internal=False):
                         clearance = _min_nonbonded_clearance(combined, new_start, skip_pairs=skip_pairs)
@@ -498,16 +502,9 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
     Bond length for the new center->backbone bond uses covalent radii.
     """
     candidates = []
-    stats = {"overlap": 0, "deduplicated": 0, "total_tries": 0}
-    seen_formulas = set()
+    stats = {"overlap": 0, "total_tries": 0}
 
-    for l_info in ligands:
-        formula = l_info.get("formula", "Unknown")
-        if formula in seen_formulas:
-            stats["deduplicated"] += 1
-            continue
-        seen_formulas.add(formula)
-
+    for l_info in _unique_ligands(ligands):
         indices_b = l_info["indices"]
         frag_b = molecule[indices_b]
         binding_idx_b = [indices_b.index(idx) for idx in l_info["binding_atoms"]]
@@ -539,10 +536,9 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                 )
 
                 byproduct = frag_b.copy()
-                b_len = 1.0 if s["sym"] in ["N", "O"] else 1.1 if s["sym"] == "C" else 1.5
                 bp_h_pos = (
                     byproduct.positions[binding_idx_b[0]]
-                    + (l_info["bond_vec"] / np.linalg.norm(l_info["bond_vec"])) * b_len
+                    + (l_info["bond_vec"] / np.linalg.norm(l_info["bond_vec"])) * _bond_length_to_h(s["sym"])
                 )
                 byproduct += Atoms(s["sym"], positions=[bp_h_pos])
                 byproduct.center(vacuum=5.0)

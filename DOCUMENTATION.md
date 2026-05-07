@@ -127,9 +127,9 @@ Handles the creation and modification of the substrate surface.
 - **`passivation`**: Saturate dangling bonds (typically on the bottom side using "H").
 
 ### 4.3 Slab Relaxation & Equilibration
-- **`slab_relaxation.enabled`**: Geometry optimisation of the clean substrate before adsorption search.
-- **`slab_relaxation.frozen_z_ang`**: Fix atoms below this Z-height to simulate the bulk interior during relaxation.
-- **`equilibration.enabled`**: NVT MD pre-equilibration of the substrate at `engine.md.temperature_K`.
+These stages are enabled via the top-level `workflow` block (see §1.1).
+- **`surface_prep.slab_relaxation.frozen_z_ang`**: Fix atoms below this Z-height during slab relaxation (Å).  Uses `relaxation.fmax` / `relaxation.steps` from the top-level `relaxation` block unless overridden here.
+- **`surface_prep.equilibration.enabled`**: NVT MD pre-equilibration of the substrate.  Parameters fall back to the top-level `equilibration` block.
 
 ---
 
@@ -241,13 +241,46 @@ Selected reference radii (A):
 
 ---
 
-## 6. Verification Pipeline (`verification`)
-Standardized validation for discovery candidates.
+## 1.1 Pipeline Control (`workflow`)
+
+All stage enable-flags live in one unified block so there is no ambiguity:
+
+```yaml
+workflow:
+  slab_relax:       false   # [REQUIRES POTENTIAL] Relax bare slab before search
+  candidate_relax:  true    # [REQUIRES POTENTIAL] Relax each candidate after placement
+  md_equilibrate:   false   # [REQUIRES POTENTIAL] NVT-MD after candidate_relax
+  post_md_relax:    true    # Re-relax after MD (needs md_equilibrate: true)
+```
+
+Relaxation hyper-parameters are consolidated under a shared top-level block:
+
+```yaml
+relaxation:
+  fmax:         0.05    # eV/Å  — applies to slab_relax, candidate_relax, post_md_relax
+  steps:        100
+  frozen_z_ang: 5.5     # Fix atoms below z_min + this height (Å)
+
+equilibration:
+  temperature_K: 300
+  md_steps:      1000
+  timestep_fs:   1.0
+  damping:       100.0
+```
+
+> **Backward compatibility**: configs using the old `surface_prep.slab_relaxation.enabled` and `verification.relaxation.enabled` keys are still parsed.  The `workflow` block takes priority when present.
+
+---
+
+## 6. Verification Pipeline
 
 ### 6.1 Verification Logic
-- **`relaxation`**: Local geometry optimisation (BFGS / LBFGS / FIRE / GPMin). The `optimizer` key in `engine.relaxation` selects the algorithm.
-- **`equilibration`**: Optional NVT MD sampling for thermal stability assessment.
-- **`selected_indices`**: List or expression (e.g., `[0, 5, 10]`). Only process specific candidate indices. If `null`, all candidates are verified.
+Enable/disable is controlled by `workflow.candidate_relax` (geometry opt) and
+`workflow.md_equilibrate` (NVT MD).  The optimizer algorithm is set by
+`engine.relaxation.optimizer`; hyper-parameters (fmax, steps, frozen_z_ang)
+come from the top-level `relaxation` block.
+
+- **`verification.selected_indices`**: List or expression (e.g., `[0, 5, 10]`). Only process specific candidate indices. If `null`, all candidates are verified.
 
 **Explosion safety**: An `ExplosionMonitor` is attached to every optimizer and MD integrator. It halts the calculation if the per-atom energy turns positive, jumps by more than 10 eV/atom, or shifts by an order of magnitude relative to the initial value. The candidate is discarded and the workflow continues rather than consuming the full step budget on a broken geometry.
 

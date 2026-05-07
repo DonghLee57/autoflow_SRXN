@@ -4,7 +4,7 @@ import numpy as np
 from ase.build import molecule
 from ase.calculators.emt import EMT
 
-from autoflow_srxn.potentials import SimulationEngine
+from autoflow_srxn.simulation.potentials import SimulationEngine
 
 
 class TestPotentials(unittest.TestCase):
@@ -88,7 +88,7 @@ class TestZBLCalculator(unittest.TestCase):
 
     def test_zbl_energy_positive(self):
         """ZBL energy is always positive (repulsive)."""
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         atoms = self._make_h2(bond_length=0.5)
         calc = ZBLCalculator(cutoff_inner=0.3, cutoff_outer=2.0)
@@ -98,7 +98,7 @@ class TestZBLCalculator(unittest.TestCase):
 
     def test_zbl_energy_zero_beyond_cutoff(self):
         """ZBL energy is zero when all atoms are beyond cutoff_outer."""
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         atoms = self._make_h2(bond_length=4.0)
         calc = ZBLCalculator(cutoff_inner=1.0, cutoff_outer=2.5)
@@ -108,7 +108,7 @@ class TestZBLCalculator(unittest.TestCase):
 
     def test_zbl_forces_newton_third(self):
         """ZBL forces satisfy Newton's third law (sum ≈ 0)."""
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         atoms = self._make_h2(bond_length=0.6)
         calc = ZBLCalculator(cutoff_inner=0.4, cutoff_outer=2.0)
@@ -118,7 +118,7 @@ class TestZBLCalculator(unittest.TestCase):
 
     def test_zbl_forces_repulsive_direction(self):
         """ZBL forces push atoms apart (repulsive along bond axis)."""
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         atoms = self._make_h2(bond_length=0.6)  # < H-H pair outer (0.8 A) so force is active
         calc = ZBLCalculator(cutoff_inner=0.5, cutoff_outer=2.0)
@@ -135,7 +135,7 @@ class TestZBLCalculator(unittest.TestCase):
         Distances are kept below the H-H per-pair outer cutoff (~0.8 A) so
         the energy is non-zero and strictly decreasing throughout the range.
         """
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         calc = ZBLCalculator(cutoff_inner=0.3, cutoff_outer=2.5)
         energies = []
@@ -150,7 +150,7 @@ class TestZBLCalculator(unittest.TestCase):
         """ZBL + EMT SumCalculator produces a finite energy and forces."""
         from ase.calculators.mixing import SumCalculator
 
-        from autoflow_srxn.potentials import ZBLCalculator
+        from autoflow_srxn.simulation.potentials import ZBLCalculator
 
         atoms = self._make_h2(bond_length=0.74)
         zbl = ZBLCalculator(cutoff_inner=0.5, cutoff_outer=2.0)
@@ -166,7 +166,7 @@ class TestZBLCalculator(unittest.TestCase):
         """SimulationEngine with EMT + ZBL returns finite energy."""
         from ase.build import molecule
 
-        from autoflow_srxn.potentials import SimulationEngine
+        from autoflow_srxn.simulation.potentials import SimulationEngine
 
         config = {
             "engine": {
@@ -188,7 +188,7 @@ class TestZBLCalculator(unittest.TestCase):
 
     def test_engine_zbl_disabled(self):
         """SimulationEngine with zbl.enabled=false returns EMT calculator directly."""
-        from autoflow_srxn.potentials import SimulationEngine
+        from autoflow_srxn.simulation.potentials import SimulationEngine
 
         config = {"engine": {"potential": {"backend": "emt", "zbl": {"enabled": False}}}}
         engine = SimulationEngine(config)
