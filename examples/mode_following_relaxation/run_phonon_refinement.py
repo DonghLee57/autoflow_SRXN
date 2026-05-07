@@ -12,9 +12,9 @@ import sys
 import yaml
 from ase.io import read
 
-from autoflow_srxn.logger_utils import setup_logger
-from autoflow_srxn.potentials import SimulationEngine
-from autoflow_srxn.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
+from autoflow_srxn.utils.logger_utils import setup_logger
+from autoflow_srxn.simulation.potentials import SimulationEngine
+from autoflow_srxn.analysis.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
 
 
 def run_enhanced_phonon_refinement(config_path="config.yaml", displacement=None):
@@ -75,7 +75,7 @@ def run_enhanced_phonon_refinement(config_path="config.yaml", displacement=None)
     analyzer.generate_qpoints_file(filename=qpath)
 
     # Parse results from YAML
-    from autoflow_srxn.qpoint_handler import QPointParser
+    from autoflow_srxn.simulation.qpoint_handler import QPointParser
 
     parser = QPointParser(qpath)
     all_freqs = [b["frequency"] for phon in parser.data["phonon"] for b in phon["band"]]

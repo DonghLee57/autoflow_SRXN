@@ -4,6 +4,7 @@ from ase import Atoms
 from ase.build import make_supercell, surface
 from ase.geometry import get_distances
 from ..utils.knowledge_engine import chem_kb
+from ..metadynamics.knowledge import GlobalKnowledge
 
 def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     """Standardize Atoms object for VASP export:
@@ -131,10 +132,13 @@ def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_ge
         ref_pos = current_atoms.positions[ref_indices] if ref_indices else []
         best_cand_idx = -1
         best_score = -1.0
+        best_b_len = 0.0
         for i_c, cand in enumerate(available):
             parent_pos = current_atoms.positions[cand["parent"]]
             r_parent = chem_kb.get_radius(atoms.symbols[cand["parent"]], "covalent")
             b_len = r_parent + r_pass
+            if cand["parent_sym"] == "Si" and element == "H": b_len = 1.48
+            elif cand["parent_sym"] == "O" and element == "H": b_len = 0.96
             h_pos_candidate = parent_pos + cand["vector"] * b_len
             if len(ref_pos) == 0: score = 100.0
             else:
@@ -146,14 +150,10 @@ def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_ge
                 mask = np.ones(len(all_dists), dtype=bool)
                 mask[cand["parent"]] = False
                 if np.any(all_dists[mask] < 0.8): continue
-                best_score, best_cand_idx = score, i_c
+                best_score, best_cand_idx, best_b_len = score, i_c, b_len
         if best_cand_idx != -1:
             cand = available.pop(best_cand_idx)
-            r_parent = chem_kb.get_radius(atoms.symbols[cand["parent"]], "covalent")
-            b_len = r_parent + r_pass
-            if cand["parent_sym"] == "Si" and element == "H": b_len = 1.48
-            if cand["parent_sym"] == "O" and element == "H": b_len = 0.96
-            h_pos = current_atoms.positions[cand["parent"]] + cand["vector"] * b_len
+            h_pos = current_atoms.positions[cand["parent"]] + cand["vector"] * best_b_len
             current_atoms += Atoms(element, positions=[h_pos])
             current_atoms.wrap()
             success += 1
@@ -196,7 +196,7 @@ class CavityDetector:
             try:
                 r = vdw_radii[self.slab.numbers[idx]]
                 if np.isnan(r): r = 1.5
-            except: pass
+            except (IndexError, KeyError): pass
             gx, gy, gz = int((pos[0] % lx) / self.grid_res), int((pos[1] % ly) / self.grid_res), int((pos[2] - z_sub_top) / self.grid_res)
             ir = int(np.ceil((r + 1.8) / self.grid_res))
             x_min, x_max = max(0, gx - ir), min(nx, gx + ir + 1)
@@ -279,16 +279,14 @@ def apply_surface_reconstruction(atoms, strategy="auto", side="top", verbose=Fal
     else: res = atoms
     return standardize_vasp_atoms(res, z_min_offset=0.5)
 
-PAULING_EN = {1: 2.20, 2: 0.0, 3: 0.98, 4: 1.57, 5: 2.04, 6: 2.55, 7: 3.04, 8: 3.44, 9: 3.98, 10: 0.0, 11: 0.93, 12: 1.31, 13: 1.61, 14: 1.90, 15: 2.19, 16: 2.58, 17: 3.16, 18: 0.0, 19: 0.82, 20: 1.0, 21: 1.36, 22: 1.54, 23: 1.63, 24: 1.66, 25: 1.55, 26: 1.83, 27: 1.88, 28: 1.91, 29: 1.90, 30: 1.65, 31: 1.81, 32: 2.01, 33: 2.18, 34: 2.55, 35: 2.96, 36: 3.0, 37: 0.82, 38: 0.95, 39: 1.22, 40: 1.33, 41: 1.60, 42: 2.16, 43: 1.90, 44: 2.20, 45: 2.28, 46: 2.20, 47: 1.93, 48: 1.69, 49: 1.78, 50: 1.96, 51: 2.05, 52: 2.10, 53: 2.66, 54: 2.60, 55: 0.79, 56: 0.89, 57: 1.10, 58: 1.12, 59: 1.13, 60: 1.14, 61: 1.13, 62: 1.17, 63: 1.20, 64: 1.20, 65: 1.22, 66: 1.23, 67: 1.24, 68: 1.24, 69: 1.25, 70: 1.10, 71: 1.27, 72: 1.30, 73: 1.50, 74: 2.36, 75: 1.90, 76: 2.20, 77: 2.20, 78: 2.28, 79: 2.54, 80: 2.00, 81: 1.62, 82: 2.33, 83: 2.02, 84: 2.00, 85: 2.20, 86: 2.20, 87: 0.70, 88: 0.90, 89: 1.10, 90: 1.30, 91: 1.50, 92: 1.38, 93: 1.36, 94: 1.28}
-
 def auto_reconstruct_surface(atoms, side="top", verbose=False, **kwargs):
     """Intelligent Reconstruction Engine."""
     idx = find_surface_indices(atoms, side=side, threshold=1.5)
     if not len(idx): return atoms
-    chi = np.array([PAULING_EN.get(n, 2.0) for n in atoms.numbers[idx]])
+    chi = np.array([GlobalKnowledge.get_electronegativity(atoms.symbols[i]) for i in idx])
     is_iv = all(n in [6, 14, 32] for n in atoms.numbers[idx])
     is_ionic = (np.max(chi) - np.min(chi)) > 1.5
-    is_metal = np.mean(chi) < 1.9 or all(n not in [6,7,8,9,15,16,17] for n in atoms.numbers)
+    is_metal = np.mean(chi) < 1.9
     if is_iv: return reconstruct_si100_2x1_buckled(atoms, side=side, verbose=verbose)
     elif is_ionic:
         res, m = atoms.copy(), np.mean(chi)
@@ -352,9 +350,9 @@ def identify_surface_bonds(atoms, cutoff=2.6):
     """Categorize bonds."""
     l1 = find_surface_indices(atoms, "top", threshold=0.8, species="Si"); zt = np.max(atoms.positions[l1, 2])
     l2 = np.where((atoms.symbols == "Si") & (atoms.positions[:,2] < zt-0.5) & (atoms.positions[:,2] > zt-2.5))[0]
-    i, j, _ = neighbor_list("ijD", atoms, cutoff); dims, bbs, seen = [], [], set()
+    nl_i, nl_j, _ = neighbor_list("ijD", atoms, cutoff); dims, bbs, seen = [], [], set()
     for i1 in l1:
-        for ni in j[i == i1]:
+        for ni in nl_j[nl_i == i1]:
             if ni == i1 or atoms.symbols[ni] != "Si": continue
             b = tuple(sorted((i1, ni)))
             if b in seen: continue

@@ -61,6 +61,60 @@ paths:
 # If 'false', the workflow skips pairs that already have 'results_final_verified.extxyz'.
 restart: false
 
+
+# -----------------------------------------------------------------------------
+# Pipeline Control — what to compute (all stage enable-flags in one place)
+# -----------------------------------------------------------------------------
+# Each flag controls one step of the pipeline.  Potential-requiring steps
+# (slab_relax, candidate_relax, md_equilibrate) are marked [REQUIRES POTENTIAL].
+# Disabling ALL three keeps the workflow purely geometric (no MLIP needed).
+#
+#   slab_relax       [REQUIRES POTENTIAL]
+#     Geometry-optimize the bare substrate slab ONCE before any candidate search.
+#     Use when the as-cut slab is far from equilibrium (large forces).
+#     Skip for pre-relaxed structures or fast screening runs.
+#
+#   candidate_relax  [REQUIRES POTENTIAL]
+#     Geometry-optimize every candidate structure after placement.
+#     This is the primary quality gate: structures that blow up are discarded.
+#     Disabling it gives raw geometric candidates with no energy information.
+#
+#   md_equilibrate   [REQUIRES POTENTIAL]
+#     NVT-MD run after candidate_relax to escape local minima and assess
+#     thermal stability.  Parameters come from the `equilibration` block below.
+#
+#   post_md_relax    [REQUIRES POTENTIAL]
+#     Short re-optimization after MD to snap to the nearest local minimum.
+#     Only meaningful when md_equilibrate: true.
+#
+workflow:
+  slab_relax:       false   # [REQUIRES POTENTIAL] Relax bare slab before search
+  candidate_relax:  true    # [REQUIRES POTENTIAL] Relax each candidate after placement
+  md_equilibrate:   false   # [REQUIRES POTENTIAL] NVT-MD equilibration after relax
+  post_md_relax:    true    #                      Re-relax after MD (needs md_equilibrate: true)
+
+
+# -----------------------------------------------------------------------------
+# Relaxation parameters — shared by ALL relax stages (slab + candidates)
+# -----------------------------------------------------------------------------
+# These values are used by slab_relax, candidate_relax, and post_md_relax.
+# Override individual stages through surface_prep.slab_relaxation.* if needed.
+#
+relaxation:
+  fmax:             0.05    # Force convergence criterion (eV/Å)
+  steps:            200     # Max optimization steps per call
+  frozen_z_ang:     null    # Fix atoms below z_min + this value (Å); null → no constraint
+
+# -----------------------------------------------------------------------------
+# MD equilibration parameters — used when workflow.md_equilibrate: true
+# -----------------------------------------------------------------------------
+equilibration:
+  temperature_K:    500     # Thermostat temperature (K)
+  md_steps:         2000    # Integration steps
+  timestep_fs:      1.0     # Timestep (fs)
+  damping:          100.0   # Langevin friction timescale (fs)
+  frozen_z_ang:     null    # Fix bottom slab layers during MD (Å); null → no constraint
+
 # -----------------------------------------------------------------------------
 # Potential & Simulation Engine Settings
 # -----------------------------------------------------------------------------
@@ -241,8 +295,10 @@ engine:
                              #    cutoff_inner and the pair-specific (or fallback) outer
                              #    cutoff — forces are continuous everywhere.
 
-  # Default geometry optimization settings.
-  # Inherited by surface_prep.slab_relaxation and verification.relaxation.
+  # Default geometry optimization settings (engine-level).
+  # Note: The primary relaxation parameters are now configured in the top-level
+  # `relaxation` block.  The values here serve as a secondary fallback when the
+  # top-level block is absent (e.g., older config files).
   relaxation:
     fmax:      0.05    # Max-force convergence criterion (eV/A). Recommended: 0.05 (coarse), 0.01 (tight).
     steps:     200     # Max optimization steps.
@@ -469,16 +525,20 @@ surface_prep:
 
   # ── Potential-required ─────────────────────────────────────────────────────
 
-  slab_relaxation:               # [REQUIRES POTENTIAL]
-    # Equilibration of the substrate surface before adsorption search begins.
-    enabled: true
-    fmax:    0.05    # Force convergence (eV/A). Inherits engine.relaxation.fmax if null.
-    steps:   100     # Max steps. Inherits engine.relaxation.steps if null.
-    frozen_z_ang: 4.0 # Fix bottom layers of the slab during relaxation (A).
+  slab_relaxation:               # [REQUIRES POTENTIAL — toggle via workflow.slab_relax]
+    # Stage-specific overrides for slab-only relaxation.
+    # Enable/disable is controlled by workflow.slab_relax (top-level).
+    # If the values below are null, the global `relaxation` block is used.
+    fmax:         null   # null → inherits relaxation.fmax
+    steps:        null   # null → inherits relaxation.steps
+    frozen_z_ang: 4.0    # Fix bottom slab layers during substrate relaxation (A).
 
-  equilibration:                 # [REQUIRES POTENTIAL]
-    enabled:      true
-    frozen_z_ang: 5.5    # Fix the bottom part of the slab during MD to simulate bulk substrate.
+  equilibration:                 # [REQUIRES POTENTIAL — toggle via workflow.md_equilibrate]
+    # Stage-specific MD override for substrate pre-equilibration (distinct from
+    # candidate MD which is controlled by workflow.md_equilibrate).
+    # Parameters fall back to the top-level `equilibration` block if null.
+    enabled:      false
+    frozen_z_ang: 5.5    # Fix the bottom part of the slab during MD (A).
 
 
 # -----------------------------------------------------------------------------
@@ -603,29 +663,12 @@ reaction_search:
 
   # ── Potential-required ─────────────────────────────────────────────────────
 
-  # [Stage 3: Candidate Verification & Sampling]
-  # After candidates are generated geometrically, they can be processed using 
-  # ML potentials to find stable minima or sample thermal behavior.
+  # [Candidate Verification & Sampling]
+  # Whether each stage runs is controlled by the top-level `workflow` block.
+  # Parameters (fmax, steps, frozen_z_ang) come from the top-level `relaxation`
+  # and `equilibration` blocks.  Only the selection filter below is specific to
+  # the verification step.
   verification:
-    # ── Geometry Optimization ───────────────────────────────────────────────
-    relaxation:
-      enabled: true
-      fmax:    0.05    # Force convergence threshold (eV/A).
-      steps:   50      # Max optimization steps.
-      verbose: false
-
-    # ── Thermal Equilibration (MD) ──────────────────────────────────────────
-    # Useful for checking the thermal stability of physisorption poses or 
-    # discovering spontaneous reaction pathways at elevated temperatures.
-    equilibration:
-      enabled:        false
-      temperature_K:  300      # Simulation temperature (K).
-      md_steps:       1000     # Integration steps.
-      timestep_fs:    1.0      # Timestep (fs).
-      damping:        100.0    # Langevin friction (fs).
-      frozen_z_ang:   4.0      # Fix bottom layers during MD (A).
-      post_relax:     true     # Perform final relaxation after MD.
-
     # ── Selection Filter ────────────────────────────────────────────────────
     # List of specific candidate indices to process (e.g. [0, 12, 45]).
     # If a string is provided, it is evaluated as a Python expression.

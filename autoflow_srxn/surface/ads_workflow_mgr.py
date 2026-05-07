@@ -100,45 +100,114 @@ class AdsorptionWorkflowManager:
         return self.get_unique_geometric_sites(slab, indices)
 
     def get_unique_coordinates(self, slab, coords, symprec=0.2):
-        """Reduces a set of arbitrary Cartesian coordinates to symmetry-unique ones."""
+        """Reduce arbitrary Cartesian coordinates to symmetry-unique representatives.
+
+        Surface sites (top, bridge, hollow) require **2D surface symmetry** only.
+        3D spglib operations include vertical rotations that can falsely map top-surface
+        sites to bottom-surface sites, preventing correct orbit merging.  This method
+        therefore filters to *2D-compatible operations* — those that leave the fractional
+        Z coordinate unchanged (R[2,:] ≈ [0,0,1], t_z ≈ 0) — and compares XY distances
+        only for the equivalence test and orbit deduplication.
+
+        For each equivalence class the representative is the orbit member whose
+        fractional XY coordinate is closest to (0.5, 0.5) so that placed candidates
+        sit near the centre of the unit cell rather than at an edge or corner.
+        Z is taken from the original candidate (surface reference level).
+        """
         if not coords:
             return []
         sub_indices = np.where(slab.get_tags() < 2)[0]
         sub_slab = slab[sub_indices]
-        
+
         lattice = sub_slab.get_cell()
         positions = sub_slab.get_scaled_positions()
         numbers = sub_slab.get_atomic_numbers()
-        
+
         sym = spglib.get_symmetry((lattice, positions, numbers), symprec=symprec)
         if not sym:
             return coords
 
-        rotations = sym['rotations']
+        rotations  = sym['rotations']
         translations = sym['translations']
-        
-        unique_coords = []
         inv_lattice = np.linalg.inv(lattice)
+
+        # --- Filter to 2D (surface-parallel) operations only ---
+        # Keep operations where R leaves Z invariant: R[2,0]=R[2,1]=0, R[2,2]=1, t_z≈0.
+        # Fractional t_z tolerance 0.15 covers non-primitive-cell translations that are
+        # pure lattice vectors in Z (e.g. 0, ±1, ±2, …) but since t is reduced mod 1
+        # by spglib, any non-zero t_z flags a Z-mixing operation.
+        ops_2d = [
+            (r, t) for r, t in zip(rotations, translations)
+            if (abs(r[2, 0]) < 0.1 and abs(r[2, 1]) < 0.1
+                and abs(r[2, 2] - 1.0) < 0.1 and abs(t[2]) < 0.15)
+        ]
+        if not ops_2d:
+            # Fallback: use all operations (e.g. symmetric slab where top≡bottom)
+            ops_2d = list(zip(rotations, translations))
+
+        # --- Design: separate equivalence-test position from output position ---
+        #
+        # WRONG (previous): store orbit-best-member (closest to cell centre) for
+        #   equivalence testing.  With 24–48 orbit members densely covering the cell,
+        #   two genuinely different site types (bridge vs hollow) can each have an
+        #   orbit member near (0.5, 0.5), so their "best members" are < equiv_tol
+        #   apart and the second is incorrectly merged into the first.
+        #
+        # CORRECT (now): store the ORIGINAL input fractional coordinate for testing,
+        #   use a tight 0.3 Å tolerance (pure numerical precision of the symmetry
+        #   operation).  Orbit-best-member is computed only for the OUTPUT coordinate.
+        #   Genuinely different sites have originals that no 2D operation maps to
+        #   within 0.3 Å of each other → no false merges.
+
+        accepted_orig_fracs = []   # first-occurrence frac coords — for equiv testing
+        accepted_carts      = []   # closest-to-centre Cartesian   — output positions
+
+        EQUIV_TOL = 0.3   # Å — numerical precision only, not physical distances
 
         for c in coords:
             c_frac = np.dot(c, inv_lattice)
+            z_orig = c[2]
+            z_frac = c_frac[2]
+
+            # --- Equivalence test: compare original input against stored originals ---
             is_new = True
-            
-            for uc in unique_coords:
-                uc_frac = np.dot(uc, inv_lattice)
-                for r, t in zip(rotations, translations):
+            for orig_frac in accepted_orig_fracs:
+                for r, t in ops_2d:
                     mapped = np.dot(r, c_frac) + t
-                    diff = mapped - uc_frac
-                    diff -= np.round(diff)
-                    cart_dist = np.linalg.norm(np.dot(diff, lattice))
-                    if cart_dist < 1.0: 
+                    diff_xy = mapped[:2] - orig_frac[:2]
+                    diff_xy -= np.round(diff_xy)
+                    d_cart = np.linalg.norm(diff_xy[0] * lattice[0] + diff_xy[1] * lattice[1])
+                    if d_cart < EQUIV_TOL:
                         is_new = False
                         break
                 if not is_new:
                     break
-            if is_new:
-                unique_coords.append(c)
-        return unique_coords
+
+            if not is_new:
+                continue
+
+            # --- New class: store original frac for future tests ---
+            accepted_orig_fracs.append(c_frac.copy())
+
+            # --- Pick most-central orbit member for molecule placement ---
+            orbit_fxy = []
+            for r, t in ops_2d:
+                img = np.dot(r, c_frac) + t
+                img_xy = img[:2] - np.floor(img[:2])   # wrap to [0, 1)
+                if not any(
+                    np.linalg.norm((img_xy - x)[0] * lattice[0] + (img_xy - x)[1] * lattice[1]) < 0.1
+                    for x in orbit_fxy
+                ):
+                    orbit_fxy.append(img_xy)
+
+            best_fxy = orbit_fxy[int(np.argmin([np.linalg.norm(f - 0.5) for f in orbit_fxy]))]
+            best_frac_full = np.array([best_fxy[0], best_fxy[1], z_frac])
+            best_cart = np.dot(best_frac_full, lattice)
+            best_cart[2] = z_orig   # restore absolute Cartesian Z
+
+            accepted_carts.append(best_cart)
+
+        return accepted_carts
 
     def get_unique_geometric_sites(self, slab, indices, cutoff=1.5):
         if not len(indices):
@@ -191,6 +260,8 @@ class AdsorptionWorkflowManager:
         except Exception:
             pass
 
+        if mol.GetNumConformers() == 0:
+            return None
         conf = mol.GetConformer()
         positions = conf.GetPositions()
         symbols = [a.GetSymbol() for a in mol.GetAtoms()]
@@ -298,7 +369,7 @@ class AdsorptionWorkflowManager:
         score = -np.sum(1.0 / (dists**6 + 1e-6))
         return score
 
-    def _get_diverse_top_poses(self, poses, n_out=5, angle_threshold=45.0):
+    def _get_diverse_top_poses(self, poses, n_out=5):
         if not poses:
             return []
         poses.sort(key=lambda x: x[0], reverse=True)
@@ -348,221 +419,269 @@ class AdsorptionWorkflowManager:
         m.translate(-c_pos)
         return m
 
+    def _generate_surface_sites(self, z_surface_ref):
+        """Generate top, bridge, and 3-fold hollow sites via Delaunay triangulation.
+
+        Returns a list of [x, y, z_surface_ref] arrays.  Z carries only the substrate
+        surface level; the height offset is applied per-orientation inside
+        generate_physisorption_candidates (clearance vs center modes differ).
+        """
+        from .surface_utils import find_surface_indices
+        from scipy.spatial import Delaunay
+
+        all_surface = find_surface_indices(self.slab, side="top")
+        if not len(all_surface):
+            return []
+
+        pos = self.slab.positions[all_surface]
+        sites = [np.array([p[0], p[1], z_surface_ref]) for p in pos]  # top sites
+
+        if len(all_surface) < 3:
+            return sites
+
+        try:
+            tri = Delaunay(pos[:, :2])
+            seen_edges = set()
+            for s in tri.simplices:
+                for a, b in [(0, 1), (1, 2), (0, 2)]:
+                    key = tuple(sorted((int(s[a]), int(s[b]))))
+                    if key not in seen_edges:
+                        seen_edges.add(key)
+                        mid = (pos[s[a]] + pos[s[b]]) / 2
+                        sites.append(np.array([mid[0], mid[1], z_surface_ref]))
+                centroid = pos[s].mean(axis=0)
+                sites.append(np.array([centroid[0], centroid[1], z_surface_ref]))
+        except Exception:
+            # Fallback for collinear atoms: pairwise bridges only
+            for i in range(len(pos)):
+                for j in range(i + 1, len(pos)):
+                    if 1.5 < np.linalg.norm(pos[i] - pos[j]) < 5.5:
+                        mid = (pos[i] + pos[j]) / 2
+                        sites.append(np.array([mid[0], mid[1], z_surface_ref]))
+        return sites
+
+    def _sample_molecule_orientations(self, m_aligned, n_rot):
+        """Sample n_rot orientations on SO(3) via Fibonacci sphere.
+
+        Decomposes n_rot into n_polar × n_spin where n_polar directions are
+        distributed uniformly in solid angle (Fibonacci lattice, uniform in
+        cos θ) and n_spin azimuthal spins are applied around Z for each.
+        The rotation center stays at [0, 0, 0] throughout.
+        """
+        golden = (1.0 + 5.0 ** 0.5) / 2.0
+        n_polar = max(1, int(n_rot ** 0.5))
+        n_spin = max(1, n_rot // n_polar)
+        poses = []
+        for i in range(n_polar):
+            cos_theta = 1.0 - 2.0 * (i + 0.5) / n_polar
+            theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
+            phi = 2.0 * np.pi * i / golden
+            direction = np.array([
+                np.sin(theta) * np.cos(phi),
+                np.sin(theta) * np.sin(phi),
+                np.cos(theta),
+            ])
+            for j in range(n_spin):
+                m = m_aligned.copy()
+                if np.linalg.norm(direction - np.array([0.0, 0.0, 1.0])) > 1e-6:
+                    m.rotate([0, 0, 1], direction, center=[0, 0, 0])
+                if j > 0:
+                    m.rotate(360.0 * j / n_spin, [0, 0, 1], center=[0, 0, 0])
+                poses.append(m)
+        return poses
+
+    def _find_contact_z(self, m_template, target_xy, z_lo, z_hi, overlap_scale, tag):
+        """Binary search for the lowest non-overlapping Z of the rotation center.
+
+        Performs 12 bisection steps (~4096× resolution over the window), giving
+        sub-0.01 Å precision for a typical 5 Å search window.
+        Returns the lowest Z where m_template does not overlap the slab.
+        """
+        for _ in range(12):
+            z_mid = (z_lo + z_hi) * 0.5
+            probe = m_template.copy()
+            probe.translate([target_xy[0], target_xy[1], z_mid])
+            for a in probe:
+                a.tag = tag
+            combined = self.slab.copy()
+            combined += probe
+            if self.check_overlap(combined, overlap_scale=overlap_scale, check_internal=False):
+                z_lo = z_mid  # overlap → must raise
+            else:
+                z_hi = z_mid  # clear   → try lower
+        return z_hi
+
     def generate_physisorption_candidates(self, molecule, height=3.5, n_rot=32, rot_center="com",
                                            height_mode="clearance", gravity_pull=None,
                                            config=None, tag=2):
-        """Generate physisorption candidate structures using Fibonacci-sphere orientational sampling.
+        """Generate physisorption candidate structures.
+
+        Site generation uses Delaunay triangulation to produce top, bridge, and
+        3-fold hollow sites.  Orientations are sampled uniformly on SO(3) via the
+        Fibonacci sphere (n_rot total, respecting the n_rot parameter).
+        Deduplication is per-site so candidates at different adsorption sites are
+        always preserved regardless of molecular orientation.
 
         Parameters
         ----------
         height : float
-            Placement height in A, interpreted according to ``height_mode``.
+            Placement height in Å interpreted by ``height_mode``.
         height_mode : str
-            ``"clearance"`` (default) — lowest atom of the molecule sits exactly
-            ``height`` A above the substrate surface.  Physically correct for large
-            molecules where the COM can be far above the binding atom.
-            ``"center"`` — rotation center (COM or specified element) is placed at
-            ``height`` A above the surface.  Useful when comparing multiple molecules
-            at a consistent center-to-surface distance.
+            ``"clearance"`` — lowest molecule atom sits ``height`` Å above surface.
+            ``"center"``    — rotation center placed at ``height`` Å above surface.
+        n_rot : int
+            Number of orientations sampled per site.
         gravity_pull : dict or None
-            Optional downward-descent after initial placement.  Example::
-
-                {"enabled": True, "step_size": 0.2}
-
-            The molecule descends by ``step_size`` A per step until either the first
-            vdW contact (Alvarez radii, ``overlap_scale``) or the substrate surface
-            (hard floor at z_surface_ref) is encountered.  Default: disabled.
+            ``{"enabled": True}`` — descend to vdW contact via binary search.
+            When disabled, molecule is fixed at the height defined by height_mode.
         """
-        from .surface_utils import CavityDetector, identify_protectors
+        from .surface_utils import CavityDetector, identify_protectors, standardize_vasp_atoms
+        from scipy.optimize import linear_sum_assignment
+        from scipy.spatial.distance import cdist
 
-        # --- Overlap scale: Alvarez (2013) vdW fraction from config ---
         overlap_scale = self.config.get("reaction_search", {}).get(
             "candidate_filter", {}).get("overlap_scale", 0.65)
 
-        # --- Gravity pull settings ---
         _grav = gravity_pull if gravity_pull is not None else {}
         grav_enabled = _grav.get("enabled", False)
-        grav_step = float(_grav.get("step_size", 0.2))
 
-        # --- Identify the substrate surface Z reference (top of substrate atoms, tag < 2) ---
         sub_tags = self.slab.get_tags()
         sub_mask_z = sub_tags < 2
         z_surface_ref = (float(np.max(self.slab.positions[sub_mask_z, 2]))
                          if np.any(sub_mask_z)
                          else float(np.max(self.slab.positions[:, 2])))
 
-        # --- CavityDetector path (only when inhibitor atoms are ACTUALLY in the slab) ---
+        # --- Site generation ---
         _protex = self.config.get("reaction_search", {}).get("mechanisms", {}).get("protector", {})
         _inh_cfg = self.config.get("reaction_search", {}).get("mechanisms", {}).get("inhibitor", {})
-        is_inh_active = _inh_cfg.get("enabled", False)
         slab_has_inhibitors = np.any(self.slab.get_tags() >= 2)
 
-        target_centers = []
-        if self.config and (_protex.get("enabled", False) or (is_inh_active and slab_has_inhibitors)):
+        raw_centers = []
+        if self.config and (_protex.get("enabled", False) or
+                            (_inh_cfg.get("enabled", False) and slab_has_inhibitors)):
             sub_idx, prot_idx = identify_protectors(self.slab, self.config, verbose=self.verbose)
             grid_res = _protex.get("cavity_grid_ang", _protex.get("grid_resolution", 0.2))
             detector = CavityDetector(self.slab, sub_idx, prot_idx, grid_res=grid_res, verbose=self.verbose)
             raw_centers = detector.find_void_centers(top_clearance=height)
-            target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
-            if target_centers:
-                target_centers = [c + np.array([0, 0, 0.5]) for c in target_centers]
+            if raw_centers:
+                raw_centers = [c + np.array([0, 0, 0.5]) for c in raw_centers]
 
-        # --- Regular surface-atom sites ---
-        if not target_centers:
-            from .surface_utils import find_surface_indices
-            all_surface = find_surface_indices(self.slab, side="top")
-            raw_target_centers = []
+        if not raw_centers:
+            raw_centers = self._generate_surface_sites(z_surface_ref)
 
-            for idx in all_surface:
-                site_xy = self.slab.positions[idx, :2].copy()
-                raw_target_centers.append(np.array([site_xy[0], site_xy[1], z_surface_ref + height]))
-
-            # Add bridge/hollow mid-points for all adjacent surface atoms
-            if len(all_surface) >= 2:
-                for i in range(len(all_surface)):
-                    for j in range(i + 1, len(all_surface)):
-                        p1 = self.slab.positions[all_surface[i]]
-                        p2 = self.slab.positions[all_surface[j]]
-                        if 2.0 < np.linalg.norm(p1 - p2) < 5.0:
-                            hollow = np.array([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2, z_surface_ref + height])
-                            raw_target_centers.append(hollow)
-
-            # Apply symmetry reduction AFTER topological generation
-            target_centers = self.get_unique_coordinates(self.slab, raw_target_centers, symprec=self.symprec)
+        target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
 
         self.logger.info(
-            f"  [Physisorption] {len(target_centers)} placement sites "
-            f"(inh_in_slab={slab_has_inhibitors}, height={height:.1f} A [{height_mode}], "
-            f"overlap_scale={overlap_scale:.2f}, gravity={'on @{:.2f}A'.format(grav_step) if grav_enabled else 'off'})"
+            f"  [Physisorption] {len(target_centers)} unique sites "
+            f"(height={height:.1f} Å [{height_mode}], n_rot={n_rot}, "
+            f"overlap_scale={overlap_scale:.2f}, gravity={'on' if grav_enabled else 'off'})"
         )
 
-        # --- Roll + Tilt sampling (32 orientations total) ---
-        n_rolls = 8
-        n_tilts = 4
-        
-        candidates = []
-        stats = {"total": 0, "overlap": 0, "grav_steps": 0}
-
-        # Align molecule once: center at [0,0,0] with anchor element/COM strategy
+        # --- Pre-compute all orientations once; tags set here, reused across sites ---
         m_aligned = self._get_physi_alignment(molecule, mode=rot_center)
+        sampled_poses = self._sample_molecule_orientations(m_aligned, n_rot)
+        for m_pose in sampled_poses:
+            for a in m_pose:
+                a.tag = tag
+
+        candidates = []
+        stats = {"total": 0, "overlap": 0, "dedup": 0}
 
         for target_pos in target_centers:
-            current_site_poses = []
-            
-            # Safe sampling height (far enough to rotate freely)
-            # We use 10.0A as a safe ceiling for initial rotation
-            safe_height = 10.0
-            
-            for i_roll in range(n_rolls):
-                roll_angle = (360.0 / n_rolls) * i_roll
-                for i_tilt in range(n_tilts):
-                    stats["total"] += 1
-                    tilt_angle = 15.0 * i_tilt
-                    
-                    m_pose = m_aligned.copy()
-                    m_pose.rotate(roll_angle, [0, 0, 1], center=[0, 0, 0])
-                    if tilt_angle > 0:
-                        m_pose.rotate(tilt_angle, [1, 0, 0], center=[0, 0, 0])
-                    
-                    # Start at safe height above the target site
-                    # Initial placement for descent
-                    m_pose.translate(target_pos + np.array([0, 0, safe_height - height]))
-                    
-                    # --- Gravity Pulling: descend until first vdW contact ---
-                    step_size = grav_step if grav_enabled else 0.2
-                    last_safe_atoms = None
-                    final_step = 0
-                    
-                    # Descend from safe_height (10A) down to surface (approx 0A relative)
-                    max_steps = int(safe_height / step_size) + 5
-                    for step in range(max_steps):
-                        combined = self.slab.copy()
-                        for a in m_pose: a.tag = tag
-                        combined += m_pose
-                        
-                        if self.check_overlap(combined, overlap_scale=overlap_scale, check_internal=False):
-                            break
-                        else:
-                            last_safe_atoms = combined.copy()
-                            final_step = step
-                            m_pose.translate([0, 0, -step_size])
-                    
-                    if last_safe_atoms is not None:
-                        f_h = safe_height - (final_step * step_size)
-                        if self.verbose and stats["total"] % 8 == 0:
-                            self.logger.info(f"    [Gravity] Orientation {stats['total']}: Pulled down to h={f_h:.2f} A")
-                        
-                        last_safe_atoms.info["mechanism"] = f"Physisorption (Gravity), roll={roll_angle:.0f}, tilt={tilt_angle:.0f}, h={f_h:.2f}"
-                        # Save the pose
-                        candidates.append(last_safe_atoms)
-                    else:
+            target_xy = target_pos[:2]
+            site_candidates = []
+            site_rel_poses = []  # within-site orientation dedup registry
+
+            for m_pose in sampled_poses:
+                stats["total"] += 1
+
+                # height_mode: compute nominal rotation-center Z for this orientation
+                min_z_template = m_pose.positions[:, 2].min()
+                if height_mode == "clearance":
+                    z_nominal = z_surface_ref + height - min_z_template
+                else:  # "center"
+                    z_nominal = z_surface_ref + height
+
+                if grav_enabled:
+                    z_final = self._find_contact_z(
+                        m_pose, target_xy,
+                        z_lo=z_surface_ref,
+                        z_hi=z_nominal + 5.0,
+                        overlap_scale=overlap_scale,
+                        tag=tag,
+                    )
+                else:
+                    # Fixed placement: quick single overlap check
+                    probe = m_pose.copy()
+                    probe.translate([target_xy[0], target_xy[1], z_nominal])
+                    combined_check = self.slab.copy()
+                    combined_check += probe
+                    if self.check_overlap(combined_check, overlap_scale=overlap_scale,
+                                          check_internal=False):
                         stats["overlap"] += 1
+                        continue
+                    z_final = z_nominal
 
-        from .surface_utils import standardize_vasp_atoms
-        standardized_candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
+                # Build final combined structure
+                final_pose = m_pose.copy()
+                final_pose.translate([target_xy[0], target_xy[1], z_final])
+                combined = self.slab.copy()
+                combined += final_pose
+                combined.info["mechanism"] = (
+                    f"Physisorption, site=({target_xy[0]:.2f},{target_xy[1]:.2f}), "
+                    f"z={z_final:.2f}, gravity={grav_enabled}"
+                )
 
-        # --- Candidate Deduplication (Hungarian Algorithm + Site-Relative) ---
-        from scipy.optimize import linear_sum_assignment
-        from scipy.spatial.distance import cdist
-        
-        unique_candidates = []
-        unique_orientations = [] # List of (n_atoms, 3) arrays representing relative poses
-        
-        for cand in standardized_candidates:
-            # Identify adsorbate atoms and their relative positions to their anchor/center
-            ads_idx = np.where(cand.get_tags() >= 2)[0]
-            if len(ads_idx) == 0:
-                unique_candidates.append(cand)
-                continue
-            
-            # Use the center of the adsorbate as a reference for "orientation"
-            # Or better, the rotation center if we had it. 
-            # Let's use the average position of adsorbate atoms as a local origin.
-            ads_pos = cand.positions[ads_idx]
-            ads_symbols = cand.symbols[ads_idx]
-            local_origin = np.mean(ads_pos, axis=0)
-            rel_pos = ads_pos - local_origin
-            
-            is_duplicate = False
-            for target_rel_pos, target_symbols in unique_orientations:
-                if len(ads_symbols) != len(target_symbols):
+                # Within-site deduplication: compare orientations at the same site only
+                ads_idx = np.where(combined.get_tags() >= 2)[0]
+                if len(ads_idx) == 0:
+                    site_candidates.append(combined)
                     continue
-                if not np.array_equal(np.sort(ads_symbols), np.sort(target_symbols)):
-                    continue
-                
-                # Check element-wise matching
-                total_match = True
-                for sym in np.unique(ads_symbols):
-                    cand_idx = [i for i, s in enumerate(ads_symbols) if s == sym]
-                    t_idx = [i for i, s in enumerate(target_symbols) if s == sym]
 
-                    d_matrix = cdist(rel_pos[cand_idx], target_rel_pos[t_idx])
-                    row_ind, col_ind = linear_sum_assignment(d_matrix)
-                    if np.any(d_matrix[row_ind, col_ind] > 0.2):
-                        total_match = False
+                ads_pos = combined.positions[ads_idx]
+                ads_sym = np.array(combined.get_chemical_symbols())[ads_idx]
+                rel_pos = ads_pos - np.mean(ads_pos, axis=0)
+
+                is_dup = False
+                for ref_rel, ref_sym in site_rel_poses:
+                    if len(ads_sym) != len(ref_sym):
+                        continue
+                    if not np.array_equal(np.sort(ads_sym), np.sort(ref_sym)):
+                        continue
+                    match = True
+                    for sym in np.unique(ads_sym):
+                        ci = np.where(ads_sym == sym)[0]
+                        ri = np.where(ref_sym == sym)[0]
+                        D = cdist(rel_pos[ci], ref_rel[ri])
+                        rw, cw = linear_sum_assignment(D)
+                        if np.any(D[rw, cw] > 0.3):
+                            match = False
+                            break
+                    if match:
+                        is_dup = True
                         break
-                
-                if total_match:
-                    is_duplicate = True
-                    break
-            
-            if not is_duplicate:
-                unique_candidates.append(cand)
-                unique_orientations.append((rel_pos, ads_symbols))
 
-        grav_note = f", using gravity descent" if grav_enabled else ""
+                if not is_dup:
+                    site_candidates.append(combined)
+                    site_rel_poses.append((rel_pos, ads_sym))
+                else:
+                    stats["dedup"] += 1
+
+            candidates.extend(site_candidates)
+
+        candidates = [standardize_vasp_atoms(c, z_min_offset=0.5) for c in candidates]
+
         self.logger.info(
-            f"  [Physisorption] {len(unique_candidates)} unique candidates from {len(target_centers)} sites "
-            f"(Reduced from {len(standardized_candidates)} initial poses, {stats['overlap']} rejected by "
-            f"overlap_scale={overlap_scale:.2f}{grav_note})."
+            f"  [Physisorption] {len(candidates)} unique candidates "
+            f"({stats['overlap']} overlap-rejected, {stats['dedup']} deduplicated within sites)"
         )
-        return unique_candidates
+        return candidates
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
         if verbose is None: verbose = self.verbose
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
-        from ase.geometry import get_distances
+        from ase.neighborlist import neighbor_list as ase_nl
 
         if isinstance(center_target, int):
             c_idx = center_target
@@ -572,15 +691,16 @@ class AdsorptionWorkflowManager:
             c_idx = center_indices[0]
 
         n_atoms = len(molecule)
+        # Use a broad cutoff then apply per-pair element-specific tightening.
+        # 2.5 A covers all common covalent bonds; avoids O(n²) distance matrix.
+        max_cutoff = 2.5 + skin
+        ni_arr, nj_arr, nd_arr = ase_nl("ijd", molecule, max_cutoff)
         adj_matrix = np.zeros((n_atoms, n_atoms), dtype=int)
-        D, d = get_distances(molecule.positions, molecule.positions, cell=molecule.cell, pbc=molecule.pbc)
-
-        for i in range(n_atoms):
-            for j in range(i + 1, n_atoms):
-                dist_cutoff = chem_kb.get_radius(molecule.symbols[i], "covalent") + chem_kb.get_radius(molecule.symbols[j], "covalent") + skin
-                if d[i, j] < dist_cutoff and d[i, j] > 0.1:
-                    adj_matrix[i, j] = 1
-                    adj_matrix[j, i] = 1
+        for ni, nj, nd in zip(ni_arr, nj_arr, nd_arr):
+            cutoff = chem_kb.get_radius(molecule.symbols[ni], "covalent") + chem_kb.get_radius(molecule.symbols[nj], "covalent") + skin
+            if 0.1 < nd < cutoff:
+                adj_matrix[ni, nj] = 1
+                adj_matrix[nj, ni] = 1
 
         bonded_indices = np.where(adj_matrix[c_idx, :] == 1)[0]
         adj_matrix[c_idx, :] = 0

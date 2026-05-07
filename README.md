@@ -216,6 +216,35 @@ from autoflow_srxn.metadynamics import CoverageManager
 
 ## 4. Operational Harness
 
+### 4.0 Pipeline Configuration
+
+All stage enable-flags are now consolidated in a single top-level `workflow` block.
+Relaxation and MD hyper-parameters are unified under `relaxation` / `equilibration` blocks,
+eliminating the previous split between `surface_prep.slab_relaxation.enabled` and
+`verification.relaxation.enabled`.
+
+```yaml
+# ── What to compute ──────────────────────────────────────────────────────────
+workflow:
+  slab_relax:       false   # [REQUIRES POTENTIAL] bare-slab geometry opt (1×)
+  candidate_relax:  true    # [REQUIRES POTENTIAL] relax each candidate
+  md_equilibrate:   false   # [REQUIRES POTENTIAL] NVT-MD after candidate relax
+  post_md_relax:    true    # re-optimize after MD
+
+# ── How to relax ─────────────────────────────────────────────────────────────
+relaxation:
+  fmax:         0.05
+  steps:        100
+  frozen_z_ang: 5.5   # Fix atoms below z_min + this height (Å)
+
+equilibration:
+  temperature_K: 300
+  md_steps:      1000
+```
+
+Backward-compatible: configs that still use the old `verification.relaxation.enabled` /
+`surface_prep.slab_relaxation.enabled` keys continue to work; `workflow.*` takes priority.
+
 ### 4.1 Installation
 
 The recommended method to install `autoflow-srxn` and its core dependencies is via `pip`. This will automatically resolve and install all requirements listed in `pyproject.toml`.

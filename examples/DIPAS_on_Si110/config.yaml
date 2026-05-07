@@ -4,82 +4,97 @@
 
 paths:
   substrate_bulk: "../../structures/Si_mp149.vasp"
-  precursor: "../../structures/DIPAS.vasp"
-  inhibitor: "../../structures/ethanol.vasp"
+  precursor:      "../../structures/DIPAS.vasp"
+  inhibitor:      "../../structures/ethanol.vasp"
   include_no_inhibitor: true
-  output_prefix: "results"
+  output_prefix:  "results"
   restart: true
 
+# =============================================================================
+# Pipeline Control — what to compute (all flags in one place)
+# =============================================================================
+workflow:
+  slab_relax:       false  # Geometry-optimize bare slab before candidate search
+  candidate_relax:  true   # Geometry-optimize each candidate after generation
+  md_equilibrate:   false  # NVT-MD equilibration after candidate_relax
+  post_md_relax:    true   # Re-optimize after MD (only if md_equilibrate: true)
+
+# =============================================================================
+# Relaxation parameters — shared by all relax/MD stages
+# =============================================================================
+relaxation:
+  fmax:         0.05    # Force convergence (eV/Å)
+  steps:        100     # Max optimizer steps
+  frozen_z_ang: 5.5     # Fix atoms below z_min + this height (Å) during all relax/MD
+
+equilibration:
+  temperature_K: 300
+  md_steps:      1000
+  timestep_fs:   1.0
+  damping:       100.0
+
+# =============================================================================
+# Surface Preparation
+# =============================================================================
 surface_prep:
   slab_generation:
-    enabled: true
-    miller: [1, 1, 0]  # Targeted Si(110) surface
-    thickness_ang: 12.0 
-    vacuum_ang: 15.0
-    target_area_ang2: 250.0 
-    
+    enabled:           true
+    miller:            [1, 1, 0]
+    thickness_ang:     12.0
+    vacuum_ang:        15.0
+    target_area_ang2:  250.0
+
   passivation:
     enabled: true
     element: "H"
-    side: "bottom"
+    side:    "bottom"
 
-  slab_relaxation:
-    enabled: false
-    fmax: 0.1
-    steps: 50
-    frozen_z_ang: 5.5 # Fix bottom 5.5A
-
+# =============================================================================
+# Reaction Search
+# =============================================================================
 reaction_search:
   mechanisms:
     inhibitor:
       enabled: true
-      center: "O"
+      center:  "O"
       physisorption:
-        enabled: true
+        enabled:          true
         placement_height: 3.2
-        height_mode: "clearance"    # "clearance": lowest atom at height A above surface
-                                    # "center":    rotation center at height A above surface
-      branching_limit: 3
+        height_mode:      "clearance"
+        gravity_pull:
+          enabled: false
       chemisorption:
         enabled: false
+      branching_limit: 3
 
     precursor:
       center: "Si"
       physisorption:
-        enabled: true
-        verbose: true
+        enabled:          true
         placement_height: 5.0
-        height_mode: "clearance"    # "clearance": lowest atom at height A above surface
-                                    # "center":    rotation center at height A above surface
+        height_mode:      "clearance"
         gravity_pull:
-          enabled: true
-          step_size: 0.2            # A per descent step (only relevant if enabled: true)
+          enabled:   true
+          step_size: 0.2
       chemisorption:
-        enabled: true
-        verbose: true
-        proximity_filter:
-          enabled: true
-          cutoff: 7.0
-          visualize: true
+        enabled:  true
         rot_steps: 8
+        proximity_filter:
+          enabled:   true
+          cutoff:    7.0
+          visualize: true
 
   candidate_filter:
-    symprec: 0.2
-    overlap_scale: 0.65             # Alvarez (2013) vdW fraction: overlap if dist < scale*(r_i+r_j)
-                                    # 0.65 ≈ tight physisorption threshold; raise to 0.75 for stricter
+    symprec:       0.2
+    overlap_scale: 0.65
 
-verification:
-  relaxation:
-    enabled: true
-    steps: 100
-    fmax: 0.05
-    frozen_z_ang: 5.5 # Consistent fixing
-
+# =============================================================================
+# Simulation Engine
+# =============================================================================
 engine:
   potential:
-    backend:  "mace"
-    model:    "medium"
-    device:   "cpu"
-    dtype:    "float64"
-    d3:       false        # Disable if torch-dftd is not installed
-
+    backend: "mace"
+    model:   "medium"
+    device:  "cpu"
+    dtype:   "float64"
+    d3:      false
