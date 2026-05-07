@@ -13,6 +13,19 @@ from ..utils.knowledge_engine import chem_kb
 from ..utils.logger_utils import get_workflow_logger
 from ..simulation.qpoint_handler import QPointParser
 
+# ---------------------------------------------------------------------------
+# Unit conversion: sqrt(eV / (amu * Å²)) → THz
+#   ω(THz) = sqrt(λ[eV/amu/Å²]) × _EV_PER_AMU_ANG2_TO_THZ
+# Derivation:
+#   ω² = λ × eV_to_J / (amu_to_kg × Å²_to_m²)
+#   ω  = sqrt(λ) × sqrt(1.60218e-19 / (1.66054e-27 × 1e-20))  [rad s⁻¹]
+#   f  = ω / (2π × 10¹²)  [THz]
+# Numerically: ~15.633 THz per sqrt(eV/amu/Å²)
+# ---------------------------------------------------------------------------
+_EV_PER_AMU_ANG2_TO_THZ: float = float(
+    np.sqrt(1.60218e-19 / (1.66054e-27 * 1e-20)) / (2.0 * np.pi * 1e12)
+)
+
 
 def _resolve_phva_center(atoms, ads_idx, center_cfg):
     """Resolve which adsorbate atom index/indices to use as the focal point(s)
@@ -211,27 +224,75 @@ class VibrationalAnalyzer:
         return modes_list
 
     def run_analysis(self, overwrite=False):
-        """Performs (Partial) Hessian Vibrational Analysis using ASE Vibrations.
+        """Performs (Partial) Hessian Vibrational Analysis.
 
-        Args:
-            overwrite: If True, delete any existing cache before running.
-                        Set False (default) to resume from a partially-completed cache.
+        By default, uses ASE ``Vibrations`` with its built-in JSON cache.
+        When ``analysis.vibrational.cache_format: "lammps_dump"`` is set in the
+        config, a custom finite-difference loop is executed instead and every
+        displaced configuration's forces are written to a LAMMPS custom dump file
+        (columns: ``id type x y z fx fy fz``) inside the *name* directory.
 
-        Returns:
-            freqs_thz: List of frequencies in THz (negative for imaginary).
-            eigs: Eigenvectors at Gamma point.
+        Cache lifecycle
+        ---------------
+        ``overwrite`` (parameter or ``analysis.vibrational.overwrite`` in config):
+            ``True``  → delete all existing cache files first, then recompute.
+            ``False`` → reuse cached files that already exist (fast restart).
+
+        ``analysis.vibrational.save_cache``:
+            ``false`` (default) → delete the cache directory after the run,
+                                   matching the original behaviour.
+            ``true``  → preserve the cache directory for post-processing
+                        (e.g. phonopy comparison via the LAMMPS dump files).
+
+        Returns
+        -------
+        freqs_thz : ndarray
+            Frequencies in THz (negative values denote imaginary modes).
+        eigs : ndarray, shape (3*N_total, n_modes)
+            Mode eigenvectors padded to the full system size.
         """
+        vib_cfg = self.engine.all_config.get("analysis", {}).get("vibrational", {})
+        cache_format = vib_cfg.get("cache_format", None)
+        save_cache   = vib_cfg.get("save_cache", False)
+
+        n_active = len(self.indices) if self.indices else len(self.atoms)
         self.logger.info(
-            f"  [VibAnalyzer] Starting PHVA/FHVA (active atoms: {len(self.indices) if self.indices else len(self.atoms)})."
+            f"  [VibAnalyzer] Starting PHVA/FHVA  "
+            f"(active atoms: {n_active}, cache: {cache_format or 'ase_json'}, "
+            f"save_cache: {save_cache})"
         )
 
+        if cache_format == "lammps_dump":
+            freqs_thz, eigs = self._run_lammps_dump_analysis(overwrite, save_cache)
+        else:
+            freqs_thz, eigs = self._run_ase_json_analysis(overwrite, save_cache)
+
+        n_imag = sum(1 for f in freqs_thz if f < -0.01)
+        self.logger.info(
+            f"  [VibAnalyzer] Analysis complete.  "
+            f"Total modes: {len(freqs_thz)}, Imaginary: {n_imag}"
+        )
+
+        self._freqs_thz = np.array(freqs_thz)
+        self._eigs = eigs
+
+        parent_dir = os.path.dirname(self.name) if os.path.dirname(self.name) else "."
+        self.generate_qpoints_file(os.path.join(parent_dir, "qpoints.yaml"))
+
+        return self._freqs_thz, self._eigs
+
+    # ------------------------------------------------------------------
+    # Private: ASE JSON backend (original behaviour)
+    # ------------------------------------------------------------------
+
+    def _run_ase_json_analysis(self, overwrite: bool, save_cache: bool):
+        """Run analysis using ASE Vibrations (JSON cache)."""
         if overwrite and os.path.exists(self.name):
             self._robust_rmtree(self.name)
 
         vib = Vibrations(self.atoms, indices=self.indices, name=self.name, delta=self.displacement)
         vib.run()
 
-        # Get raw frequencies
         freqs_raw = vib.get_frequencies()
         freqs_thz = []
         for f in freqs_raw:
@@ -241,38 +302,277 @@ class VibrationalAnalyzer:
             else:
                 freqs_thz.append(cf.real / 33.3564)
 
-        # Get raw modes
         vib_data = vib.get_vibrations()
-        modes = vib_data.get_modes()  # Shape: (num_modes, num_active, 3)
+        modes = vib_data.get_modes()          # (n_modes, n_active, 3)
 
-        N_total = len(self.atoms)
-        num_modes = modes.shape[0]
-        eigs = np.zeros((3 * N_total, num_modes))
-
-        indices = self.indices if self.indices is not None else list(range(N_total))
-
-        for i in range(num_modes):
-            mode_3d = np.zeros((N_total, 3))
+        N_total  = len(self.atoms)
+        n_modes  = modes.shape[0]
+        indices  = self.indices if self.indices is not None else list(range(N_total))
+        eigs     = np.zeros((3 * N_total, n_modes))
+        for i in range(n_modes):
+            mode_3d          = np.zeros((N_total, 3))
             mode_3d[indices] = modes[i]
-            eigs[:, i] = mode_3d.reshape(-1)
+            eigs[:, i]       = mode_3d.ravel()
 
-        # Log basic summary
-        n_imag = sum(1 for f in freqs_thz if f < -0.01)
-        self.logger.info(f"  [VibAnalyzer] Analysis complete. Total modes: {len(freqs_thz)}, Imaginary: {n_imag}")
-
-        self._freqs_thz = np.array(freqs_thz)
-        self._eigs = eigs
-
-        # Clean up temporary displacement data directory
-        if os.path.exists(self.name):
+        if not save_cache and os.path.exists(self.name):
             self._robust_rmtree(self.name)
 
-        # Default qpoints generation requested by USER
-        # Save in the same parent directory as the vib cache
-        parent_dir = os.path.dirname(self.name) if os.path.dirname(self.name) else "."
-        self.generate_qpoints_file(os.path.join(parent_dir, "qpoints.yaml"))
+        return freqs_thz, eigs
 
-        return self._freqs_thz, self._eigs
+    # ------------------------------------------------------------------
+    # Private: LAMMPS dump backend
+    # ------------------------------------------------------------------
+
+    def _build_type_map(self, atoms) -> dict:
+        """Return element-symbol → LAMMPS integer type mapping (alphabetical)."""
+        unique = sorted(set(atoms.get_chemical_symbols()))
+        return {elem: i + 1 for i, elem in enumerate(unique)}
+
+    def _write_lammps_dump(self, filepath: str, atoms, forces: np.ndarray, timestep: int = 0) -> None:
+        """Write one LAMMPS custom dump snapshot with columns id type x y z fx fy fz.
+
+        Supports both orthogonal and triclinic cells. Positions are Cartesian (Å);
+        forces are in eV/Å (ASE native units — noted in the file header comment).
+        """
+        type_map = self._build_type_map(atoms)
+        symbols  = atoms.get_chemical_symbols()
+        pos      = atoms.get_positions()
+        cell     = atoms.get_cell()
+
+        # --- Convert ASE cell to LAMMPS box parameters -----------------------
+        # LAMMPS convention: a = (ax,0,0), b = (bx,by,0), c = (cx,cy,cz)
+        a_vec = cell[0]
+        b_vec = cell[1]
+        c_vec = cell[2]
+
+        ax = float(np.linalg.norm(a_vec))
+        bx = float(np.dot(b_vec, a_vec / ax))
+        by = float(np.sqrt(max(np.dot(b_vec, b_vec) - bx ** 2, 0.0)))
+        cx = float(np.dot(c_vec, a_vec / ax))
+        cy = float((np.dot(b_vec, c_vec) - bx * cx) / by) if by > 1e-12 else 0.0
+        cz = float(np.sqrt(max(np.dot(c_vec, c_vec) - cx ** 2 - cy ** 2, 0.0)))
+
+        xy, xz, yz = bx, cx, cy
+        is_ortho   = abs(xy) < 1e-10 and abs(xz) < 1e-10 and abs(yz) < 1e-10
+
+        with open(filepath, "w") as f:
+            # Standard LAMMPS dump format: ITEM: TIMESTEP must be the first line.
+            # Unit metadata (eV/Ang, Ang) is recorded in types.map in the same dir.
+            f.write(f"ITEM: TIMESTEP\n{timestep}\n")
+            f.write(f"ITEM: NUMBER OF ATOMS\n{len(atoms)}\n")
+            if is_ortho:
+                f.write("ITEM: BOX BOUNDS pp pp pp\n")
+                f.write(f"{0.0:.10f} {ax:.10f}\n")
+                f.write(f"{0.0:.10f} {by:.10f}\n")
+                f.write(f"{0.0:.10f} {cz:.10f}\n")
+            else:
+                f.write("ITEM: BOX BOUNDS xy xz yz pp pp pp\n")
+                f.write(f"{0.0:.10f} {ax:.10f} {xy:.10f}\n")
+                f.write(f"{0.0:.10f} {by:.10f} {xz:.10f}\n")
+                f.write(f"{0.0:.10f} {cz:.10f} {yz:.10f}\n")
+            f.write("ITEM: ATOMS id type x y z fx fy fz\n")
+            for i in range(len(atoms)):
+                f.write(
+                    f"{i + 1} {type_map[symbols[i]]}"
+                    f" {pos[i, 0]:.10f} {pos[i, 1]:.10f} {pos[i, 2]:.10f}"
+                    f" {forces[i, 0]:.10f} {forces[i, 1]:.10f} {forces[i, 2]:.10f}\n"
+                )
+
+    def _read_lammps_dump_forces(self, filepath: str, n_atoms: int) -> np.ndarray:
+        """Read forces from a LAMMPS custom dump file.
+
+        Returns ndarray of shape (n_atoms, 3) in eV/Å.
+        Column order is detected from the ``ITEM: ATOMS`` header, so both
+        forward-written files and externally generated dumps are accepted
+        provided they contain ``fx``, ``fy``, ``fz`` and ``id`` columns.
+        """
+        forces = np.zeros((n_atoms, 3))
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+
+        # Locate ITEM: ATOMS line and parse column names
+        atoms_line = next(
+            (i for i, l in enumerate(lines) if l.startswith("ITEM: ATOMS")), None
+        )
+        if atoms_line is None:
+            raise ValueError(f"  [VibAnalyzer] No 'ITEM: ATOMS' found in {filepath}")
+
+        cols   = lines[atoms_line].split()[2:]   # drop "ITEM:" "ATOMS"
+        id_c   = cols.index("id")
+        fx_c   = cols.index("fx")
+        fy_c   = cols.index("fy")
+        fz_c   = cols.index("fz")
+
+        for line in lines[atoms_line + 1:]:
+            vals = line.split()
+            if not vals or vals[0].startswith("#"):
+                continue
+            atom_id = int(vals[id_c]) - 1          # 0-indexed
+            forces[atom_id, 0] = float(vals[fx_c])
+            forces[atom_id, 1] = float(vals[fy_c])
+            forces[atom_id, 2] = float(vals[fz_c])
+
+        return forces
+
+    def _run_lammps_dump_analysis(self, overwrite: bool, save_cache: bool):
+        """Custom finite-difference Hessian with LAMMPS dump cache.
+
+        For every displaced configuration (±δ along each Cartesian component
+        of each active atom) forces are computed and stored as
+        ``{name}/disp.{atom:04d}.{x|y|z}.{p|m}.dump``.
+
+        When ``overwrite=False`` an existing dump file is reused without a
+        new MLIP evaluation, enabling fast restarts of interrupted runs.
+
+        The partial Hessian is assembled from the dump files, mass-weighted to
+        form the dynamical matrix, and diagonalised to yield frequencies and
+        mode eigenvectors consistent with ASE Vibrations output.
+        """
+        from pathlib import Path
+
+        cache_dir = self.name
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+        if overwrite:
+            self._robust_rmtree(cache_dir)
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+        n_atoms        = len(self.atoms)
+        active_indices = self.indices if self.indices is not None else list(range(n_atoms))
+        n_active       = len(active_indices)
+        delta          = self.displacement
+        dir_names      = ["x", "y", "z"]
+
+        # Write metadata file: element → type mapping + unit information
+        type_map = self._build_type_map(self.atoms)
+        with open(os.path.join(cache_dir, "types.map"), "w") as f:
+            f.write("# AutoFlow-SRXN vibrational cache metadata\n")
+            f.write(f"# displacement_ang  {delta}\n")
+            f.write(f"# n_active_atoms    {n_active}\n")
+            f.write(f"# force_units       eV/Ang\n")
+            f.write(f"# position_units    Ang\n")
+            f.write("# LAMMPS type index -> element symbol\n")
+            f.write("# type element\n")
+            for elem, t in sorted(type_map.items(), key=lambda x: x[1]):
+                f.write(f"{t} {elem}\n")
+            f.write("\n# active atom indices (0-based)\n")
+            f.write(f"# {active_indices}\n")
+
+        # Save undisplaced reference snapshot (timestep 0)
+        ref_path = os.path.join(cache_dir, "ref.dump")
+        if overwrite or not os.path.exists(ref_path):
+            pos0_ref   = self.atoms.get_positions().copy()
+            ref_forces = self.atoms.get_forces()
+            self._write_lammps_dump(ref_path, self.atoms, ref_forces, timestep=0)
+            self.atoms.set_positions(pos0_ref)
+
+        # ------------------------------------------------------------------
+        # Finite-difference loop
+        # ------------------------------------------------------------------
+        pos0         = self.atoms.get_positions().copy()
+        forces_plus  = {}   # (atom_i, cart) -> ndarray(n_atoms, 3)
+        forces_minus = {}
+
+        n_disp     = 2 * n_active * 3
+        n_computed = 0
+        n_cached   = 0
+        timestep   = 1   # 0 is the reference
+
+        for atom_i in active_indices:
+            for cart in range(3):
+                dir_name = dir_names[cart]
+
+                for sign, pm_str, store in [
+                    (+1, "p", forces_plus),
+                    (-1, "m", forces_minus),
+                ]:
+                    dump_path = os.path.join(
+                        cache_dir, f"disp.{atom_i:04d}.{dir_name}.{pm_str}.dump"
+                    )
+
+                    if not overwrite and os.path.exists(dump_path):
+                        forces = self._read_lammps_dump_forces(dump_path, n_atoms)
+                        n_cached += 1
+                    else:
+                        pos      = pos0.copy()
+                        pos[atom_i, cart] += sign * delta
+                        self.atoms.set_positions(pos)
+                        forces   = self.atoms.get_forces()
+                        self._write_lammps_dump(dump_path, self.atoms, forces, timestep=timestep)
+                        n_computed += 1
+
+                    store[(atom_i, cart)] = forces
+                    timestep += 1
+
+        # Restore original positions
+        self.atoms.set_positions(pos0)
+
+        self.logger.info(
+            f"  [VibAnalyzer] FD displacements: {n_computed} computed, "
+            f"{n_cached} loaded from cache  (total {n_disp})"
+        )
+
+        # ------------------------------------------------------------------
+        # Build partial Hessian  H[row, col]  (n_active*3 × n_active*3)
+        #   H[3*ri+rb, 3*ci+ca] = -(F_plus[ri,rb] - F_minus[ri,rb]) / (2δ)
+        #   where ci=displaced atom, ca=displaced direction,
+        #         ri=response atom, rb=response direction
+        # ------------------------------------------------------------------
+        n_dof     = 3 * n_active
+        H_partial = np.zeros((n_dof, n_dof))
+
+        for ci, atom_i in enumerate(active_indices):
+            for cart_i in range(3):
+                col   = 3 * ci + cart_i
+                df    = forces_plus[(atom_i, cart_i)] - forces_minus[(atom_i, cart_i)]
+                # Extract rows for active atoms only
+                df_active          = df[active_indices]   # (n_active, 3)
+                H_partial[:, col]  = -df_active.ravel() / (2.0 * delta)
+
+        H_partial = 0.5 * (H_partial + H_partial.T)   # symmetrise
+
+        # ------------------------------------------------------------------
+        # Dynamical matrix  D = H / sqrt(m_i * m_j)
+        # ------------------------------------------------------------------
+        masses      = self.atoms.get_masses()
+        act_masses  = masses[active_indices]            # (n_active,)
+        mass_vec    = np.repeat(act_masses, 3)          # (n_dof,)
+        D           = H_partial / np.sqrt(np.outer(mass_vec, mass_vec))
+
+        eigenvalues, eigenvectors = np.linalg.eigh(D)
+
+        # ------------------------------------------------------------------
+        # Convert eigenvalues (eV / amu / Å²) → THz
+        # ------------------------------------------------------------------
+        freqs_thz = []
+        for ev in eigenvalues:
+            if ev >= 0.0:
+                freqs_thz.append(float(np.sqrt(ev) * _EV_PER_AMU_ANG2_TO_THZ))
+            else:
+                freqs_thz.append(float(-np.sqrt(-ev) * _EV_PER_AMU_ANG2_TO_THZ))
+
+        # ------------------------------------------------------------------
+        # Expand eigenvectors to full 3N space (zero-pad inactive atoms)
+        # ------------------------------------------------------------------
+        N_total  = n_atoms
+        n_modes  = len(eigenvalues)
+        eigs     = np.zeros((3 * N_total, n_modes))
+        for mode_i in range(n_modes):
+            mode_active              = eigenvectors[:, mode_i].reshape(n_active, 3)
+            mode_full                = np.zeros((N_total, 3))
+            for ai, gi in enumerate(active_indices):
+                mode_full[gi]        = mode_active[ai]
+            eigs[:, mode_i]          = mode_full.ravel()
+
+        if not save_cache:
+            self._robust_rmtree(cache_dir)
+        else:
+            self.logger.info(
+                f"  [VibAnalyzer] Dump cache preserved at: {os.path.abspath(cache_dir)}"
+                f"  ({2 * n_active * 3 + 1} dump files + types.map)"
+            )
+
+        return freqs_thz, eigs
 
     def _robust_rmtree(self, path):
         """Robustly remove a directory, retrying on failure (common on Windows)."""

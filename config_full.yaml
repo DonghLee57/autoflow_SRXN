@@ -706,7 +706,39 @@ analysis:
 
     frozen_z_ang:      3.0       # Exclude atoms below this relative height (A).
     
-    # Control displacement cache behavior:
+    # --- Cache format --------------------------------------------------------
+    # cache_format: null (default) | "lammps_dump"
+    #
+    #   null  (default)
+    #     Uses ASE Vibrations' built-in JSON cache.  Each displaced configuration
+    #     is stored as a small JSON file in the *name* directory and deleted
+    #     (or kept, see save_cache) after the run.
+    #
+    #   "lammps_dump"
+    #     Runs a custom finite-difference loop.  Every displaced configuration
+    #     is saved as a LAMMPS custom dump file:
+    #       {name}/ref.dump                  — undisplaced reference
+    #       {name}/disp.{atom:04d}.{x|y|z}.{p|m}.dump  — ±δ per DOF
+    #       {name}/types.map                 — integer type → element mapping
+    #     Columns: id  type  x  y  z  fx  fy  fz
+    #     Positions in Å; forces in eV/Å (ASE native).
+    #     Both orthogonal and triclinic cells are supported.
+    #
+    #     These files can be fed directly to phonolammps or a custom phonopy
+    #     workflow to compute force constants independently for comparison.
+    #
+    #     Fast restart: if overwrite is false and a dump file already exists it
+    #     is reused without a new MLIP evaluation.
+    cache_format:      null
+
+    # save_cache: false (default) | true
+    #   false -> delete the cache directory after analysis (original behaviour).
+    #   true  -> preserve the cache directory for post-processing.
+    #            Particularly useful with cache_format: "lammps_dump" to keep
+    #            the dump files for phonopy comparison.
+    save_cache:        false
+
+    # overwrite: true | false (default: true)
     # true  -> Re-calculate all displacements (deletes existing cache).
     # false -> Resume from existing cache if available (fast restart).
     overwrite:         true
