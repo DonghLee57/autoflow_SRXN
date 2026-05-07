@@ -686,14 +686,24 @@ analysis:
 
   vibrational:                   # [REQUIRES POTENTIAL]
     displacement_ang:  0.01      # Finite-difference step for Hessian construction (A).
-    
+
     # --- PHVA (Partial Hessian Vibrational Analysis) Logic ---
     # The analyzer intelligently decides the calculation scope based on these params:
     # 1. If both are null -> FHVA (Full Hessian, all atoms active).
     # 2. If phva_radius_ang is set -> Include precursor + substrate atoms within radius (A).
     # 3. If frozen_z_ang is set -> Exclude bottom substrate atoms below z_min + threshold (A).
     #    This is particularly useful to remove noisy imaginary modes from fixed slab parts.
-    phva_radius_ang:   6.0       # Neighborhood radius around precursor (A).
+    phva_radius_ang:   6.0       # Neighborhood radius around the focal atom(s) (A).
+
+    # center: Focal atom for the phva_radius_ang sphere.
+    #   null (default)    -> all adsorbate atoms used as centres (union of spheres)
+    #   element symbol    -> adsorbate atoms of that element, e.g. "Si"
+    #                        (all matching atoms used; their spheres are unioned)
+    #   integer           -> one specific atom by its absolute index in the structure
+    #   "com"             -> adsorbate center-of-mass used as a virtual focal point;
+    #                        all system atoms within phva_radius_ang of the COM are included
+    center:            "Si"      # e.g. central reactive atom of the precursor
+
     frozen_z_ang:      3.0       # Exclude atoms below this relative height (A).
     
     # Control displacement cache behavior:

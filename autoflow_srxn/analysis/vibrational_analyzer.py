@@ -14,6 +14,52 @@ from ..utils.logger_utils import get_workflow_logger
 from ..simulation.qpoint_handler import QPointParser
 
 
+def _resolve_phva_center(atoms, ads_idx, center_cfg):
+    """Resolve which adsorbate atom index/indices to use as the focal point(s)
+    for the ``phva_radius_ang`` sphere.
+
+    Parameters
+    ----------
+    atoms       : ASE Atoms
+    ads_idx     : list/set of int — adsorbate atom indices
+    center_cfg  : str | int | None
+        None / ``"adsorbate"``  → all adsorbate atoms (default, backward-compat)
+        element symbol str      → adsorbate atoms whose element matches, e.g. ``"Si"``
+        int                     → one specific atom by its absolute index in *atoms*
+        ``"com"``               → return ``None`` as a sentinel; caller uses COM-based
+                                  distance instead of a neighbour-list
+
+    Returns
+    -------
+    list[int] | None
+        Atom indices to use as focal centres, or ``None`` signalling COM mode.
+    """
+    ads_list = list(ads_idx)
+
+    if center_cfg is None or str(center_cfg).lower() in ("adsorbate", "all"):
+        return ads_list
+
+    if str(center_cfg).lower() == "com":
+        return None  # handled separately in caller
+
+    # Integer index (passed directly or as a string)
+    if isinstance(center_cfg, int):
+        return [center_cfg]
+    try:
+        return [int(center_cfg)]
+    except (ValueError, TypeError):
+        pass
+
+    # Element symbol: filter adsorbate atoms to the matching element
+    symbols = atoms.get_chemical_symbols()
+    matched = [i for i in ads_list if symbols[i] == str(center_cfg)]
+    if matched:
+        return matched
+
+    # Element not found — fall back to all adsorbate atoms (warn in caller)
+    return None
+
+
 class VibrationalAnalyzer:
     """Handles vibrational frequency analysis using ASE Vibrations (supporting PHVA)
     or Phonopy.
@@ -77,15 +123,50 @@ class VibrationalAnalyzer:
             _, ads_idx = identify_protectors(self.atoms, config)
 
             if len(ads_idx) > 0:
-                from ase.neighborlist import neighbor_list
+                center_cfg = vib_cfg.get("center", None)
+                center_atom_indices = _resolve_phva_center(self.atoms, ads_idx, center_cfg)
 
-                # Build neighborhood around precursor
-                i_list, j_list = neighbor_list("ij", self.atoms, radius)
-                neighbor_set = set()
-                for a_idx in ads_idx:
-                    neighbor_set.update(j_list[i_list == a_idx])
+                if center_atom_indices is None and str(center_cfg).lower() == "com":
+                    # COM mode: include all atoms within radius of the adsorbate COM
+                    ads_pos = self.atoms.positions[list(ads_idx)]
+                    com = ads_pos.mean(axis=0)
+                    dists = np.linalg.norm(self.atoms.positions - com, axis=1)
+                    neighbor_set = set(int(i) for i in np.where(dists < radius)[0])
+                    self.logger.info(
+                        f"  [VibAnalyzer] PHVA center=com  "
+                        f"({len(neighbor_set)} atoms within {radius} Å of adsorbate COM)"
+                    )
+                elif center_atom_indices is None:
+                    # _resolve_phva_center returned None because element not found
+                    self.logger.warning(
+                        f"  [VibAnalyzer] PHVA center='{center_cfg}' not found in adsorbate "
+                        f"({[self.atoms.symbols[i] for i in ads_idx]}). "
+                        f"Falling back to all adsorbate atoms."
+                    )
+                    center_atom_indices = list(ads_idx)
+                    from ase.neighborlist import neighbor_list
+                    i_list, j_list = neighbor_list("ij", self.atoms, radius)
+                    neighbor_set = set()
+                    for a_idx in center_atom_indices:
+                        neighbor_set.update(int(j) for j in j_list[i_list == a_idx])
+                else:
+                    from ase.neighborlist import neighbor_list
+                    i_list, j_list = neighbor_list("ij", self.atoms, radius)
+                    neighbor_set = set()
+                    for a_idx in center_atom_indices:
+                        neighbor_set.update(int(j) for j in j_list[i_list == a_idx])
+                    symbols = self.atoms.get_chemical_symbols()
+                    center_desc = (
+                        f"atom {center_atom_indices[0]} ({symbols[center_atom_indices[0]]})"
+                        if len(center_atom_indices) == 1
+                        else f"{len(center_atom_indices)} '{center_cfg}' atoms"
+                    )
+                    self.logger.info(
+                        f"  [VibAnalyzer] PHVA center={center_desc}  "
+                        f"({len(neighbor_set)} substrate atoms within {radius} Å)"
+                    )
 
-                # Combine precursor + its neighbors within radius,
+                # Combine adsorbate + radius-selected neighbors,
                 # then intersect with non-frozen indices
                 phva_set = set(ads_idx) | neighbor_set
                 indices_set &= phva_set
