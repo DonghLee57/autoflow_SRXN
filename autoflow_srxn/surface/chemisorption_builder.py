@@ -7,6 +7,11 @@ from ase import Atoms
 from .ads_workflow_mgr import AdsorptionWorkflowManager
 from ..utils.knowledge_engine import chem_kb
 
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+    _tqdm = None
+
 
 def _bond_length_to_h(symbol: str) -> float:
     """Returns the X-H bond length (A) used for byproduct/passivation placement."""
@@ -332,7 +337,11 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
 
-        for s in sites:
+        site_iter = (
+            _tqdm(sites, desc="[Chem] single sites", unit="site", leave=True, dynamic_ncols=True)
+            if _tqdm else sites
+        )
+        for s in site_iter:
             si_pos = s["pos"]
             h_vec_norm = s["db_vector"]
 
@@ -414,7 +423,11 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
 
-        for s1, s2 in pairs:
+        pair_iter = (
+            _tqdm(pairs, desc="[Chem] dissociation pairs", unit="pair", leave=True, dynamic_ncols=True)
+            if _tqdm else pairs
+        )
+        for s1, s2 in pair_iter:
             best_pose = None
             best_clearance = -np.inf
 
@@ -513,7 +526,11 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
         frag_a = molecule[indices_a]
         binding_idx_a = indices_a.index(c_idx)
 
-        for s in exchange_sites:
+        exchange_iter = (
+            _tqdm(exchange_sites, desc="[Chem] exchange sites", unit="site", leave=True, dynamic_ncols=True)
+            if _tqdm else exchange_sites
+        )
+        for s in exchange_iter:
             backbone_pos = s["pos"]
             h_vec_norm = s["db_vector"]  # points AWAY from surface
 

@@ -10,6 +10,9 @@ spglib
 rdkit
 pyyaml
 
+# Progress display
+tqdm
+
 # MLIP Backends (Optional - install via pip install .[mlip])
 # torch
 # mace-torch

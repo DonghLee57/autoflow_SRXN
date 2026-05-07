@@ -10,6 +10,11 @@ from ..utils.knowledge_engine import chem_kb
 from ..utils.logger_utils import get_workflow_logger
 from .surface_utils import calculate_haptic_normal, calculate_haptic_vbs
 
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+    _tqdm = None
+
 
 class AdsorptionWorkflowManager:
     """Generalized Adsorption Manager with Mechanistic Logging and Visual Clarity."""
@@ -587,12 +592,28 @@ class AdsorptionWorkflowManager:
         candidates = []
         stats = {"total": 0, "overlap": 0, "dedup": 0}
 
-        for target_pos in target_centers:
+        site_iter = (
+            _tqdm(target_centers, desc="[Physi] sites", unit="site", leave=True, dynamic_ncols=True)
+            if _tqdm else target_centers
+        )
+
+        for site_idx, target_pos in enumerate(site_iter):
             target_xy = target_pos[:2]
             site_candidates = []
             site_rel_poses = []  # within-site orientation dedup registry
 
-            for m_pose in sampled_poses:
+            orient_iter = (
+                _tqdm(
+                    sampled_poses,
+                    desc=f"  site {site_idx + 1}/{len(target_centers)} orientations",
+                    unit="rot",
+                    leave=False,
+                    dynamic_ncols=True,
+                )
+                if _tqdm else sampled_poses
+            )
+
+            for m_pose in orient_iter:
                 stats["total"] += 1
 
                 # height_mode: compute nominal rotation-center Z for this orientation

@@ -12,6 +12,25 @@ from ase.optimize.sciopt import SciPyFminCG
 from ..utils.knowledge_engine import chem_kb
 from ..utils.logger_utils import get_workflow_logger
 
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+    _tqdm = None
+
+
+def _step_bar(total: int, desc: str):
+    """Return a tqdm progress bar for simulation steps, or *None* when tqdm is unavailable."""
+    if _tqdm is None:
+        return None
+    return _tqdm(
+        total=total,
+        desc=desc,
+        unit="step",
+        leave=False,
+        dynamic_ncols=True,
+        bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+    )
+
 
 class ZBLCalculator(Calculator):
     """Ziegler-Biersack-Littmark (ZBL) screened Coulomb repulsion.
@@ -453,6 +472,7 @@ class SimulationEngine:
         logger = get_workflow_logger()
         monitor = ExplosionMonitor(atoms, logger=logger)
 
+        pbars = []
         try:
             if optimizer.upper() == "CG_FIRE":
                 fmax_cg = max(fmax * 10, 0.05)
@@ -460,27 +480,46 @@ class SimulationEngine:
                     print(f"  [Relax] Stage 1: SciPyFminCG (fmax={fmax_cg})")
                 dyn_cg = SciPyFminCG(atoms, logfile=sys.stdout if verbose else None)
                 dyn_cg.attach(monitor)
+                pb_cg = _step_bar(steps // 2, "  [Relax] CG")
+                if pb_cg:
+                    pbars.append(pb_cg)
+                    dyn_cg.attach(lambda _p=pb_cg: _p.update(1))
                 dyn_cg.run(fmax=fmax_cg, steps=steps // 2)
                 if verbose:
                     print(f"  [Relax] Stage 2: FIRE (fmax={fmax})")
                 dyn_fire = FIRE(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
                 dyn_fire.attach(monitor)
+                pb_fire = _step_bar(steps, "  [Relax] FIRE")
+                if pb_fire:
+                    pbars.append(pb_fire)
+                    dyn_fire.attach(lambda _p=pb_fire: _p.update(1))
                 dyn_fire.run(fmax=fmax, steps=steps)
             elif optimizer.upper() == "GPMIN":
                 dyn = GPMin(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
                 dyn.attach(monitor)
+                pb = _step_bar(steps, "  [Relax] GPMin")
+                if pb:
+                    pbars.append(pb)
+                    dyn.attach(lambda _p=pb: _p.update(1))
                 dyn.run(fmax=fmax, steps=steps)
             else:
                 opt_map = {"BFGS": BFGS, "FIRE": FIRE, "LBFGS": LBFGS}
                 opt_class = opt_map.get(optimizer.upper(), BFGS)
                 dyn = opt_class(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
                 dyn.attach(monitor)
+                pb = _step_bar(steps, f"  [Relax] {optimizer.upper()}")
+                if pb:
+                    pbars.append(pb)
+                    dyn.attach(lambda _p=pb: _p.update(1))
                 dyn.run(fmax=fmax, steps=steps)
         except RuntimeError as e:
             if "ExplosionDetector" in str(e):
                 if verbose: print(f"  [Relax] Halted: {e}")
             else:
                 raise e
+        finally:
+            for pb in pbars:
+                pb.close()
 
         return atoms.get_potential_energy()
 
@@ -525,7 +564,11 @@ class SimulationEngine:
         logger = get_workflow_logger()
         monitor = ExplosionMonitor(atoms, logger=logger)
         dyn.attach(monitor)
-        
+
+        pb_md = _step_bar(md_steps, f"  [MD] Langevin {temp_K:.0f}K")
+        if pb_md:
+            dyn.attach(lambda _p=pb_md: _p.update(1))
+
         try:
             dyn.run(md_steps)
         except RuntimeError as e:
@@ -533,6 +576,9 @@ class SimulationEngine:
                 print(f"  [MD] Halted: {e}")
             else:
                 raise e
+        finally:
+            if pb_md:
+                pb_md.close()
 
     def get_forces(self, atoms):
         calc = self.get_calculator()

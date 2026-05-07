@@ -6,6 +6,11 @@ import numpy as np
 from ase.io import read, write
 from ase import Atoms
 
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+    _tqdm = None
+
 from autoflow_srxn.surface.ads_workflow_mgr import AdsorptionWorkflowManager
 from autoflow_srxn.surface.chemisorption_builder import build_chemisorption_structures
 from autoflow_srxn.utils.logger_utils import log_energy_comparison, log_results_table, log_stage_title, setup_logger
@@ -210,7 +215,19 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     processed_cands = []
     summary_data    = []
 
-    for i, atoms in enumerate(candidates):
+    cand_iter = (
+        _tqdm(
+            enumerate(candidates),
+            total=len(candidates),
+            desc="[Verification] candidates",
+            unit="struct",
+            leave=True,
+            dynamic_ncols=True,
+        )
+        if _tqdm else enumerate(candidates)
+    )
+
+    for i, atoms in cand_iter:
         if sel_idx is not None and i not in sel_idx:
             continue
 
