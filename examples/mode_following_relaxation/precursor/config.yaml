@@ -1,0 +1,45 @@
+# Mode-following relaxation — isolated DIPAS precursor molecule
+# ---------------------------------------------------------------
+# Input : single DIPAS molecule (gas-phase / isolated)
+# Goal  : confirm true local minimum (no imaginary modes)
+# Method: FHVA (full Hessian — molecule is small, all atoms active)
+
+paths:
+  precursor:     "../../../structures/DIPAS.vasp"   # molecule → will be centered in vacuum
+  output_prefix: "results/dipas"
+
+engine:
+  potential:
+    backend: "mace"
+    model:   null          # null -> MACE-MP medium
+    device:  "cpu"
+    dtype:   "float32"    # float32 sufficient for small molecule
+
+  relaxation:
+    optimizer: "FIRE"
+    fmax:      0.001
+    steps:     500
+
+analysis:
+  vibrational:
+    name:             "results/vib"
+    displacement_ang: 0.005
+    phva:
+      enabled: false    # Full Hessian — molecule has only 27 atoms
+
+    mode_refinement:
+      enabled:            true
+      max_iter:           5
+      fmax:               0.001
+      steps:              500
+      freq_threshold_thz: -0.1
+      max_modes:          3
+      perturbation_alpha: 0.5
+      max_displacement:   1.0
+      stagnation_factor:  0.5
+      stagnation_epsilon: 0.05
+
+    visualization:
+      enabled:     true
+      n_frames:    10
+      output_traj: "results/relaxation.extxyz"

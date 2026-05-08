@@ -1,0 +1,47 @@
+# Mode-following relaxation — DIPAS adsorbed on SiO2 slab
+# ---------------------------------------------------------
+# Input : relaxed physisorption geometry (DIPAS / SiO2, 277 atoms)
+# Goal  : resolve imaginary modes in the PHVA active region
+# Method: PHVA with frozen_z_ang = 5.5 A (178 active / 99 frozen atoms)
+#         FixAtoms applied to frozen zone during all relaxation steps.
+
+paths:
+  input_structure: "../../physisorption_vibration/dipas_sio2_relaxed.vasp"
+  output_prefix:   "results/dipas_sio2"
+
+engine:
+  potential:
+    backend: "mace"
+    model:   null          # null -> MACE-MP medium
+    device:  "cpu"
+    dtype:   "float64"    # float64 for periodic slab
+
+  relaxation:
+    optimizer: "FIRE"
+    fmax:      0.01        # looser for slab (many near-zero substrate modes)
+    steps:     300
+
+analysis:
+  vibrational:
+    name:             "results/vib"
+    displacement_ang: 0.01
+    phva:
+      enabled:      true
+      frozen_z_ang: 5.5    # freeze bottom ~99 atoms; 178 atoms active
+
+    mode_refinement:
+      enabled:            true
+      max_iter:           3
+      fmax:               0.01
+      steps:              300
+      freq_threshold_thz: -0.5   # threshold; near-zero acoustic modes (-0.5..0) are numerical
+      max_modes:          3
+      perturbation_alpha: 0.2
+      max_displacement:   0.5
+      stagnation_factor:  0.5
+      stagnation_epsilon: 0.1
+
+    visualization:
+      enabled:     true
+      n_frames:    10
+      output_traj: "results/relaxation.extxyz"
