@@ -198,11 +198,14 @@ def fig2_mac_heatmap(result: ModeComparisonResult, out_dir: str):
     mat_show = mat_sorted[::step_p, ::step_f]
 
     fig, ax = plt.subplots(figsize=(8, 6.5))
+    cmap_hm = cm.RdYlGn          # consistent with other figures
     im = ax.imshow(
         mat_show, aspect="auto", origin="upper",
-        cmap="hot", vmin=0, vmax=1,
+        cmap=cmap_hm, vmin=0, vmax=1,
         interpolation="nearest",
     )
+
+    # Colorbar — same colormap as heatmap
     cb = fig.colorbar(im, ax=ax, pad=0.02, fraction=0.035)
     cb.set_label("MAC score", fontsize=10)
 
@@ -217,11 +220,14 @@ def fig2_mac_heatmap(result: ModeComparisonResult, out_dir: str):
         yr = phva_rank_of[pi] // step_p
         xr = fhva_rank_of[fi] // step_f
         xs.append(xr); ys.append(yr)
-    ax.scatter(xs, ys, s=6, c="cyan", alpha=0.5, zorder=4, label="Best match")
+    ax.scatter(xs, ys, s=6, c="cyan", alpha=0.6, zorder=4, label="Best match")
 
-    ax.set_xlabel("FHVA mode index (freq↓)", fontsize=11)
+    # FHVA axis on top
+    ax.xaxis.set_label_position("top")
+    ax.xaxis.tick_top()
+    ax.set_xlabel("FHVA mode index (freq↓)", fontsize=11, labelpad=8)
     ax.set_ylabel("PHVA mode index (freq↓)", fontsize=11)
-    ax.set_title("Raw MAC Matrix  (PHVA × FHVA)", fontsize=12, fontweight="bold")
+    ax.set_title("Raw MAC Matrix  (PHVA × FHVA)", fontsize=12, fontweight="bold", pad=40)
     ax.tick_params(labelsize=8)
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
@@ -279,11 +285,12 @@ def fig3_residuals(result: ModeComparisonResult, out_dir: str):
     )
     ax.legend(fontsize=9)
 
-    cb = fig.colorbar(sc, ax=axes, pad=0.02, fraction=0.02)
-    cb.set_label("MAC score", fontsize=10)
-
     fig.suptitle("PHVA Frequency Accuracy vs FHVA Reference", fontsize=13, fontweight="bold")
-    fig.tight_layout()
+    # Leave room on the right for the colorbar, then place it in a dedicated axes
+    fig.tight_layout(rect=[0, 0, 0.90, 0.95])
+    cax = fig.add_axes([0.91, 0.12, 0.014, 0.70])
+    cb = fig.colorbar(sc, cax=cax)
+    cb.set_label("MAC score", fontsize=10)
     _save(fig, "fig3_residuals.png")
 
 
