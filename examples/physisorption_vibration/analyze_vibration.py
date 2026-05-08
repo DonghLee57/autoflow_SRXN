@@ -651,7 +651,7 @@ def main():
     # Run MAC-based comparison
     # ----------------------------------------------------------------
     print(f"Comparing:\n  FHVA: {FHVA_YAML}\n  PHVA: {PHVA_YAML}\n")
-    result = compare_phva_fhva(FHVA_YAML, PHVA_YAML)
+    result = compare_phva_fhva(PHVA_YAML, FHVA_YAML)
     result.print_summary(mac_threshold=MAC_THRESHOLD, top_atoms=4, symbols=symbols, max_rows=30)
 
     # ----------------------------------------------------------------

@@ -82,7 +82,7 @@ def run_one(config_path: str, overwrite: bool = False) -> None:
     struct_path = _resolve_structure(config, config_path)
     atoms = read(struct_path)
     logger.info(f"[{label}] Config  : {os.path.relpath(config_path)}")
-    logger.info(f"[{label}] Structure: {os.path.relpath(struct_path)} — {len(atoms)} atoms")
+    logger.info(f"[{label}] Structure: {os.path.relpath(struct_path)} - {len(atoms)} atoms")
 
     # ----------------------------------------------------------------
     # Estimate active atoms before running
