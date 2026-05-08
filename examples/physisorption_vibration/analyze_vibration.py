@@ -48,7 +48,7 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from ase.io import read as ase_read
-from autoflow_srxn.analysis.mode_participation_analyzer import (
+from autoflow_srxn.vibrational.mode_participation_analyzer import (
     compare_phva_fhva,
     analyze_single,
     ModeComparisonResult,
@@ -373,7 +373,7 @@ def fig5_localization_spectrum(result: ModeComparisonResult, out_dir: str):
     phva_data = result.phva
     matched   = result.matched
 
-    from autoflow_srxn.analysis.mode_participation_analyzer import atomic_participation, ipr
+    from autoflow_srxn.vibrational.mode_participation_analyzer import atomic_participation, ipr
 
     # Compute IPR for every FHVA and PHVA mode (all modes, not just matched)
     fhva_freqs = fhva_data.freqs_thz

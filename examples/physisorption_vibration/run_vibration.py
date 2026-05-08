@@ -26,7 +26,7 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from autoflow_srxn.simulation.potentials import SimulationEngine
-from autoflow_srxn.analysis.vibrational_analyzer import VibrationalAnalyzer
+from autoflow_srxn.vibrational.vibrational_analyzer import VibrationalAnalyzer
 from autoflow_srxn.utils.logger_utils import setup_logger
 
 

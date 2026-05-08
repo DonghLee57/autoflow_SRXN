@@ -51,8 +51,8 @@ from .simulation.thermo_engine import (
 )
 from .simulation.qpoint_handler import QPointParser
 
-# analysis
-from .analysis.vibrational_analyzer import (
+# vibrational
+from .vibrational.vibrational_analyzer import (
     VibrationalAnalyzer,
     MultiModeFollower,
     GradientFlippingCalculator,
@@ -63,3 +63,4 @@ from .analysis.vibrational_analyzer import (
     calculate_mac,
     calculate_atomic_participation,
 )
+from .vibrational.mode_following import run_mode_following

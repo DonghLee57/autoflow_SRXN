@@ -14,7 +14,7 @@ from ase.io import read
 
 from autoflow_srxn.utils.logger_utils import setup_logger
 from autoflow_srxn.simulation.potentials import SimulationEngine
-from autoflow_srxn.analysis.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
+from autoflow_srxn.vibrational.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
 
 
 def run_enhanced_phonon_refinement(config_path="config.yaml", displacement=None):
