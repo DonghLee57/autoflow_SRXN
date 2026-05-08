@@ -1,5 +1,5 @@
 """
-autoflow_srxn/analysis/mode_participation_analyzer.py
+autoflow_srxn/vibrational/mode_participation_analyzer.py
 =======================================================
 Physical comparison of vibrational modes between PHVA and FHVA calculations,
 or analysis of a single qpoints.yaml.
@@ -39,14 +39,14 @@ Typical usage
 -------------
 Single-file analysis (P_j + IPR for every mode)::
 
-    from autoflow_srxn.analysis.mode_participation_analyzer import analyze_single
+    from autoflow_srxn.vibrational.mode_participation_analyzer import analyze_single
     report = analyze_single("run/qpoints.yaml")
     report.print_summary(top_atoms=3)
     report.save_csv("participation.csv")
 
 PHVA vs FHVA comparison::
 
-    from autoflow_srxn.analysis.mode_participation_analyzer import compare_phva_fhva
+    from autoflow_srxn.vibrational.mode_participation_analyzer import compare_phva_fhva
     result = compare_phva_fhva("run_phva/qpoints.yaml", "run_fhva/qpoints.yaml")
     result.print_summary(mac_threshold=0.6)
     result.save_csv("mode_pairs.csv")

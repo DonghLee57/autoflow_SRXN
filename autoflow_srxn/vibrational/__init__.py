@@ -1,3 +1,4 @@
+from .mode_following import run_mode_following
 from .vibrational_analyzer import (
     VibrationalAnalyzer,
     MultiModeFollower,
@@ -25,6 +26,8 @@ from .mode_participation_analyzer import (
 )
 
 __all__ = [
+    # mode_following
+    "run_mode_following",
     # vibrational_analyzer
     "VibrationalAnalyzer",
     "MultiModeFollower",
