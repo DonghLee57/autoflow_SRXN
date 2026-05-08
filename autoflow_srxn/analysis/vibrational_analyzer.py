@@ -131,9 +131,23 @@ class VibrationalAnalyzer:
 
         # 2. If radius is set, focus on precursor + neighbors
         if radius is not None:
-            from ..surface.surface_utils import identify_protectors
-
-            _, ads_idx = identify_protectors(self.atoms, config)
+            # --- Resolve adsorbate indices ---
+            # Priority 1: explicit z-threshold in vibrational config
+            ads_z_min = vib_cfg.get("adsorbate_z_min_ang")
+            if ads_z_min is not None:
+                ads_idx = set(
+                    int(i) for i, z in enumerate(self.atoms.positions[:, 2])
+                    if z >= float(ads_z_min)
+                )
+                self.logger.info(
+                    f"  [VibAnalyzer] Adsorbate via adsorbate_z_min_ang={ads_z_min} Å: "
+                    f"{len(ads_idx)} atoms"
+                )
+            else:
+                # Priority 2: tag-based / protector-species detection
+                from ..surface.surface_utils import identify_protectors
+                _, ads_idx_arr = identify_protectors(self.atoms, config)
+                ads_idx = set(ads_idx_arr.tolist())
 
             if len(ads_idx) > 0:
                 center_cfg = vib_cfg.get("center", None)

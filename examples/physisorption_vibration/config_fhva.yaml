@@ -1,13 +1,17 @@
 paths:
   input_structure: "dipas_sio2_relaxed.vasp"
+
 engine:
   potential:
     backend: "mace"
+    model:   "medium"
     device:  "cpu"
     dtype:   "float64"
 
 analysis:
   vibrational:
-    name: "results/fhva"
-    displacement_ang: 0.01
-    phva_radius_ang:  null  # Force Full Hessian
+    name:              "results/fhva"
+    displacement_ang:  0.01
+    phva_radius_ang:   null          # Full Hessian — no radius restriction
+    frozen_z_ang:      5.5           # Freeze bottom 5.5 Å (= ~99 atoms)
+    save_cache:        false
