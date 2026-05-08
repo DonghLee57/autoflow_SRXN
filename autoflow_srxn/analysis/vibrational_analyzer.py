@@ -323,110 +323,126 @@ class VibrationalAnalyzer:
     # Private: LAMMPS dump backend
     # ------------------------------------------------------------------
 
-    def _build_type_map(self, atoms) -> dict:
-        """Return element-symbol → LAMMPS integer type mapping (alphabetical)."""
-        unique = sorted(set(atoms.get_chemical_symbols()))
-        return {elem: i + 1 for i, elem in enumerate(unique)}
+    @staticmethod
+    def _specorder(atoms) -> list:
+        """Alphabetically sorted unique element list — the LAMMPS specorder.
 
-    def _write_lammps_dump(self, filepath: str, atoms, forces: np.ndarray, timestep: int = 0) -> None:
-        """Write one LAMMPS custom dump snapshot with columns id type x y z fx fy fz.
-
-        Supports both orthogonal and triclinic cells. Positions are Cartesian (Å);
-        forces are in eV/Å (ASE native units — noted in the file header comment).
+        Type index in the dump file = position in this list + 1.
+        Consistent with ``ase.io.lammpsdata.write_lammps_data`` convention.
         """
-        type_map = self._build_type_map(atoms)
+        return sorted(set(atoms.get_chemical_symbols()))
+
+    def _write_lammps_dump(
+        self,
+        filepath: str,
+        atoms,
+        forces: np.ndarray,
+        timestep: int = 0,
+        specorder: list = None,
+    ) -> None:
+        """Write one LAMMPS custom dump snapshot: id type x y z fx fy fz.
+
+        Cell → LAMMPS box conversion is delegated to ``ase.io.lammpsdata.Prism``
+        (handles both orthogonal and triclinic cells).  Positions are transformed
+        with ``Prism.vector_to_lammps()`` to match the LAMMPS coordinate frame.
+        Forces are written in ASE native units (eV/Å); positions in Å.
+
+        Parameters
+        ----------
+        specorder : list, optional
+            Element ordering that defines the type integers (type 1 = specorder[0],
+            type 2 = specorder[1], …).  Falls back to alphabetical if omitted.
+        """
+        from ase.io.lammpsdata import Prism
+        from ase.calculators.singlepoint import SinglePointCalculator
+
+        if specorder is None:
+            specorder = self._specorder(atoms)
+        type_of  = {elem: i + 1 for i, elem in enumerate(specorder)}
         symbols  = atoms.get_chemical_symbols()
-        pos      = atoms.get_positions()
-        cell     = atoms.get_cell()
 
-        # --- Convert ASE cell to LAMMPS box parameters -----------------------
-        # LAMMPS convention: a = (ax,0,0), b = (bx,by,0), c = (cx,cy,cz)
-        a_vec = cell[0]
-        b_vec = cell[1]
-        c_vec = cell[2]
+        # Attach forces so the Atoms object carries them (good ASE practice)
+        atoms_wr = atoms.copy()
+        atoms_wr.calc = SinglePointCalculator(atoms_wr, forces=forces, energy=0.0)
 
-        ax = float(np.linalg.norm(a_vec))
-        bx = float(np.dot(b_vec, a_vec / ax))
-        by = float(np.sqrt(max(np.dot(b_vec, b_vec) - bx ** 2, 0.0)))
-        cx = float(np.dot(c_vec, a_vec / ax))
-        cy = float((np.dot(b_vec, c_vec) - bx * cx) / by) if by > 1e-12 else 0.0
-        cz = float(np.sqrt(max(np.dot(c_vec, c_vec) - cx ** 2 - cy ** 2, 0.0)))
+        prism    = Prism(atoms_wr.cell, atoms_wr.pbc)
+        lp       = prism.get_lammps_prism()   # [xhi, yhi, zhi, xy, xz, yz]
+        xhi, yhi, zhi, xy, xz, yz = lp
 
-        xy, xz, yz = bx, cx, cy
-        is_ortho   = abs(xy) < 1e-10 and abs(xz) < 1e-10 and abs(yz) < 1e-10
+        # Transform all positions to the LAMMPS frame
+        pos_lammps = np.array(
+            [prism.vector_to_lammps(p) for p in atoms_wr.get_positions()]
+        )
 
-        with open(filepath, "w") as f:
-            # Standard LAMMPS dump format: ITEM: TIMESTEP must be the first line.
-            # Unit metadata (eV/Ang, Ang) is recorded in types.map in the same dir.
-            f.write(f"ITEM: TIMESTEP\n{timestep}\n")
-            f.write(f"ITEM: NUMBER OF ATOMS\n{len(atoms)}\n")
-            if is_ortho:
-                f.write("ITEM: BOX BOUNDS pp pp pp\n")
-                f.write(f"{0.0:.10f} {ax:.10f}\n")
-                f.write(f"{0.0:.10f} {by:.10f}\n")
-                f.write(f"{0.0:.10f} {cz:.10f}\n")
+        with open(filepath, "w") as fout:
+            fout.write(f"ITEM: TIMESTEP\n{timestep}\n")
+            fout.write(f"ITEM: NUMBER OF ATOMS\n{len(atoms_wr)}\n")
+            if prism.is_skewed():
+                fout.write("ITEM: BOX BOUNDS xy xz yz pp pp pp\n")
+                fout.write(f"0.0 {xhi:.10f} {xy:.10f}\n")
+                fout.write(f"0.0 {yhi:.10f} {xz:.10f}\n")
+                fout.write(f"0.0 {zhi:.10f} {yz:.10f}\n")
             else:
-                f.write("ITEM: BOX BOUNDS xy xz yz pp pp pp\n")
-                f.write(f"{0.0:.10f} {ax:.10f} {xy:.10f}\n")
-                f.write(f"{0.0:.10f} {by:.10f} {xz:.10f}\n")
-                f.write(f"{0.0:.10f} {cz:.10f} {yz:.10f}\n")
-            f.write("ITEM: ATOMS id type x y z fx fy fz\n")
-            for i in range(len(atoms)):
-                f.write(
-                    f"{i + 1} {type_map[symbols[i]]}"
-                    f" {pos[i, 0]:.10f} {pos[i, 1]:.10f} {pos[i, 2]:.10f}"
-                    f" {forces[i, 0]:.10f} {forces[i, 1]:.10f} {forces[i, 2]:.10f}\n"
+                fout.write("ITEM: BOX BOUNDS pp pp pp\n")
+                fout.write(f"0.0 {xhi:.10f}\n")
+                fout.write(f"0.0 {yhi:.10f}\n")
+                fout.write(f"0.0 {zhi:.10f}\n")
+            fout.write("ITEM: ATOMS id type x y z fx fy fz\n")
+            for i in range(len(atoms_wr)):
+                px, py, pz = pos_lammps[i]
+                fx, fy, fz = forces[i]
+                fout.write(
+                    f"{i + 1} {type_of[symbols[i]]}"
+                    f" {px:.10f} {py:.10f} {pz:.10f}"
+                    f" {fx:.10f} {fy:.10f} {fz:.10f}\n"
                 )
 
-    def _read_lammps_dump_forces(self, filepath: str, n_atoms: int) -> np.ndarray:
-        """Read forces from a LAMMPS custom dump file.
+    def _read_lammps_dump_forces(
+        self, filepath: str, n_atoms: int, specorder: list
+    ) -> np.ndarray:
+        """Read forces from a LAMMPS custom dump file using ``ase.io.read``.
 
-        Returns ndarray of shape (n_atoms, 3) in eV/Å.
-        Column order is detected from the ``ITEM: ATOMS`` header, so both
-        forward-written files and externally generated dumps are accepted
-        provided they contain ``fx``, ``fy``, ``fz`` and ``id`` columns.
+        ASE's reader interprets the ``fx fy fz`` columns and stores the result
+        in a ``SinglePointCalculator`` attached to the returned Atoms object;
+        ``atoms.get_forces()`` retrieves them in eV/Å.
+
+        Parameters
+        ----------
+        specorder : list
+            Element ordering used when writing (type 1 = specorder[0], …).
+            Required so ASE maps integer type codes back to element symbols.
         """
-        forces = np.zeros((n_atoms, 3))
-        with open(filepath, "r") as f:
-            lines = f.readlines()
+        from ase.io import read as ase_read
 
-        # Locate ITEM: ATOMS line and parse column names
-        atoms_line = next(
-            (i for i, l in enumerate(lines) if l.startswith("ITEM: ATOMS")), None
-        )
-        if atoms_line is None:
-            raise ValueError(f"  [VibAnalyzer] No 'ITEM: ATOMS' found in {filepath}")
+        at     = ase_read(filepath, format="lammps-dump-text", specorder=specorder)
+        forces = at.get_forces()
 
-        cols   = lines[atoms_line].split()[2:]   # drop "ITEM:" "ATOMS"
-        id_c   = cols.index("id")
-        fx_c   = cols.index("fx")
-        fy_c   = cols.index("fy")
-        fz_c   = cols.index("fz")
-
-        for line in lines[atoms_line + 1:]:
-            vals = line.split()
-            if not vals or vals[0].startswith("#"):
-                continue
-            atom_id = int(vals[id_c]) - 1          # 0-indexed
-            forces[atom_id, 0] = float(vals[fx_c])
-            forces[atom_id, 1] = float(vals[fy_c])
-            forces[atom_id, 2] = float(vals[fz_c])
-
+        if len(forces) != n_atoms:
+            raise ValueError(
+                f"  [VibAnalyzer] Expected {n_atoms} atoms in {filepath}, "
+                f"got {len(forces)}"
+            )
         return forces
 
     def _run_lammps_dump_analysis(self, overwrite: bool, save_cache: bool):
         """Custom finite-difference Hessian with LAMMPS dump cache.
 
-        For every displaced configuration (±δ along each Cartesian component
-        of each active atom) forces are computed and stored as
-        ``{name}/disp.{atom:04d}.{x|y|z}.{p|m}.dump``.
+        For each displaced configuration (±δ per active atom per Cartesian
+        component) forces are computed and saved as a LAMMPS custom dump file:
+
+            {name}/disp_0000.dump   — undisplaced reference
+            {name}/disp_0001.dump   — 1st displacement (+δ on first active atom, x)
+            {name}/disp_0002.dump   — 2nd displacement (−δ on first active atom, x)
+            …
+            {name}/disp_manifest.txt — frame index → (atom, direction, ±δ) mapping
+
+        Dump files are written via ``_write_lammps_dump``, which uses ASE's
+        ``Prism`` for box/coordinate conversion and ``SinglePointCalculator``
+        to attach forces to the Atoms object before writing.  Forces are read
+        back via ``ase.io.read(..., format='lammps-dump-text', specorder=...)``.
 
         When ``overwrite=False`` an existing dump file is reused without a
-        new MLIP evaluation, enabling fast restarts of interrupted runs.
-
-        The partial Hessian is assembled from the dump files, mass-weighted to
-        form the dynamical matrix, and diagonalised to yield frequencies and
-        mode eigenvectors consistent with ASE Vibrations output.
+        new MLIP evaluation — enabling fast restarts of interrupted runs.
         """
         from pathlib import Path
 
@@ -441,71 +457,93 @@ class VibrationalAnalyzer:
         active_indices = self.indices if self.indices is not None else list(range(n_atoms))
         n_active       = len(active_indices)
         delta          = self.displacement
+        specorder      = self._specorder(self.atoms)   # e.g. ['H', 'N', 'Si']
         dir_names      = ["x", "y", "z"]
 
-        # Write metadata file: element → type mapping + unit information
-        type_map = self._build_type_map(self.atoms)
+        # ------------------------------------------------------------------
+        # Metadata file (types.map)
+        # ------------------------------------------------------------------
         with open(os.path.join(cache_dir, "types.map"), "w") as f:
-            f.write("# AutoFlow-SRXN vibrational cache metadata\n")
+            f.write("# AutoFlow-SRXN vibrational FD cache\n")
             f.write(f"# displacement_ang  {delta}\n")
             f.write(f"# n_active_atoms    {n_active}\n")
-            f.write(f"# force_units       eV/Ang\n")
+            f.write(f"# force_units       eV/Ang  (ASE native)\n")
             f.write(f"# position_units    Ang\n")
-            f.write("# LAMMPS type index -> element symbol\n")
-            f.write("# type element\n")
-            for elem, t in sorted(type_map.items(), key=lambda x: x[1]):
-                f.write(f"{t} {elem}\n")
-            f.write("\n# active atom indices (0-based)\n")
-            f.write(f"# {active_indices}\n")
+            f.write("# LAMMPS type -> element (specorder)\n")
+            for i, elem in enumerate(specorder):
+                f.write(f"{i + 1}  {elem}\n")
+            f.write(f"# active_indices  {active_indices}\n")
 
-        # Save undisplaced reference snapshot (timestep 0)
-        ref_path = os.path.join(cache_dir, "ref.dump")
+        # ------------------------------------------------------------------
+        # Reference snapshot  (disp_0000.dump, timestep 0)
+        # ------------------------------------------------------------------
+        ref_path  = os.path.join(cache_dir, "disp_0000.dump")
+        pos0      = self.atoms.get_positions().copy()
         if overwrite or not os.path.exists(ref_path):
-            pos0_ref   = self.atoms.get_positions().copy()
             ref_forces = self.atoms.get_forces()
-            self._write_lammps_dump(ref_path, self.atoms, ref_forces, timestep=0)
-            self.atoms.set_positions(pos0_ref)
+            self._write_lammps_dump(
+                ref_path, self.atoms, ref_forces, timestep=0, specorder=specorder
+            )
+            self.atoms.set_positions(pos0)
 
         # ------------------------------------------------------------------
-        # Finite-difference loop
+        # Finite-difference loop — sequential frame numbering starting at 1
         # ------------------------------------------------------------------
-        pos0         = self.atoms.get_positions().copy()
         forces_plus  = {}   # (atom_i, cart) -> ndarray(n_atoms, 3)
         forces_minus = {}
 
         n_disp     = 2 * n_active * 3
         n_computed = 0
         n_cached   = 0
-        timestep   = 1   # 0 is the reference
+        frame      = 1          # frame 0 = reference
+
+        manifest_rows = []      # collected for writing at the end
 
         for atom_i in active_indices:
             for cart in range(3):
                 dir_name = dir_names[cart]
 
-                for sign, pm_str, store in [
-                    (+1, "p", forces_plus),
-                    (-1, "m", forces_minus),
+                for sign, pm_label, store in [
+                    (+1, "+", forces_plus),
+                    (-1, "-", forces_minus),
                 ]:
-                    dump_path = os.path.join(
-                        cache_dir, f"disp.{atom_i:04d}.{dir_name}.{pm_str}.dump"
-                    )
+                    dump_path = os.path.join(cache_dir, f"disp_{frame:04d}.dump")
 
                     if not overwrite and os.path.exists(dump_path):
-                        forces = self._read_lammps_dump_forces(dump_path, n_atoms)
+                        forces = self._read_lammps_dump_forces(
+                            dump_path, n_atoms, specorder
+                        )
                         n_cached += 1
                     else:
-                        pos      = pos0.copy()
+                        pos                = pos0.copy()
                         pos[atom_i, cart] += sign * delta
                         self.atoms.set_positions(pos)
-                        forces   = self.atoms.get_forces()
-                        self._write_lammps_dump(dump_path, self.atoms, forces, timestep=timestep)
+                        forces             = self.atoms.get_forces()
+                        self._write_lammps_dump(
+                            dump_path, self.atoms, forces,
+                            timestep=frame, specorder=specorder,
+                        )
                         n_computed += 1
 
                     store[(atom_i, cart)] = forces
-                    timestep += 1
+                    manifest_rows.append(
+                        f"{frame:04d}  {atom_i:6d}  {dir_name}  {pm_label}{delta:.4f}"
+                    )
+                    frame += 1
 
-        # Restore original positions
+        # Restore undisplaced geometry
         self.atoms.set_positions(pos0)
+
+        # ------------------------------------------------------------------
+        # Displacement manifest file
+        # ------------------------------------------------------------------
+        manifest_path = os.path.join(cache_dir, "disp_manifest.txt")
+        with open(manifest_path, "w") as f:
+            f.write("# AutoFlow-SRXN displacement manifest\n")
+            f.write("# frame  atom_idx  direction  displacement_ang\n")
+            f.write("# 0000   ---       ---        reference (undisplaced)\n")
+            for row in manifest_rows:
+                f.write(row + "\n")
 
         self.logger.info(
             f"  [VibAnalyzer] FD displacements: {n_computed} computed, "
@@ -514,62 +552,60 @@ class VibrationalAnalyzer:
 
         # ------------------------------------------------------------------
         # Build partial Hessian  H[row, col]  (n_active*3 × n_active*3)
-        #   H[3*ri+rb, 3*ci+ca] = -(F_plus[ri,rb] - F_minus[ri,rb]) / (2δ)
-        #   where ci=displaced atom, ca=displaced direction,
-        #         ri=response atom, rb=response direction
         # ------------------------------------------------------------------
         n_dof     = 3 * n_active
         H_partial = np.zeros((n_dof, n_dof))
 
         for ci, atom_i in enumerate(active_indices):
             for cart_i in range(3):
-                col   = 3 * ci + cart_i
-                df    = forces_plus[(atom_i, cart_i)] - forces_minus[(atom_i, cart_i)]
-                # Extract rows for active atoms only
-                df_active          = df[active_indices]   # (n_active, 3)
+                col                = 3 * ci + cart_i
+                df                 = (forces_plus[(atom_i, cart_i)]
+                                      - forces_minus[(atom_i, cart_i)])
+                df_active          = df[active_indices]      # (n_active, 3)
                 H_partial[:, col]  = -df_active.ravel() / (2.0 * delta)
 
-        H_partial = 0.5 * (H_partial + H_partial.T)   # symmetrise
+        H_partial = 0.5 * (H_partial + H_partial.T)          # symmetrise
 
         # ------------------------------------------------------------------
-        # Dynamical matrix  D = H / sqrt(m_i * m_j)
+        # Dynamical matrix  D = H / sqrt(m_i * m_j)  →  eigenvalue problem
         # ------------------------------------------------------------------
-        masses      = self.atoms.get_masses()
-        act_masses  = masses[active_indices]            # (n_active,)
-        mass_vec    = np.repeat(act_masses, 3)          # (n_dof,)
-        D           = H_partial / np.sqrt(np.outer(mass_vec, mass_vec))
+        masses     = self.atoms.get_masses()
+        mass_vec   = np.repeat(masses[active_indices], 3)
+        D          = H_partial / np.sqrt(np.outer(mass_vec, mass_vec))
 
         eigenvalues, eigenvectors = np.linalg.eigh(D)
 
         # ------------------------------------------------------------------
         # Convert eigenvalues (eV / amu / Å²) → THz
         # ------------------------------------------------------------------
-        freqs_thz = []
-        for ev in eigenvalues:
-            if ev >= 0.0:
-                freqs_thz.append(float(np.sqrt(ev) * _EV_PER_AMU_ANG2_TO_THZ))
-            else:
-                freqs_thz.append(float(-np.sqrt(-ev) * _EV_PER_AMU_ANG2_TO_THZ))
+        freqs_thz = [
+            float(np.sqrt(ev) * _EV_PER_AMU_ANG2_TO_THZ) if ev >= 0.0
+            else float(-np.sqrt(-ev) * _EV_PER_AMU_ANG2_TO_THZ)
+            for ev in eigenvalues
+        ]
 
         # ------------------------------------------------------------------
         # Expand eigenvectors to full 3N space (zero-pad inactive atoms)
         # ------------------------------------------------------------------
-        N_total  = n_atoms
-        n_modes  = len(eigenvalues)
-        eigs     = np.zeros((3 * N_total, n_modes))
+        n_modes = len(eigenvalues)
+        eigs    = np.zeros((3 * n_atoms, n_modes))
         for mode_i in range(n_modes):
-            mode_active              = eigenvectors[:, mode_i].reshape(n_active, 3)
-            mode_full                = np.zeros((N_total, 3))
+            mode_active = eigenvectors[:, mode_i].reshape(n_active, 3)
+            mode_full   = np.zeros((n_atoms, 3))
             for ai, gi in enumerate(active_indices):
-                mode_full[gi]        = mode_active[ai]
-            eigs[:, mode_i]          = mode_full.ravel()
+                mode_full[gi] = mode_active[ai]
+            eigs[:, mode_i] = mode_full.ravel()
 
+        # ------------------------------------------------------------------
+        # Cache lifecycle
+        # ------------------------------------------------------------------
+        n_files = 1 + n_disp   # ref + displacements
         if not save_cache:
             self._robust_rmtree(cache_dir)
         else:
             self.logger.info(
-                f"  [VibAnalyzer] Dump cache preserved at: {os.path.abspath(cache_dir)}"
-                f"  ({2 * n_active * 3 + 1} dump files + types.map)"
+                f"  [VibAnalyzer] Dump cache preserved → {os.path.abspath(cache_dir)}"
+                f"  ({n_files} dump files + types.map + disp_manifest.txt)"
             )
 
         return freqs_thz, eigs
