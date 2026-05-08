@@ -1,24 +1,31 @@
 # Mode-following relaxation — DIPAS adsorbed on SiO2 slab
 # ---------------------------------------------------------
-# Input : relaxed physisorption geometry (DIPAS / SiO2, 277 atoms)
-# Goal  : resolve imaginary modes in the PHVA active region
-# Method: PHVA with frozen_z_ang = 5.5 A (178 active / 99 frozen atoms)
-#         FixAtoms applied to frozen zone during all relaxation steps.
+# Structure : relaxed physisorption geometry (DIPAS/SiO2, 277 atoms)
+# Goal      : resolve imaginary modes in the PHVA active region
+# Method    : PHVA with frozen_z_ang = 5.5 Ang
+#               -> 178 atoms active, 99 frozen
+#               -> FixAtoms automatically applied to frozen zone
+#
+# Key config controls:
+#   paths.center_in_vacuum: false  -> keep periodic cell as-is (slab)
+#   analysis.vibrational.phva.enabled: true
+#   analysis.vibrational.phva.frozen_z_ang: 5.5 -> FixAtoms threshold
 
 paths:
-  input_structure: "../../physisorption_vibration/dipas_sio2_relaxed.vasp"
-  output_prefix:   "results/dipas_sio2"
+  input_structure:  "../../physisorption_vibration/dipas_sio2_relaxed.vasp"
+  center_in_vacuum: false       # slab: keep periodic cell as-is
+  output_prefix:    "results/dipas_sio2"
 
 engine:
   potential:
     backend: "mace"
-    model:   null          # null -> MACE-MP medium
+    model:   null               # null -> MACE-MP medium
     device:  "cpu"
-    dtype:   "float64"    # float64 for periodic slab
+    dtype:   "float64"          # float64 for periodic slab
 
   relaxation:
     optimizer: "FIRE"
-    fmax:      0.01        # looser for slab (many near-zero substrate modes)
+    fmax:      0.01             # looser for slab (many near-zero substrate modes)
     steps:     300
 
 analysis:
@@ -27,14 +34,14 @@ analysis:
     displacement_ang: 0.01
     phva:
       enabled:      true
-      frozen_z_ang: 5.5    # freeze bottom ~99 atoms; 178 atoms active
+      frozen_z_ang: 5.5         # freeze bottom ~99 atoms; apply FixAtoms
 
     mode_refinement:
       enabled:            true
       max_iter:           3
       fmax:               0.01
       steps:              300
-      freq_threshold_thz: -0.5   # threshold; near-zero acoustic modes (-0.5..0) are numerical
+      freq_threshold_thz: -0.5  # near-zero acoustic modes (-0.5..0) are numerical
       max_modes:          3
       perturbation_alpha: 0.2
       max_displacement:   0.5

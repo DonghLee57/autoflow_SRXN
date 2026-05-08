@@ -1,19 +1,24 @@
 # Mode-following relaxation — isolated DIPAS precursor molecule
 # ---------------------------------------------------------------
-# Input : single DIPAS molecule (gas-phase / isolated)
-# Goal  : confirm true local minimum (no imaginary modes)
-# Method: FHVA (full Hessian — molecule is small, all atoms active)
+# Structure : single DIPAS molecule (gas-phase / isolated)
+# Goal      : confirm true local minimum (no imaginary modes)
+# Method    : FHVA — all 27 atoms active (molecule is small)
+#
+# Key config controls:
+#   paths.center_in_vacuum: true   -> add 10 Ang vacuum before relaxation
+#   analysis.vibrational.phva.enabled: false -> Full Hessian (no FixAtoms)
 
 paths:
-  precursor:     "../../../structures/DIPAS.vasp"   # molecule → will be centered in vacuum
-  output_prefix: "results/dipas"
+  input_structure:  "../../../structures/DIPAS.vasp"
+  center_in_vacuum: true        # molecule: re-centre in vacuum box
+  output_prefix:    "results/dipas"
 
 engine:
   potential:
     backend: "mace"
-    model:   null          # null -> MACE-MP medium
+    model:   null               # null -> MACE-MP medium
     device:  "cpu"
-    dtype:   "float32"    # float32 sufficient for small molecule
+    dtype:   "float32"          # float32 sufficient for small molecule
 
   relaxation:
     optimizer: "FIRE"
@@ -25,7 +30,7 @@ analysis:
     name:             "results/vib"
     displacement_ang: 0.005
     phva:
-      enabled: false    # Full Hessian — molecule has only 27 atoms
+      enabled: false            # Full Hessian — no atoms frozen, no FixAtoms
 
     mode_refinement:
       enabled:            true
