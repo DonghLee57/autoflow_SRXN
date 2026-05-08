@@ -29,7 +29,7 @@ _EV_PER_AMU_ANG2_TO_THZ: float = float(
 
 def _resolve_phva_center(atoms, ads_idx, center_cfg):
     """Resolve which adsorbate atom index/indices to use as the focal point(s)
-    for the ``phva_radius_ang`` sphere.
+    for the ``phva.radius_ang`` sphere.
 
     Parameters
     ----------
@@ -101,74 +101,74 @@ class VibrationalAnalyzer:
 
     @property
     def indices(self):
-        """Returns the active indices for the Hessian.
-        If not explicitly set, resolves them from the configuration.
+        """Returns the active atom indices for the Hessian calculation.
+
+        Resolution logic
+        ----------------
+        1. Explicit override: if ``self._indices`` was set at construction, use it.
+        2. Config-driven:
+           ``analysis.vibrational.phva.enabled: false``  →  Full Hessian (all atoms,
+               return ``None`` so ASE Vibrations uses every atom).
+           ``analysis.vibrational.phva.enabled: true``   →  Partial Hessian:
+               a. ``phva.frozen_z_ang``  – exclude atoms whose z < z_min + threshold.
+               b. ``phva.radius_ang``    – if set, further restrict to adsorbate atoms
+                  (identified via tag/protector detection) plus all neighbours within
+                  the given radius.  ``phva.center`` controls the focal atom(s).
         """
         if self._indices is not None:
             return self._indices
 
-        # Automatic resolution logic requested by USER
         config = self.engine.all_config
         vib_cfg = config.get("analysis", {}).get("vibrational", {})
-        radius = vib_cfg.get("phva_radius_ang")
+        phva_cfg = vib_cfg.get("phva", {})
 
-        # Check for frozen_z_ang in vibrational or surface_prep.equilibration
-        frozen_z = vib_cfg.get("frozen_z_ang")
+        # phva.enabled = false (or block absent) → Full Hessian
+        if not phva_cfg.get("enabled", False):
+            return None
+
+        # ── Resolve PHVA parameters ──────────────────────────────────────────
+        frozen_z = phva_cfg.get("frozen_z_ang")
+        # Legacy fallback: surface_prep.equilibration.frozen_z_ang
         if frozen_z is None:
             frozen_z = config.get("surface_prep", {}).get("equilibration", {}).get("frozen_z_ang")
 
-        if radius is None and frozen_z is None:
-            # Default: Full Hessian
-            return None
+        radius     = phva_cfg.get("radius_ang")
+        center_cfg = phva_cfg.get("center", None)
 
         indices_set = set(range(len(self.atoms)))
 
-        # 1. Exclude frozen atoms by height if requested
+        # 1. Height-based frozen-atom exclusion
         if frozen_z is not None:
             z_min = self.atoms.positions[:, 2].min()
-            mask = self.atoms.positions[:, 2] >= z_min + frozen_z
+            mask  = self.atoms.positions[:, 2] >= z_min + float(frozen_z)
             indices_set &= set(np.where(mask)[0])
+            self.logger.info(
+                f"  [VibAnalyzer] PHVA frozen_z_ang={frozen_z} Ang  "
+                f"({len(indices_set)} atoms above threshold)"
+            )
 
-        # 2. If radius is set, focus on precursor + neighbors
+        # 2. Radius-based restriction around adsorbate
         if radius is not None:
-            # --- Resolve adsorbate indices ---
-            # Priority 1: explicit z-threshold in vibrational config
-            ads_z_min = vib_cfg.get("adsorbate_z_min_ang")
-            if ads_z_min is not None:
-                ads_idx = set(
-                    int(i) for i, z in enumerate(self.atoms.positions[:, 2])
-                    if z >= float(ads_z_min)
-                )
-                self.logger.info(
-                    f"  [VibAnalyzer] Adsorbate via adsorbate_z_min_ang={ads_z_min} Å: "
-                    f"{len(ads_idx)} atoms"
-                )
-            else:
-                # Priority 2: tag-based / protector-species detection
-                from ..surface.surface_utils import identify_protectors
-                _, ads_idx_arr = identify_protectors(self.atoms, config)
-                ads_idx = set(ads_idx_arr.tolist())
+            from ..surface.surface_utils import identify_protectors
+            _, ads_idx_arr = identify_protectors(self.atoms, config)
+            ads_idx = set(ads_idx_arr.tolist())
 
             if len(ads_idx) > 0:
-                center_cfg = vib_cfg.get("center", None)
                 center_atom_indices = _resolve_phva_center(self.atoms, ads_idx, center_cfg)
 
                 if center_atom_indices is None and str(center_cfg).lower() == "com":
-                    # COM mode: include all atoms within radius of the adsorbate COM
                     ads_pos = self.atoms.positions[list(ads_idx)]
-                    com = ads_pos.mean(axis=0)
-                    dists = np.linalg.norm(self.atoms.positions - com, axis=1)
+                    com     = ads_pos.mean(axis=0)
+                    dists   = np.linalg.norm(self.atoms.positions - com, axis=1)
                     neighbor_set = set(int(i) for i in np.where(dists < radius)[0])
                     self.logger.info(
                         f"  [VibAnalyzer] PHVA center=com  "
-                        f"({len(neighbor_set)} atoms within {radius} Å of adsorbate COM)"
+                        f"({len(neighbor_set)} atoms within {radius} Ang of COM)"
                     )
                 elif center_atom_indices is None:
-                    # _resolve_phva_center returned None because element not found
                     self.logger.warning(
-                        f"  [VibAnalyzer] PHVA center='{center_cfg}' not found in adsorbate "
-                        f"({[self.atoms.symbols[i] for i in ads_idx]}). "
-                        f"Falling back to all adsorbate atoms."
+                        f"  [VibAnalyzer] PHVA center='{center_cfg}' not found in adsorbate — "
+                        f"falling back to all adsorbate atoms."
                     )
                     center_atom_indices = list(ads_idx)
                     from ase.neighborlist import neighbor_list
@@ -182,27 +182,25 @@ class VibrationalAnalyzer:
                     neighbor_set = set()
                     for a_idx in center_atom_indices:
                         neighbor_set.update(int(j) for j in j_list[i_list == a_idx])
-                    symbols = self.atoms.get_chemical_symbols()
-                    center_desc = (
+                    symbols      = self.atoms.get_chemical_symbols()
+                    center_desc  = (
                         f"atom {center_atom_indices[0]} ({symbols[center_atom_indices[0]]})"
                         if len(center_atom_indices) == 1
                         else f"{len(center_atom_indices)} '{center_cfg}' atoms"
                     )
                     self.logger.info(
-                        f"  [VibAnalyzer] PHVA center={center_desc}  "
-                        f"({len(neighbor_set)} substrate atoms within {radius} Å)"
+                        f"  [VibAnalyzer] PHVA radius={radius} Ang, center={center_desc}  "
+                        f"({len(neighbor_set)} atoms in neighborhood)"
                     )
 
-                # Combine adsorbate + radius-selected neighbors,
-                # then intersect with non-frozen indices
                 phva_set = set(ads_idx) | neighbor_set
                 indices_set &= phva_set
             else:
                 self.logger.warning(
-                    "  [VibAnalyzer] PHVA radius requested but no precursor found. Using height-based selection."
+                    "  [VibAnalyzer] phva.radius_ang set but no adsorbate found — "
+                    "using height-filtered selection only."
                 )
 
-        # Convert to sorted list
         return sorted(list(indices_set))
 
     @indices.setter

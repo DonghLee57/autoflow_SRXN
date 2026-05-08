@@ -10,10 +10,8 @@ engine:
 
 analysis:
   vibrational:
-    name:                "results/phva"
-    displacement_ang:    0.01
-    frozen_z_ang:        5.5          # Freeze bottom 5.5 Å (same as FHVA)
-    phva_radius_ang:     6.0          # Partial Hessian: adsorbate + 6 Å neighbors
-    adsorbate_z_min_ang: 31.0         # Atoms above 31 Å = DIPAS adsorbate (25 atoms)
-    center:              null         # Use all adsorbate atoms as radial center
-    save_cache:          false
+    name:             "results/phva"
+    displacement_ang: 0.01
+    phva:
+      enabled:      true
+      frozen_z_ang: 5.5          # Freeze bottom 5.5 Å (~99 atoms frozen)

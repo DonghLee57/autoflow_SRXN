@@ -687,24 +687,29 @@ analysis:
   vibrational:                   # [REQUIRES POTENTIAL]
     displacement_ang:  0.01      # Finite-difference step for Hessian construction (A).
 
-    # --- PHVA (Partial Hessian Vibrational Analysis) Logic ---
-    # The analyzer intelligently decides the calculation scope based on these params:
-    # 1. If both are null -> FHVA (Full Hessian, all atoms active).
-    # 2. If phva_radius_ang is set -> Include precursor + substrate atoms within radius (A).
-    # 3. If frozen_z_ang is set -> Exclude bottom substrate atoms below z_min + threshold (A).
-    #    This is particularly useful to remove noisy imaginary modes from fixed slab parts.
-    phva_radius_ang:   6.0       # Neighborhood radius around the focal atom(s) (A).
-
-    # center: Focal atom for the phva_radius_ang sphere.
-    #   null (default)    -> all adsorbate atoms used as centres (union of spheres)
-    #   element symbol    -> adsorbate atoms of that element, e.g. "Si"
-    #                        (all matching atoms used; their spheres are unioned)
-    #   integer           -> one specific atom by its absolute index in the structure
-    #   "com"             -> adsorbate center-of-mass used as a virtual focal point;
-    #                        all system atoms within phva_radius_ang of the COM are included
-    center:            "Si"      # e.g. central reactive atom of the precursor
-
-    frozen_z_ang:      3.0       # Exclude atoms below this relative height (A).
+    # --- PHVA / FHVA scope control -------------------------------------------
+    # phva.enabled: false  →  FHVA: Full Hessian, all atoms displaced (expensive).
+    # phva.enabled: true   →  PHVA: Partial Hessian; atom selection via sub-options.
+    #
+    # Sub-options (only active when enabled: true):
+    #   frozen_z_ang  Exclude atoms whose z < z_min(atoms) + this value (A).
+    #                 Prevents spurious imaginary modes from artificially frozen
+    #                 bottom layers.  null → no height filtering.
+    #
+    #   radius_ang    Further restrict to adsorbate atoms + all neighbours within
+    #                 this radius (A).  Requires adsorbate identification via
+    #                 tags / protector-species.  null → no radius restriction.
+    #
+    #   center        Focal atom(s) for the radius_ang sphere.
+    #                 null / "adsorbate" → all adsorbate atoms (union of spheres).
+    #                 element symbol    → adsorbate atoms of that element, e.g. "Si".
+    #                 integer           → one specific atom by absolute index.
+    #                 "com"             → adsorbate center-of-mass.
+    phva:
+      enabled:      true
+      frozen_z_ang: 3.0          # Exclude bottom slab layers (A).
+      radius_ang:   6.0          # Neighbourhood radius around focal atom(s) (A).
+      center:       "Si"         # e.g. central reactive atom of the precursor.
     
     # --- Cache format --------------------------------------------------------
     # cache_format: null (default) | "lammps_dump"
