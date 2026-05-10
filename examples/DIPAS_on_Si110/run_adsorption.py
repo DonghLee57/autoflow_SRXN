@@ -1,5 +1,9 @@
 import os
 import sys
+_here = os.path.dirname(os.path.abspath(__file__))
+_root = os.path.abspath(os.path.join(_here, "..", ".."))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 import copy
 import yaml
 import numpy as np
@@ -13,6 +17,7 @@ except ImportError:
 
 from autoflow_srxn.surface.ads_workflow_mgr import AdsorptionWorkflowManager
 from autoflow_srxn.surface.chemisorption_builder import build_chemisorption_structures
+from autoflow_srxn.surface.site_map import generate_and_plot_site_map
 from autoflow_srxn.utils.logger_utils import log_energy_comparison, log_results_table, log_stage_title, setup_logger
 from autoflow_srxn.surface.surface_utils import (
     create_slab_from_bulk,
@@ -320,16 +325,31 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
 
     if physi_cfg.get("enabled", False):
         logger.info(f"  [Stage: {stage_type}] Physisorption search for {mol.get_chemical_formula()}...")
+
+        # Save site map before generating candidates
+        site_map_path = os.path.join(os.path.dirname(out_prefix), "site_map.png")
+        try:
+            generate_and_plot_site_map(
+                slab,
+                site_map_path,
+                symprec=symprec,
+                title=f"Adsorption site map — {stage_type} ({mol.get_chemical_formula()})",
+            )
+            logger.info(f"  [SiteMap] Saved: {os.path.relpath(site_map_path)}")
+        except Exception as _sm_exc:
+            logger.warning(f"  [SiteMap] Could not generate site map: {_sm_exc}")
+
         phy_cands = mgr.generate_physisorption_candidates(
             mol,
             height=physi_cfg.get("placement_height", 3.5),
+            n_rot=physi_cfg.get("n_rot", 32),
             tag=tag,
             rot_center=physi_cfg.get("rotation_center", center_target),
             height_mode=physi_cfg.get("height_mode", "clearance"),
             gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False}),
         )
         for c in phy_cands:
-            c.info["mechanism"] = "physisorption"
+            c.info.setdefault("mechanism", "physisorption")
         all_cands.extend(phy_cands)
 
     if chem_cfg.get("enabled", False):

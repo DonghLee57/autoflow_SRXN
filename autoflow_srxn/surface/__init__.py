@@ -19,6 +19,7 @@ from .surface_utils import (
     get_surface_h_mapping,
 )
 from .ads_workflow_mgr import AdsorptionWorkflowManager
+from .site_map import plot_adsorption_site_map, generate_and_plot_site_map
 from .chemisorption_builder import (
     analyze_surface_reactivity,
     analyze_molecule_ligands,
@@ -45,6 +46,8 @@ __all__ = [
     "generate_standard_surfaces",
     "get_surface_h_mapping",
     "AdsorptionWorkflowManager",
+    "plot_adsorption_site_map",
+    "generate_and_plot_site_map",
     "analyze_surface_reactivity",
     "analyze_molecule_ligands",
     "build_chemisorption_structures",

@@ -15,9 +15,9 @@ paths:
 # =============================================================================
 workflow:
   slab_relax:       false  # Geometry-optimize bare slab before candidate search
-  candidate_relax:  true   # Geometry-optimize each candidate after generation
+  candidate_relax:  false   # Geometry-optimize each candidate after generation
   md_equilibrate:   false  # NVT-MD equilibration after candidate_relax
-  post_md_relax:    true   # Re-optimize after MD (only if md_equilibrate: true)
+  post_md_relax:    false   # Re-optimize after MD (only if md_equilibrate: true)
 
 # =============================================================================
 # Relaxation parameters — shared by all relax/MD stages
@@ -62,10 +62,10 @@ reaction_search:
         placement_height: 3.2
         height_mode:      "clearance"
         gravity_pull:
-          enabled: false
+          enabled: true
       chemisorption:
         enabled: false
-      branching_limit: 3
+      branching_limit: 1
 
     precursor:
       center: "Si"
@@ -73,6 +73,7 @@ reaction_search:
         enabled:          true
         placement_height: 5.0
         height_mode:      "clearance"
+        n_rot:            8
         gravity_pull:
           enabled:   true
           step_size: 0.2
