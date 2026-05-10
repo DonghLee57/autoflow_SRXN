@@ -31,6 +31,8 @@ analysis:
     displacement_ang: 0.005
     phva:
       enabled: false            # Full Hessian — no atoms frozen, no FixAtoms
+    cache_format: "lammps_dump"
+    save_cache:   true
 
     mode_refinement:
       enabled:            true

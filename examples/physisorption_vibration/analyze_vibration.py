@@ -40,6 +40,7 @@ import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import MultipleLocator
+from matplotlib.collections import LineCollection
 
 # Ensure package root is on sys.path when run directly
 _here = os.path.dirname(os.path.abspath(__file__))
@@ -109,21 +110,74 @@ def _apply_style(ax, xlabel="", ylabel="", title=""):
     ax.grid(True, linestyle=":", alpha=0.5, linewidth=0.8)
 
 
+
+
 # ---------------------------------------------------------------------------
-# Figure 1 — Frequency parity plot (MAC-based pairing)
+# Figure 2 — Raw MAC matrix heatmap
 # ---------------------------------------------------------------------------
 
-def fig1_parity(result: ModeComparisonResult, out_dir: str):
+def fig1_mac_heatmap(result: ModeComparisonResult, out_dir: str):
+    """Heatmap of the full (n_phva × n_fhva) MAC matrix."""
+    mac_mat = result.mac_mat   # (n_phva, n_fhva)
+    n_p, n_f = mac_mat.shape
+
+    # 2. Raw MAC matrix heatmap
+    # Sort modes by frequency (high → low) for display
+    phva_order = np.argsort(result.phva.freqs_thz)[::-1]
+    fhva_order = np.argsort(result.fhva.freqs_thz)[::-1]
+    mat_sorted = mac_mat[np.ix_(phva_order, fhva_order)]
+
+    # Do NOT subsample destructively — we want to see every potential match.
+    # Instead, we use a wide figure to accommodate FHVA's high dimensionality.
+    fig, ax = plt.subplots(figsize=(15, 6))
+    cmap_hm = cm.RdYlGn
+    
+    # Use aspect='auto' because n_f >> n_p
+    im = ax.imshow(
+        mat_sorted, aspect="auto", origin="upper",
+        cmap=cmap_hm, vmin=0, vmax=1,
+        interpolation="nearest",
+    )
+
+    cb = fig.colorbar(im, ax=ax, pad=0.02, fraction=0.015)
+    cb.set_label("MAC score", fontsize=10)
+
+    # Axis limits: strictly 0 to N-1
+    ax.set_xlim(-0.5, n_f - 0.5)
+    ax.set_ylim(n_p - 0.5, -0.5)
+
+    # Mark the best-match FHVA column for each PHVA row
+    best_indices = np.argmax(mat_sorted, axis=1)
+    ax.scatter(best_indices, np.arange(n_p), color="cyan", s=8, alpha=0.7, edgecolors="none", label="Best match")
+
+    # FHVA axis on top
+    ax.xaxis.set_label_position("top")
+    ax.xaxis.tick_top()
+    ax.set_xlabel("FHVA mode index (freq↓)", fontsize=11, labelpad=8)
+    ax.set_ylabel("PHVA mode index (freq↓)", fontsize=11)
+    ax.set_title("Raw MAC Matrix  (PHVA × FHVA)", fontsize=12, fontweight="bold", pad=40)
+    ax.tick_params(labelsize=8)
+    ax.legend(loc="upper right", fontsize=9)
+    fig.tight_layout()
+    _save(fig, "fig1_mac_heatmap.png")
+
+
+# ---------------------------------------------------------------------------
+# Figure 2 — Frequency parity plot (MAC-based pairing)
+# ---------------------------------------------------------------------------
+
+def fig2_parity(result: ModeComparisonResult, out_dir: str):
     """Scatter: FHVA freq (x) vs PHVA freq (y), coloured by MAC score."""
     matched = result.matched
 
     fhva_f = np.array([m.fhva_freq_thz for m in matched])
     phva_f = np.array([m.phva_freq_thz for m in matched])
     mac    = np.array([m.mac_score     for m in matched])
+    delta  = np.array([m.freq_delta_thz for m in matched])
 
-    # Separate real from imaginary (any mode with FHVA freq < 0)
-    real_mask = fhva_f > 0.5
-    imag_mask = ~real_mask
+    # Standardize frequency mask (> 0.1 THz) for MAE calculation
+    real_mask = fhva_f > 0.1
+    mae = np.mean(np.abs(delta[real_mask])) if np.any(real_mask) else 0.0
 
     fig, ax = plt.subplots(figsize=(7, 6.5))
 
@@ -136,13 +190,6 @@ def fig1_parity(result: ModeComparisonResult, out_dir: str):
         s=30, edgecolors="none", alpha=0.85, zorder=3,
         label="Real modes"
     )
-    if imag_mask.any():
-        ax.scatter(
-            fhva_f[imag_mask], phva_f[imag_mask],
-            c=mac[imag_mask], cmap=cmap, norm=norm,
-            s=40, marker="v", edgecolors="k", linewidths=0.5, alpha=0.8, zorder=3,
-            label="Imaginary modes"
-        )
 
     # Parity line
     all_f = np.concatenate([fhva_f[real_mask], phva_f[real_mask]])
@@ -154,16 +201,23 @@ def fig1_parity(result: ModeComparisonResult, out_dir: str):
     cb = fig.colorbar(sc, ax=ax, pad=0.02)
     cb.set_label("MAC score", fontsize=10)
 
-    # Stats annotation (real modes only)
-    good = [m for m in matched if m.fhva_freq_thz > 0.5 and m.mac_score >= MAC_THRESHOLD]
-    if good:
-        delta = np.array([m.freq_delta_thz for m in good])
-        mae  = np.mean(np.abs(delta))
-        rmse = np.sqrt(np.mean(delta**2))
+    # Calculate R2 for positive frequencies
+    f_ref_r = fhva_f[real_mask]
+    f_test_r = phva_f[real_mask]
+    if len(f_ref_r) > 1:
+        corr_matrix = np.corrcoef(f_ref_r, f_test_r)
+        r2 = corr_matrix[0, 1]**2
+    else:
+        r2 = 0.0
+
+    if real_mask.any():
+        d_real = np.array([m.freq_delta_thz for m in matched if m.fhva_freq_thz > 0.1])
+        rmse = np.sqrt(np.mean(d_real**2))
         ax.text(
             0.04, 0.96,
-            f"MAC ≥ {MAC_THRESHOLD:.1f}:  {len(good)} / {real_mask.sum()} real modes\n"
-            f"MAE  = {mae:.3f} THz\nRMSE = {rmse:.3f} THz",
+            f"MAE  = {mae:.3f} THz\n"
+            f"RMSE = {rmse:.3f} THz\n"
+            f"R$^2$   = {r2:.3f}",
             transform=ax.transAxes, va="top", fontsize=9,
             bbox=dict(facecolor="white", alpha=0.8, edgecolor="gray", boxstyle="round,pad=0.4"),
         )
@@ -171,67 +225,11 @@ def fig1_parity(result: ModeComparisonResult, out_dir: str):
     _apply_style(ax,
         xlabel="FHVA Frequency (THz)",
         ylabel="PHVA Frequency (THz)",
-        title="Frequency Parity: PHVA vs FHVA  (MAC-based pairing)"
+        title=f"Frequency Parity (MAE = {mae:.3f} THz)"
     )
     ax.legend(fontsize=9, loc="lower right")
     fig.tight_layout()
-    _save(fig, "fig1_parity.png")
-
-
-# ---------------------------------------------------------------------------
-# Figure 2 — Raw MAC matrix heatmap
-# ---------------------------------------------------------------------------
-
-def fig2_mac_heatmap(result: ModeComparisonResult, out_dir: str):
-    """Heatmap of the full (n_phva × n_fhva) MAC matrix."""
-    mac_mat = result.mac_mat   # (n_phva, n_fhva)
-    n_p, n_f = mac_mat.shape
-
-    # Sort modes by frequency (high → low) for display
-    phva_order = np.argsort(result.phva.freqs_thz)[::-1]
-    fhva_order = np.argsort(result.fhva.freqs_thz)[::-1]
-    mat_sorted = mac_mat[np.ix_(phva_order, fhva_order)]
-
-    # Subsample if very large (> 200 modes per axis)
-    step_p = max(1, n_p // 150)
-    step_f = max(1, n_f // 150)
-    mat_show = mat_sorted[::step_p, ::step_f]
-
-    fig, ax = plt.subplots(figsize=(8, 6.5))
-    cmap_hm = cm.RdYlGn          # consistent with other figures
-    im = ax.imshow(
-        mat_show, aspect="auto", origin="upper",
-        cmap=cmap_hm, vmin=0, vmax=1,
-        interpolation="nearest",
-    )
-
-    # Colorbar — same colormap as heatmap
-    cb = fig.colorbar(im, ax=ax, pad=0.02, fraction=0.035)
-    cb.set_label("MAC score", fontsize=10)
-
-    # Mark the best-match column for each PHVA mode (argmax per row)
-    best_fhva = np.argmax(mac_mat, axis=1)  # in original indexing
-    # Map to sorted/subsampled display coords
-    phva_rank_of = {orig: rank for rank, orig in enumerate(phva_order)}
-    fhva_rank_of = {orig: rank for rank, orig in enumerate(fhva_order)}
-
-    xs, ys = [], []
-    for pi, fi in enumerate(best_fhva):
-        yr = phva_rank_of[pi] // step_p
-        xr = fhva_rank_of[fi] // step_f
-        xs.append(xr); ys.append(yr)
-    ax.scatter(xs, ys, s=6, c="cyan", alpha=0.6, zorder=4, label="Best match")
-
-    # FHVA axis on top
-    ax.xaxis.set_label_position("top")
-    ax.xaxis.tick_top()
-    ax.set_xlabel("FHVA mode index (freq↓)", fontsize=11, labelpad=8)
-    ax.set_ylabel("PHVA mode index (freq↓)", fontsize=11)
-    ax.set_title("Raw MAC Matrix  (PHVA × FHVA)", fontsize=12, fontweight="bold", pad=40)
-    ax.tick_params(labelsize=8)
-    ax.legend(fontsize=8, loc="lower right")
-    fig.tight_layout()
-    _save(fig, "fig2_mac_heatmap.png")
+    _save(fig, "fig2_parity.png")
 
 
 # ---------------------------------------------------------------------------
@@ -243,54 +241,37 @@ def fig3_residuals(result: ModeComparisonResult, out_dir: str):
     matched = result.matched
     fhva_f  = np.array([m.fhva_freq_thz  for m in matched])
     delta   = np.array([m.freq_delta_thz  for m in matched])
-    delta_p = np.array([m.freq_delta_pct  for m in matched])
     mac     = np.array([m.mac_score       for m in matched])
 
-    real_mask = fhva_f > 0.5
+    real_mask = fhva_f > 0.1
+    mae = np.mean(np.abs(delta[real_mask])) if np.any(real_mask) else 0.0
+    
     norm = mcolors.Normalize(vmin=0, vmax=1)
     cmap = cm.RdYlGn
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig, ax = plt.subplots(figsize=(8, 6))
 
-    # --- Left: absolute Δfreq ---
-    ax = axes[0]
     sc = ax.scatter(
         fhva_f[real_mask], delta[real_mask],
         c=mac[real_mask], cmap=cmap, norm=norm,
-        s=28, edgecolors="none", alpha=0.8
+        s=35, edgecolors="k", lw=0.5, alpha=0.8
     )
     ax.axhline(0, color="k", lw=1, ls="--")
     # Shade ±0.5 THz band
     ax.axhspan(-0.5, 0.5, color="green", alpha=0.06, label="±0.5 THz")
+    
     _apply_style(ax,
         xlabel="FHVA Frequency (THz)",
-        ylabel="PHVA − FHVA  (THz)",
-        title="Frequency Residuals"
+        ylabel="PHVA − FHVA (THz)",
+        title=f"Frequency Residuals (MAE = {mae:.3f} THz)"
     )
-    ax.legend(fontsize=9)
-
-    # --- Right: relative Δfreq % ---
-    ax = axes[1]
-    ax.scatter(
-        fhva_f[real_mask], delta_p[real_mask],
-        c=mac[real_mask], cmap=cmap, norm=norm,
-        s=28, edgecolors="none", alpha=0.8
-    )
-    ax.axhline(0, color="k", lw=1, ls="--")
-    ax.axhspan(-5, 5, color="green", alpha=0.06, label="±5 %")
-    _apply_style(ax,
-        xlabel="FHVA Frequency (THz)",
-        ylabel="(PHVA − FHVA) / |FHVA|  (%)",
-        title="Relative Frequency Residuals"
-    )
-    ax.legend(fontsize=9)
-
-    fig.suptitle("PHVA Frequency Accuracy vs FHVA Reference", fontsize=13, fontweight="bold")
-    # Leave room on the right for the colorbar, then place it in a dedicated axes
-    fig.tight_layout(rect=[0, 0, 0.90, 0.95])
-    cax = fig.add_axes([0.91, 0.12, 0.014, 0.70])
-    cb = fig.colorbar(sc, cax=cax)
+    ax.legend(fontsize=9, loc="upper left")
+    
+    # Colorbar
+    cb = fig.colorbar(sc, ax=ax, pad=0.02, fraction=0.035)
     cb.set_label("MAC score", fontsize=10)
+    
+    fig.tight_layout()
     _save(fig, "fig3_residuals.png")
 
 
@@ -307,7 +288,7 @@ def fig4_ipr(result: ModeComparisonResult, out_dir: str):
     neff_p   = np.array([m.phva_n_eff     for m in matched])
     neff_f   = np.array([m.fhva_n_eff     for m in matched])
     mac      = np.array([m.mac_score      for m in matched])
-    real     = fhva_f > 0.5
+    real     = fhva_f > 0.1
 
     norm = mcolors.Normalize(vmin=0, vmax=1)
     cmap = cm.RdYlGn
@@ -319,46 +300,59 @@ def fig4_ipr(result: ModeComparisonResult, out_dir: str):
     sc = ax.scatter(
         ipr_f[real], ipr_p[real],
         c=mac[real], cmap=cmap, norm=norm,
-        s=30, edgecolors="none", alpha=0.8
+        s=30, edgecolors="k", lw=0.5, alpha=0.8
     )
-    lim = [0, max(ipr_p[real].max(), ipr_f[real].max()) * 1.08]
+    lim = [0, max(ipr_p[real].max(), ipr_f[real].max()) * 1.1]
     ax.plot(lim, lim, "k--", lw=1.2, alpha=0.7, label="y = x")
     ax.set_xlim(lim); ax.set_ylim(lim)
     _apply_style(ax,
         xlabel="IPR (FHVA)",
         ylabel="IPR (PHVA)",
-        title="IPR Comparison\n(PHVA tends to overestimate localisation)"
+        title="IPR Comparison"
     )
-    ax.legend(fontsize=9)
-
-    # Annotation: fraction of modes where PHVA IPR > FHVA IPR
-    frac_over = (ipr_p[real] > ipr_f[real]).mean()
+    
+    # Calculate R2 for IPR
+    ipr_f_r = ipr_f[real]
+    ipr_p_r = ipr_p[real]
+    if len(ipr_f_r) > 1:
+        corr_matrix = np.corrcoef(ipr_f_r, ipr_p_r)
+        r2 = corr_matrix[0, 1]**2
+    else:
+        r2 = 0.0
+    
     ax.text(
         0.04, 0.96,
-        f"PHVA IPR > FHVA IPR: {frac_over:.0%} of real modes",
-        transform=ax.transAxes, va="top", fontsize=9,
+        f"R$^2$ = {r2:.3f}",
+        transform=ax.transAxes, va="top", fontsize=10,
         bbox=dict(facecolor="white", alpha=0.8, edgecolor="gray", boxstyle="round,pad=0.4"),
     )
+    ax.legend(fontsize=9, loc="lower right")
 
     # --- Right: N_eff vs frequency ---
     ax = axes[1]
     ax.scatter(fhva_f[real], neff_f[real],
-               s=25, alpha=0.7, color="#2196f3", edgecolors="none",
+               s=30, alpha=0.7, color="#2196f3", edgecolors="k", lw=0.5,
                label="FHVA  N$_{eff}$", zorder=3)
     ax.scatter(fhva_f[real], neff_p[real],
-               s=25, alpha=0.7, color="#ff7043", edgecolors="none", marker="s",
+               s=30, alpha=0.7, color="#ff7043", edgecolors="k", lw=0.5, marker="s",
                label="PHVA  N$_{eff}$", zorder=3)
+    
+    # Set axis limits with margin
+    max_f = fhva_f[real].max()
+    max_neff = max(neff_f[real].max(), neff_p[real].max())
+    ax.set_xlim(0, max_f * 1.05)
+    ax.set_ylim(0, max_neff * 1.1)
+    
     _apply_style(ax,
         xlabel="FHVA Frequency (THz)",
         ylabel="N$_{eff}$ = 1 / IPR  (atoms)",
         title="Effective Number of Participating Atoms"
     )
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=9, loc="upper right")
 
     cb = fig.colorbar(sc, ax=axes[0], pad=0.02)
     cb.set_label("MAC score", fontsize=10)
 
-    fig.suptitle("Localisation: IPR and N$_{eff}$  (PHVA vs FHVA)", fontsize=13, fontweight="bold")
     fig.tight_layout()
     _save(fig, "fig4_ipr_comparison.png")
 
@@ -367,61 +361,105 @@ def fig4_ipr(result: ModeComparisonResult, out_dir: str):
 # Figure 5 — Localisation spectrum (IPR vs frequency)
 # ---------------------------------------------------------------------------
 
-def fig5_localization_spectrum(result: ModeComparisonResult, out_dir: str):
-    """IPR vs frequency for all modes in FHVA (background) and PHVA (overlay)."""
+def fig5_localization_spectrum(result: ModeComparisonResult, out_dir: str, sigma: float = 0.3):
+    """
+    Advanced 'Spectral Localization Density' plot.
+    1. Gaussian smearing of IPR vs Frequency to show density.
+    2. PHVA curve color-coded by MAC score.
+    3. Cumulative error panel to justify HTST reliability.
+    """
+    from autoflow_srxn.vibrational.mode_participation_analyzer import atomic_participation, ipr
+
+    # --- Data Extraction ---
     fhva_data = result.fhva
     phva_data = result.phva
     matched   = result.matched
 
-    from autoflow_srxn.vibrational.mode_participation_analyzer import atomic_participation, ipr
-
-    # Compute IPR for every FHVA and PHVA mode (all modes, not just matched)
-    fhva_freqs = fhva_data.freqs_thz
-    fhva_iprs  = np.array([ipr(atomic_participation(fhva_data.eigs[i]))
-                            for i in range(fhva_data.n_modes)])
-    phva_freqs = phva_data.freqs_thz
-    phva_iprs  = np.array([ipr(atomic_participation(phva_data.eigs[i]))
-                            for i in range(phva_data.n_modes)])
-
-    # MAC score for each PHVA mode (best match)
-    mac_per_phva = np.zeros(phva_data.n_modes)
+    f_fhva = fhva_data.freqs_thz
+    i_fhva = np.array([ipr(atomic_participation(fhva_data.eigs[i])) for i in range(fhva_data.n_modes)])
+    
+    f_phva = phva_data.freqs_thz
+    i_phva = np.array([ipr(atomic_participation(phva_data.eigs[i])) for i in range(phva_data.n_modes)])
+    
+    # Map MAC scores to PHVA modes (best match per PHVA mode)
+    mac_phva = np.zeros(phva_data.n_modes)
     for m in matched:
-        mac_per_phva[m.phva_mode_idx] = m.mac_score
+        mac_phva[m.phva_mode_idx] = m.mac_score
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # Only consider real modes
+    mask_f = f_fhva > 0.5
+    mask_p = f_phva > 0.5
+    f_fhva, i_fhva = f_fhva[mask_f], i_fhva[mask_f]
+    f_phva, i_phva, m_phva = f_phva[mask_p], i_phva[mask_p], mac_phva[mask_p]
 
-    # FHVA: all modes
-    real_f = fhva_freqs > 0.5
-    ax.scatter(fhva_freqs[real_f], fhva_iprs[real_f],
-               s=20, alpha=0.5, color="#2196f3", edgecolors="none",
-               label=f"FHVA  ({real_f.sum()} real modes)", zorder=2)
+    # --- Gaussian Smearing ---
+    f_min = min(f_fhva.min(), f_phva.min()) - 5
+    f_max = max(f_fhva.max(), f_phva.max()) + 5
+    grid = np.linspace(f_min, f_max, 1000)
 
-    # PHVA: colour by MAC quality
-    real_p = phva_freqs > 0.5
-    norm = mcolors.Normalize(vmin=0, vmax=1)
+    def get_smeared_ipr(freqs, iprs, macs=None):
+        # Resulting density curve
+        density = np.zeros_like(grid)
+        # Resulting weighted average MAC curve
+        weighted_mac = np.zeros_like(grid)
+        
+        for f, val, *m in zip(freqs, iprs, macs if macs is not None else [None]*len(freqs)):
+            kernel = np.exp(-0.5 * ((grid - f) / sigma)**2) / (sigma * np.sqrt(2 * np.pi))
+            contrib = val * kernel
+            density += contrib
+            if m[0] is not None:
+                weighted_mac += m[0] * kernel # We'll normalize this by density later
+        
+        if macs is not None:
+            # Avoid division by zero where density is very low
+            safe_den = np.where(density > 1e-6, density, 1.0)
+            # Actually, normalize by the 'sum of kernels' to get avg MAC, not 'IPR-weighted' density
+            sum_kernels = np.zeros_like(grid)
+            avg_mac = np.zeros_like(grid)
+            for f, m in zip(freqs, macs):
+                kernel = np.exp(-0.5 * ((grid - f) / sigma)**2)
+                sum_kernels += kernel
+                avg_mac += m * kernel
+            weighted_mac = np.where(sum_kernels > 1e-3, avg_mac / sum_kernels, 0.0)
+
+        return density, weighted_mac
+
+    dens_fhva, _ = get_smeared_ipr(f_fhva, i_fhva)
+    dens_phva, mac_grid = get_smeared_ipr(f_phva, i_phva, m_phva)
+
+    # --- Plotting ---
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # 1. Main Spectrum Panel
+    # FHVA Background
+    ax.plot(grid, dens_fhva, color="#999999", lw=1.5, ls="--", alpha=0.6, label="FHVA (Ref) IPR Density")
+    ax.fill_between(grid, dens_fhva, color="#999999", alpha=0.1)
+
+    # PHVA Color-coded Curve
+    points = np.array([grid, dens_phva]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    
+    norm = mcolors.Normalize(vmin=0, vmax=1) 
     cmap = cm.RdYlGn
-    sc = ax.scatter(
-        phva_freqs[real_p], phva_iprs[real_p],
-        c=mac_per_phva[real_p], cmap=cmap, norm=norm,
-        s=35, edgecolors="k", linewidths=0.4, marker="D", alpha=0.9, zorder=3,
-        label=f"PHVA  ({real_p.sum()} real modes,  coloured by MAC)"
-    )
+    lc = LineCollection(segments, cmap=cmap, norm=norm, linewidth=2.5, zorder=3)
+    lc.set_array(mac_grid)
+    ax.add_collection(lc)
+    
+    # Representative line for legend
+    ax.plot([], [], color=cmap(1.0), lw=2.5, label="PHVA (MAC-weighted)")
 
-    cb = fig.colorbar(sc, ax=ax, pad=0.02)
-    cb.set_label("Best-match MAC (PHVA→FHVA)", fontsize=10)
+    # Colorbar for MAC
+    cb = fig.colorbar(lc, ax=ax, pad=0.02, fraction=0.03)
+    cb.set_label("Weighted Avg MAC Score", fontsize=10)
 
-    # Annotate 1/N_active for PHVA
-    n_active = phva_data.n_active
-    if n_active > 0:
-        ax.axhline(1.0 / n_active, color="orange", lw=1, ls="--",
-                   label=f"1/N$_{{active}}$ = 1/{n_active}  (PHVA max delocal.)")
+    # Labels and Style
+    ax.set_ylabel("Smeared IPR Density", fontsize=11)
+    ax.set_title(f"Localization Spectrum (Gaussian $\sigma$ = {sigma} THz)", fontsize=13, fontweight="bold", pad=15)
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, linestyle=":", alpha=0.4)
+    ax.set_xlim(f_min + 2, f_max - 2)
+    ax.set_ylim(0, max(dens_fhva.max(), dens_phva.max()) * 1.15)
 
-    _apply_style(ax,
-        xlabel="Frequency (THz)",
-        ylabel="IPR = Σ P$_j²$",
-        title="Localisation Spectrum: IPR vs Frequency"
-    )
-    ax.legend(fontsize=9, loc="upper right")
     fig.tight_layout()
     _save(fig, "fig5_localization_spectrum.png")
 
@@ -445,8 +483,8 @@ def fig6_element_participation(
 
     matched = result.matched
     real    = [m for m in matched if m.fhva_freq_thz > 0.5]
-    # Sort by FHVA frequency (descending)
-    real.sort(key=lambda m: m.fhva_freq_thz, reverse=True)
+    # Sort by FHVA frequency (ascending: low → high)
+    real.sort(key=lambda m: m.fhva_freq_thz)
 
     # Subsample if too many modes
     step = max(1, len(real) // 80)
@@ -477,8 +515,8 @@ def fig6_element_participation(
             )
             bottom += vals
 
-        ax.set_ylabel(f"Σ P_j  ({side})", fontsize=11)
-        ax.set_ylim(0, 1.05)
+        ax.set_ylabel(r"$\sum P_j$ (" + side + ")", fontsize=11)
+        ax.set_ylim(0, 1.1)
         ax.set_title(f"{side} element-resolved participation", fontsize=11, fontweight="bold")
         ax.tick_params(axis="x", labelsize=7)
         ax.grid(axis="y", linestyle=":", alpha=0.4)
@@ -493,152 +531,8 @@ def fig6_element_participation(
         )
 
     axes[-1].set_xlabel("FHVA Frequency (THz)", fontsize=11)
-    fig.suptitle(
-        "Element-resolved Energy Participation  (top = FHVA ref, bottom = PHVA)",
-        fontsize=13, fontweight="bold",
-    )
     fig.tight_layout()
     _save(fig, "fig6_element_participation.png")
-
-
-# ---------------------------------------------------------------------------
-# Figure 7 — Per-atom P_j bar chart for best-matched modes
-# ---------------------------------------------------------------------------
-
-def fig7_top_mode_Pj(
-    result: ModeComparisonResult,
-    symbols: list,
-    n_modes: int = 8,
-    out_dir: str = "",
-):
-    """Side-by-side PHVA vs FHVA P_j bar charts for the highest-MAC real modes."""
-    matched = result.matched
-    real    = [m for m in matched
-               if m.fhva_freq_thz > 0.5 and m.mac_score >= MAC_THRESHOLD]
-    real.sort(key=lambda m: m.mac_score, reverse=True)
-    top     = real[:n_modes]
-
-    if not top:
-        print("  [fig7] No modes with MAC ≥ threshold — skipping.")
-        return
-
-    ncols = 2
-    nrows = len(top)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(14, 2.4 * nrows))
-    if nrows == 1:
-        axes = axes[np.newaxis, :]
-
-    n_atoms = result.fhva.n_atoms
-    atom_idx = np.arange(n_atoms)
-    colors   = [_elem_color(s) for s in symbols]
-
-    for row, m in enumerate(top):
-        for col, (P_j, label) in enumerate([
-            (m.fhva_P_j, f"FHVA  f={m.fhva_freq_thz:.2f} THz"),
-            (m.phva_P_j, f"PHVA  f={m.phva_freq_thz:.2f} THz"),
-        ]):
-            ax = axes[row, col]
-            # Only show atoms with P_j > 0.001
-            mask = P_j > 0.001
-            if mask.any():
-                ax.bar(atom_idx[mask], P_j[mask],
-                       color=[colors[i] for i in atom_idx[mask]],
-                       edgecolor="none", width=1.0)
-            ax.set_ylabel("P_j", fontsize=9)
-            ax.set_title(f"{label}  |  MAC={m.mac_score:.3f}", fontsize=9)
-            ax.tick_params(labelsize=8)
-            ax.set_xlim(-1, n_atoms)
-            ax.grid(axis="y", linestyle=":", alpha=0.4)
-            ax.yaxis.set_major_locator(MultipleLocator(0.1))
-
-    # Legend patches
-    from matplotlib.patches import Patch
-    seen = list(dict.fromkeys(symbols))
-    handles = [Patch(facecolor=_elem_color(el), label=el) for el in seen]
-    fig.legend(handles=handles, loc="lower center", ncol=len(seen),
-               fontsize=9, bbox_to_anchor=(0.5, -0.02))
-
-    fig.suptitle(
-        f"Per-atom P_j for top-{len(top)} MAC-matched modes  (left=FHVA, right=PHVA)",
-        fontsize=12, fontweight="bold",
-    )
-    fig.tight_layout(rect=[0, 0.03, 1, 1])
-    _save(fig, "fig7_top_mode_Pj.png")
-
-
-# ---------------------------------------------------------------------------
-# Figure 8 — MAC score & frequency error distributions
-# ---------------------------------------------------------------------------
-
-def fig8_distributions(result: ModeComparisonResult, out_dir: str):
-    """Histograms: MAC score distribution and Δfreq distribution."""
-    matched = result.matched
-    real    = [m for m in matched if m.fhva_freq_thz > 0.5]
-    if not real:
-        return
-
-    mac    = np.array([m.mac_score     for m in real])
-    delta  = np.array([m.freq_delta_thz for m in real])
-    delta_p= np.array([m.freq_delta_pct for m in real])
-
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
-
-    # --- MAC histogram ---
-    ax = axes[0]
-    bins = np.linspace(0, 1, 26)
-    ax.hist(mac, bins=bins, color="#3d85c8", edgecolor="white", linewidth=0.5)
-    ax.axvline(MAC_THRESHOLD, color="red", lw=1.5, ls="--",
-               label=f"threshold={MAC_THRESHOLD}")
-    ax.text(MAC_THRESHOLD + 0.02, ax.get_ylim()[1] * 0.95,
-            f"{(mac >= MAC_THRESHOLD).mean():.0%} good",
-            fontsize=9, color="red", va="top")
-    _apply_style(ax,
-        xlabel="MAC score", ylabel="Count",
-        title="MAC Score Distribution"
-    )
-    ax.legend(fontsize=9)
-
-    # --- Δfreq (THz) histogram ---
-    ax = axes[1]
-    lim = np.abs(delta).max() * 1.1
-    bins_d = np.linspace(-lim, lim, 41)
-    ax.hist(delta, bins=bins_d, color="#f4a261", edgecolor="white", linewidth=0.5)
-    ax.axvline(0, color="k", lw=1.2, ls="--")
-    ax.text(0.04, 0.96,
-            f"MAE  = {np.mean(np.abs(delta)):.3f} THz\n"
-            f"RMSE = {np.sqrt(np.mean(delta**2)):.3f} THz",
-            transform=ax.transAxes, va="top", fontsize=9,
-            bbox=dict(facecolor="white", alpha=0.8, edgecolor="gray", boxstyle="round,pad=0.4"))
-    _apply_style(ax,
-        xlabel="PHVA − FHVA  (THz)", ylabel="Count",
-        title="Frequency Residual Distribution"
-    )
-
-    # --- Δfreq (%) histogram ---
-    ax = axes[2]
-    lim_p = min(np.nanpercentile(np.abs(delta_p), 98) * 1.3, 50)
-    bins_p = np.linspace(-lim_p, lim_p, 41)
-    ax.hist(np.clip(delta_p, -lim_p, lim_p), bins=bins_p,
-            color="#e06c75", edgecolor="white", linewidth=0.5)
-    ax.axvline(0, color="k", lw=1.2, ls="--")
-    finite = delta_p[np.isfinite(delta_p)]
-    if len(finite):
-        ax.text(0.04, 0.96,
-                f"Median = {np.median(finite):+.2f} %\n"
-                f"σ = {np.std(finite):.2f} %",
-                transform=ax.transAxes, va="top", fontsize=9,
-                bbox=dict(facecolor="white", alpha=0.8, edgecolor="gray", boxstyle="round,pad=0.4"))
-    _apply_style(ax,
-        xlabel="(PHVA − FHVA) / |FHVA|  (%)", ylabel="Count",
-        title="Relative Frequency Error Distribution"
-    )
-
-    fig.suptitle(
-        "Mode Matching Quality: MAC and Frequency Accuracy",
-        fontsize=13, fontweight="bold",
-    )
-    fig.tight_layout()
-    _save(fig, "fig8_mac_score_distribution.png")
 
 
 # ---------------------------------------------------------------------------
@@ -685,16 +579,18 @@ def main():
     # Generate all figures
     # ----------------------------------------------------------------
     print("\nGenerating figures …")
-    fig1_parity(result, OUT_DIR)
-    fig2_mac_heatmap(result, OUT_DIR)
+    fig1_mac_heatmap(result, OUT_DIR)
+    fig2_parity(result, OUT_DIR)
     fig3_residuals(result, OUT_DIR)
     fig4_ipr(result, OUT_DIR)
-    fig5_localization_spectrum(result, OUT_DIR)
-    fig6_element_participation(result, symbols, OUT_DIR)
-    fig7_top_mode_Pj(result, symbols, n_modes=8, out_dir=OUT_DIR)
-    fig8_distributions(result, OUT_DIR)
+    
+    # Generate Final Fig 5
+    print("  Generating Fig 5 (sigma=0.3 THz) ...")
+    fig5_localization_spectrum(result, OUT_DIR, sigma=0.3)
 
-    print(f"\nAll outputs saved to  {os.path.abspath(OUT_DIR)}/")
+    fig6_element_participation(result, symbols, OUT_DIR)
+    
+    print("\nAll outputs saved to ", os.path.abspath(OUT_DIR))
 
 
 if __name__ == "__main__":

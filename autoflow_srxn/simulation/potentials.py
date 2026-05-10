@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import sys
 
@@ -456,11 +456,11 @@ class SimulationEngine:
     ):
         """Structural relaxation using BFGS, FIRE, or two-stage CG_FIRE.
 
-        Arguments (fmax, steps, optimizer) default to ``config['engine']['relaxation']``
-        when None. ``frozen_z_ang`` and ``fix_atom_indices`` are merged with any
-        FixAtoms constraints already on *atoms*.
+        Prioritizes top-level `relaxation` config, then falls back to 
+        `engine.relaxation` for backward compatibility.
         """
-        relax_cfg = self.all_config.get("engine", {}).get("relaxation", {})
+        # 1. Resolve parameters from top-level or engine-level config
+        relax_cfg = self.all_config.get("relaxation", self.all_config.get("engine", {}).get("relaxation", {}))
         fmax = fmax if fmax is not None else relax_cfg.get("fmax", 0.05)
         steps = steps if steps is not None else relax_cfg.get("steps", 200)
         optimizer = optimizer if optimizer is not None else relax_cfg.get("optimizer", "BFGS")
@@ -534,16 +534,16 @@ class SimulationEngine:
         frozen_z_ang=None,
         fix_atom_indices=None,
     ):
-        """NVT Langevin MD. ASE FixAtoms constraints are honoured natively.
+        """NVT Langevin MD. 
 
-        Arguments (temp_K, md_steps, damping, timestep_fs) default to
-        ``config['engine']['md']`` when None.
+        Prioritizes top-level `equilibration` config, then falls back to 
+        `engine.md` for backward compatibility.
         """
         from ase import units
         from ase.md.langevin import Langevin
         from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 
-        md_cfg = self.all_config.get("engine", {}).get("md", {})
+        md_cfg = self.all_config.get("equilibration", self.all_config.get("engine", {}).get("md", {}))
         temp_K = temp_K if temp_K is not None else md_cfg.get("temperature_K", 300.0)
         md_steps = md_steps if md_steps is not None else md_cfg.get("md_steps", 1000)
         damping = damping if damping is not None else md_cfg.get("damping", 100.0)

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import shutil
 
 import numpy as np
@@ -98,6 +98,7 @@ class VibrationalAnalyzer:
         self.atoms.calc = self.engine.get_calculator()
         self._freqs_thz = None
         self._eigs = None
+        self._is_running = False
 
     @property
     def indices(self):
@@ -201,7 +202,9 @@ class VibrationalAnalyzer:
                     "using height-filtered selection only."
                 )
 
-        return sorted(list(indices_set))
+        # Store the resolved indices to prevent re-logging and re-calculation
+        self._indices = sorted(list(indices_set))
+        return self._indices
 
     @indices.setter
     def indices(self, value):
@@ -274,10 +277,17 @@ class VibrationalAnalyzer:
             f"save_cache: {save_cache})"
         )
 
-        if cache_format == "lammps_dump":
-            freqs_thz, eigs = self._run_lammps_dump_analysis(overwrite, save_cache)
-        else:
-            freqs_thz, eigs = self._run_ase_json_analysis(overwrite, save_cache)
+        if self._is_running:
+            return None, None
+        self._is_running = True
+
+        try:
+            if cache_format == "lammps_dump":
+                freqs_thz, eigs = self._run_lammps_dump_analysis(overwrite, save_cache)
+            else:
+                freqs_thz, eigs = self._run_ase_json_analysis(overwrite, save_cache)
+        finally:
+            self._is_running = False
 
         n_imag = sum(1 for f in freqs_thz if f < -0.01)
         self.logger.info(
@@ -291,7 +301,47 @@ class VibrationalAnalyzer:
         parent_dir = os.path.dirname(self.name) if os.path.dirname(self.name) else "."
         self.generate_qpoints_file(os.path.join(parent_dir, "qpoints.yaml"))
 
+        # Run diagnostic on imaginary modes (Modeling Artifact detection)
+        self._diagnose_results(self.modes)
+
         return self._freqs_thz, self._eigs
+
+    def _diagnose_results(self, modes_list: list[dict]) -> None:
+        """Analyze imaginary modes to distinguish artifacts from physical instabilities.
+        Calculates a 'Collective Ratio' for each mode.
+        """
+        imag_modes = [m for m in modes_list if m["frequency"] < -0.1]
+        if not imag_modes:
+            return
+
+        self.logger.info(f"  [VibAnalyzer] Found {len(imag_modes)} imaginary modes. Running diagnostic...")
+        
+        collective_count = 0
+        for mode in imag_modes:
+            # eigenvector is list[list[float]] (N_atoms, 3)
+            ev = np.array(mode["eigenvector"])
+            # Normalize displacements (u = e / sqrt(m) is done in self.modes)
+            # but here we just need relative magnitude for the ratio
+            disps = np.linalg.norm(ev, axis=1)
+            
+            # Collective Ratio: Mean displacement / Max displacement
+            # Ratio ~ 1.0 -> All atoms moving together (Global Drift)
+            # Ratio << 1.0 -> Local displacement
+            ratio = np.mean(disps) / (np.max(disps) + 1e-9)
+            
+            if ratio > 0.1: # Threshold for 'Collective' behavior
+                collective_count += 1
+        
+        if collective_count > 0:
+            print("\n" + "="*80)
+            print(" [VIBRATION DIAGNOSTIC: POTENTIAL MODELING ARTIFACT DETECTED]")
+            print(f" Detected {collective_count} modes showing Global Drift behavior (Collective Ratio > 0.1).")
+            print(" This is often caused by finite slab sliding/drift in FHVA calculations.")
+            print(" RECOMMENDATION: These modes are likely artifacts. Consider using PHVA (Partial Hessian)")
+            print(" to fix the slab and focus on local adsorbate vibrations.")
+            print(" See examples/physisorption_vibration/README.md for interpretation details.")
+            print("="*80 + "\n")
+            self.logger.warning(f"Detected {collective_count} potential global drift artifacts.")
 
     # ------------------------------------------------------------------
     # Private: ASE JSON backend (original behaviour)
@@ -486,10 +536,16 @@ class VibrationalAnalyzer:
                 f.write(f"{i + 1}  {elem}\n")
             f.write(f"# active_indices  {active_indices}\n")
 
+        n_disp     = 2 * n_active * 3
+        width      = len(str(n_disp))
+
         # ------------------------------------------------------------------
-        # Reference snapshot  (disp_0000.dump, timestep 0)
+        # Reference snapshot  (0...0/force.dump, timestep 0)
         # ------------------------------------------------------------------
-        ref_path  = os.path.join(cache_dir, "disp_0000.dump")
+        ref_dir   = os.path.join(cache_dir, "0".zfill(width))
+        os.makedirs(ref_dir, exist_ok=True)
+        ref_path  = os.path.join(ref_dir, "force.dump")
+        
         pos0      = self.atoms.get_positions().copy()
         if overwrite or not os.path.exists(ref_path):
             ref_forces = self.atoms.get_forces()
@@ -504,12 +560,12 @@ class VibrationalAnalyzer:
         forces_plus  = {}   # (atom_i, cart) -> ndarray(n_atoms, 3)
         forces_minus = {}
 
-        n_disp     = 2 * n_active * 3
         n_computed = 0
         n_cached   = 0
         frame      = 1          # frame 0 = reference
 
         manifest_rows = []      # collected for writing at the end
+        manifest_data = []      # (atom, disp_vec) for phonopy_disp.yaml
 
         for atom_i in active_indices:
             for cart in range(3):
@@ -519,7 +575,9 @@ class VibrationalAnalyzer:
                     (+1, "+", forces_plus),
                     (-1, "-", forces_minus),
                 ]:
-                    dump_path = os.path.join(cache_dir, f"disp_{frame:04d}.dump")
+                    disp_dir = os.path.join(cache_dir, f"{frame:0{width}d}")
+                    os.makedirs(disp_dir, exist_ok=True)
+                    dump_path = os.path.join(disp_dir, "force.dump")
 
                     if not overwrite and os.path.exists(dump_path):
                         forces = self._read_lammps_dump_forces(
@@ -538,24 +596,96 @@ class VibrationalAnalyzer:
                         n_computed += 1
 
                     store[(atom_i, cart)] = forces
+                    
+                    disp_vec = [0.0, 0.0, 0.0]
+                    disp_vec[cart] = sign * delta
                     manifest_rows.append(
-                        f"{frame:04d}  {atom_i:6d}  {dir_name}  {pm_label}{delta:.4f}"
+                        f"{frame:0{width}d}  {atom_i:6d}  {dir_name}  {pm_label}{delta:.4f}  {dump_path}"
                     )
+                    manifest_data.append({
+                        "atom": atom_i + 1, 
+                        "disp": disp_vec
+                    })
                     frame += 1
 
         # Restore undisplaced geometry
         self.atoms.set_positions(pos0)
 
         # ------------------------------------------------------------------
-        # Displacement manifest file
+        # Displacement manifest and Phonopy YAML
         # ------------------------------------------------------------------
         manifest_path = os.path.join(cache_dir, "disp_manifest.txt")
         with open(manifest_path, "w") as f:
             f.write("# AutoFlow-SRXN displacement manifest\n")
             f.write("# frame  atom_idx  direction  displacement_ang\n")
-            f.write("# 0000   ---       ---        reference (undisplaced)\n")
+            f.write(f"# {'0'.zfill(width)}  ---       ---        reference (undisplaced)\n")
             for row in manifest_rows:
                 f.write(row + "\n")
+
+        # Phonopy high-fidelity YAML generation
+        # ------------------------------------------------------------------
+        phonopy_yaml = os.path.join(cache_dir, "phonopy_disp.yaml")
+        import spglib
+        
+        # 1. Phonopy Header
+        with open(phonopy_yaml, "w") as f:
+            f.write("phonopy:\n")
+            f.write("  version: \"2.18.0\"\n")
+            f.write("  calculator: lammps\n")
+            f.write(f"  frequency_unit_conversion_factor: {_EV_PER_AMU_ANG2_TO_THZ:12.6f}\n")
+            f.write("  symmetry_tolerance: 1.00000e-05\n\n")
+
+            # 2. Space Group Info
+            dataset = spglib.get_symmetry_dataset((self.atoms.get_cell(), 
+                                                   self.atoms.get_scaled_positions(), 
+                                                   self.atoms.get_atomic_numbers()))
+            if dataset:
+                f.write("space_group:\n")
+                f.write(f"  type: \"{dataset['international']}\"\n")
+                f.write(f"  number: {dataset['number']}\n")
+                f.write(f"  Hall_symbol: \"{dataset['hall']}\"\n\n")
+
+            # 3. Matrices (Assume Identity for Gamma point / Single cell)
+            f.write("primitive_matrix:\n")
+            f.write("- [  1.000000000000000,  0.000000000000000,  0.000000000000000 ]\n")
+            f.write("- [  0.000000000000000,  1.000000000000000,  0.000000000000000 ]\n")
+            f.write("- [  0.000000000000000,  0.000000000000000,  1.000000000000000 ]\n\n")
+
+            f.write("supercell_matrix:\n")
+            f.write("- [  1,  0,  0 ]\n")
+            f.write("- [  0,  1,  0 ]\n")
+            f.write("- [  0,  0,  1 ]\n\n")
+
+            # 4. Cell Definitions Helper
+            def write_cell(name, atoms_obj, show_reduced=False):
+                f.write(f"{name}:\n")
+                f.write("  lattice:\n")
+                cell = atoms_obj.get_cell()
+                for i, label in enumerate(['a', 'b', 'c']):
+                    f.write(f"  - [ {cell[i,0]:22.15f}, {cell[i,1]:22.15f}, {cell[i,2]:22.15f} ] # {label}\n")
+                
+                f.write("  points:\n")
+                symbols = atoms_obj.get_chemical_symbols()
+                positions = atoms_obj.get_scaled_positions()
+                masses = atoms_obj.get_masses()
+                for i in range(len(atoms_obj)):
+                    f.write(f"  - symbol: {symbols[i]:2} # {i+1}\n")
+                    f.write(f"    coordinates: [ {positions[i,0]:18.15f}, {positions[i,1]:18.15f}, {positions[i,2]:18.15f} ]\n")
+                    f.write(f"    mass: {masses[i]:12.6f}\n")
+                    if show_reduced:
+                        f.write(f"    reduced_to: {i+1}\n")
+                f.write("\n")
+
+            # Write Unit/Supercell
+            write_cell("unit_cell", self.atoms)
+            write_cell("supercell", self.atoms, show_reduced=True)
+
+            # 5. Displacements
+            f.write("displacements:\n")
+            for d in manifest_data:
+                f.write(f"- atom: {d['atom']:4d}\n")
+                f.write("  displacement:\n")
+                f.write(f"    [ {d['disp'][0]:20.16f}, {d['disp'][1]:20.16f}, {d['disp'][2]:20.16f} ]\n")
 
         self.logger.info(
             f"  [VibAnalyzer] FD displacements: {n_computed} computed, "
@@ -616,8 +746,8 @@ class VibrationalAnalyzer:
             self._robust_rmtree(cache_dir)
         else:
             self.logger.info(
-                f"  [VibAnalyzer] Dump cache preserved → {os.path.abspath(cache_dir)}"
-                f"  ({n_files} dump files + types.map + disp_manifest.txt)"
+                f"  [VibAnalyzer] Dump cache preserved → {os.path.relpath(cache_dir)}"
+                f"  ({n_files} dump files + types.map + disp_manifest.txt + phonopy_disp.yaml)"
             )
 
         return freqs_thz, eigs
@@ -642,7 +772,10 @@ class VibrationalAnalyzer:
         manual formatting to match Phonopy's exact style.
         """
         if self._freqs_thz is None or self._eigs is None:
-            self.run_analysis()
+            if not self._is_running:
+                self.run_analysis()
+            else:
+                return  # Skip if currently running to avoid duplicate/half-baked calls
 
         n_total_atoms = len(self.atoms)
         masses = self.atoms.get_masses()

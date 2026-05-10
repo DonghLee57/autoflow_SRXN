@@ -45,14 +45,8 @@ from ..utils.logger_utils import setup_logger
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _load_structure(config: dict, config_dir: str, logger):
-    """Load atoms and apply config-driven preprocessing.
-
-    Returns
-    -------
-    atoms      : ASE Atoms with constraints already set.
-    frozen_idx : list[int] | None — frozen atom indices, or None.
-    """
+def _load_structure(config: dict, config_dir: str, engine, logger):
+    """Load atoms and apply config-driven preprocessing (including slab generation)."""
     paths = config["paths"]
     struct_path = paths["input_structure"]
     if not os.path.isabs(struct_path):
@@ -63,16 +57,34 @@ def _load_structure(config: dict, config_dir: str, logger):
     atoms = read(struct_path)
     logger.info(f"  Loaded : {os.path.relpath(struct_path)} ({len(atoms)} atoms)")
 
-    # 1. Vacuum centering (isolated molecule)
+    # 1. Optional Slab Generation from Bulk (Standardized to config_full.yaml)
+    prep_cfg = config.get("surface_prep", {})
+    gen_cfg = prep_cfg.get("slab_generation", {})
+    if gen_cfg.get("enabled", False):
+        from ..surface.surface_utils import create_slab_from_bulk
+        miller = gen_cfg.get("miller", gen_cfg.get("miller_indices", (0,0,1)))
+        logger.info(f"  [Workflow] Generating slab from bulk: miller={miller}")
+        atoms = create_slab_from_bulk(
+            atoms,
+            miller_indices=miller,
+            thickness=gen_cfg.get("thickness_ang", 15.0),
+            vacuum=gen_cfg.get("vacuum_ang", 15.0),
+            target_area=gen_cfg.get("target_area_ang2", 100.0)
+        )
+        logger.info(f"  [Workflow] Slab generated: {len(atoms)} atoms")
+
+        # Optional Slab Relaxation
+        if config.get("workflow", {}).get("slab_relax", False):
+            logger.info("  [Workflow] Relaxing bare slab before vibrational analysis...")
+            # Use top-level relaxation settings for slab relax
+            engine.relax(atoms, verbose=False)
+
+    # 2. Vacuum centering (isolated molecule)
     if paths.get("center_in_vacuum", False):
         atoms.center(vacuum=10.0)
-        cell = atoms.get_cell()
-        logger.info(
-            f"  center_in_vacuum=true  "
-            f"(cell {cell[0,0]:.1f} x {cell[1,1]:.1f} x {cell[2,2]:.1f} Ang)"
-        )
+        logger.info(f"  center_in_vacuum=true")
 
-    # 2. FixAtoms for frozen zone (slab PHVA)
+    # 3. FixAtoms for frozen zone (slab PHVA)
     frozen_idx = None
     phva_cfg = config["analysis"]["vibrational"].get("phva", {})
     frozen_z = phva_cfg.get("frozen_z_ang") if phva_cfg.get("enabled") else None
@@ -86,11 +98,6 @@ def _load_structure(config: dict, config_dir: str, logger):
         logger.info(
             f"  phva.enabled=true, frozen_z_ang={frozen_z}  "
             f"({len(frozen_idx)} frozen, {n_active} active)"
-        )
-    else:
-        logger.info(
-            f"  phva.enabled={'true' if phva_cfg.get('enabled') else 'false'}, "
-            f"no frozen zone - all {len(atoms)} atoms active"
         )
 
     return atoms, frozen_idx
@@ -181,11 +188,8 @@ def run_mode_following(config_path: str = "config.yaml"):
     logger.info(f"Config : {os.path.relpath(config_path)}")
     logger.info(f"Output : {out_prefix}.*")
 
-    # Load structure
-    atoms, frozen_idx = _load_structure(config, config_dir, logger)
-
-    # Engine
     engine = SimulationEngine(config=config)
+    atoms, frozen_idx = _load_structure(config, config_dir, engine, logger)
 
     # Initial relaxation
     logger.info(

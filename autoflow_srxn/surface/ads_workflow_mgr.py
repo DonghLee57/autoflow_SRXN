@@ -167,7 +167,7 @@ class AdsorptionWorkflowManager:
         accepted_orig_fracs = []   # first-occurrence frac coords — for equiv testing
         accepted_carts      = []   # closest-to-centre Cartesian   — output positions
 
-        EQUIV_TOL = 0.3   # Å — numerical precision only, not physical distances
+        EQUIV_TOL = 0.5   # Å — slightly larger tolerance for supercells with noise
 
         for c in coords:
             c_frac = np.dot(c, inv_lattice)
@@ -582,6 +582,19 @@ class AdsorptionWorkflowManager:
             f"overlap_scale={overlap_scale:.2f}, gravity={'on' if grav_enabled else 'off'})"
         )
 
+        # --- Pre-compute 2D operations for site-symmetry dedup ---
+        lattice = self.slab.get_cell()
+        positions = self.slab.get_scaled_positions()
+        numbers = self.slab.get_atomic_numbers()
+        sym = spglib.get_symmetry((lattice, positions, numbers), symprec=self.symprec)
+        rotations = sym['rotations']
+        translations = sym['translations']
+        ops_2d = [
+            (r, t) for r, t in zip(rotations, translations)
+            if (abs(r[2, 0]) < 0.1 and abs(r[2, 1]) < 0.1
+                and abs(r[2, 2] - 1.0) < 0.1 and abs(t[2]) < 0.15)
+        ]
+
         # --- Pre-compute all orientations once; tags set here, reused across sites ---
         m_aligned = self._get_physi_alignment(molecule, mode=rot_center)
         sampled_poses = self._sample_molecule_orientations(m_aligned, n_rot)
@@ -599,8 +612,19 @@ class AdsorptionWorkflowManager:
 
         for site_idx, target_pos in enumerate(site_iter):
             target_xy = target_pos[:2]
+            target_frac = np.dot(target_pos, np.linalg.inv(lattice))
             site_candidates = []
             site_rel_poses = []  # within-site orientation dedup registry
+
+            # --- Identify Site Point Group ---
+            # Subset of ops_2d that leave target_pos invariant (modulo lattice)
+            site_ops = []
+            for r, t in ops_2d:
+                mapped = np.dot(r, target_frac) + t
+                diff = mapped[:2] - target_frac[:2]
+                diff -= np.round(diff)
+                if np.linalg.norm(np.dot(diff, lattice[:2, :2])) < 0.5:
+                    site_ops.append(r)
 
             orient_iter = (
                 _tqdm(
@@ -669,17 +693,24 @@ class AdsorptionWorkflowManager:
                         continue
                     if not np.array_equal(np.sort(ads_sym), np.sort(ref_sym)):
                         continue
-                    match = True
-                    for sym in np.unique(ads_sym):
-                        ci = np.where(ads_sym == sym)[0]
-                        ri = np.where(ref_sym == sym)[0]
-                        D = cdist(rel_pos[ci], ref_rel[ri])
-                        rw, cw = linear_sum_assignment(D)
-                        if np.any(D[rw, cw] > 0.3):
-                            match = False
+
+                    # Check if any site operation maps ref_rel to current rel_pos
+                    for r_site in site_ops:
+                        mapped_ref = np.dot(ref_rel, r_site.T)
+                        match = True
+                        for sym_type in np.unique(ads_sym):
+                            ci = np.where(ads_sym == sym_type)[0]
+                            ri = np.where(ref_sym == sym_type)[0]
+                            # Use linear sum assignment to check if sets of points match
+                            D = cdist(rel_pos[ci], mapped_ref[ri])
+                            rw, cw = linear_sum_assignment(D)
+                            if np.any(D[rw, cw] > 0.4):
+                                match = False
+                                break
+                        if match:
+                            is_dup = True
                             break
-                    if match:
-                        is_dup = True
+                    if is_dup:
                         break
 
                 if not is_dup:

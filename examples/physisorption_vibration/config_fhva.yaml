@@ -11,6 +11,8 @@ engine:
 analysis:
   vibrational:
     name:             "results/fhva"
+    cache_format:     "lammps_dump"
+    save_cache:       true
     displacement_ang: 0.01
     phva:
       enabled: false             # Full Hessian — all 277 atoms active

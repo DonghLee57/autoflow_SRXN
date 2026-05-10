@@ -1,92 +1,115 @@
-﻿# Mode-Following Structural Relaxation: Stability Refinement of DIPAS Molecule
+# Mode-Following Structural Relaxation: Stability Refinement
 
-This example demonstrates the automated refinement of molecular structures by following imaginary vibrational modes. The primary objective is to transcend saddle points on the potential energy surface (PES) to reach a true local minimum, ensuring thermodynamic stability for subsequent chemical reaction modeling.
+This directory contains examples of automated structural refinement through iterative mode-following. The objective is to navigate the Potential Energy Surface (PES) by identifying and eliminating imaginary vibrational modes to reach a true local minimum, ensuring thermodynamic stability for precursors and surface models.
 
-## 1. Scientific Background and Objectives
+## 1. Scientific Domain Expertise: Theoretical Background
 
-In computational chemistry, a stationary point on the PES is defined by the condition where the gradient of the potential energy $V$ with respect to atomic coordinates $\mathbf{R}$ vanishes:
+### A. Stationary Points on the Potential Energy Surface (PES)
+In computational chemistry, the equilibrium geometry of a system is a stationary point on the PES where the gradient of the potential $V$ with respect to atomic coordinates $\mathbf{R}$ vanishes:
 $$\nabla_{\mathbf{R}} V(\mathbf{R}) = 0$$
 
-To distinguish between a local minimum and a saddle point, the Hessian matrix $\mathbf{H}$ (the second derivative of energy) is evaluated:
+To categorize a stationary point, we analyze the **Hessian matrix** $\mathbf{H}$, defined by the second derivatives of the energy:
 $$H_{ij} = \frac{\partial^2 V}{\partial R_i \partial R_j}$$
 
-The eigenvalues $\lambda$ of the mass-weighted Hessian correspond to the square of the vibrational frequencies $\omega$:
+### B. Vibrational Frequencies and Stability
+The eigenvalues $\lambda$ of the mass-weighted Hessian ($\mathbf{H}_m$) correspond to the square of the vibrational frequencies $\omega$:
 $$\mathbf{H}_m \mathbf{q} = \omega^2 \mathbf{q}$$
 
-An **imaginary frequency** (where $\omega^2 < 0$) indicates that the structure resides at a maximum along that specific normal mode coordinate, signifying a saddle point. The goal of this example is to:
-1. Identify significant imaginary modes using Phonopy and ML-IAPs (MACE).
-2. Perturb the structure along the identified eigenvectors to break symmetry and escape the saddle point.
-3. Perform ultra-tight structural relaxation using a hierarchical optimization scheme.
+- **Local Minimum**: All eigenvalues are positive ($\omega^2 > 0$).
+- **Unstable State**: One or more eigenvalues are negative ($\omega^2 < 0$), resulting in **imaginary frequencies** ($i\omega$). This indicates that the structure is at a maximum along those specific normal mode coordinates (e.g., a saddle point).
 
-## 2. Methodology: Dual-Stage Stability Refinement
+### C. Mode-Following Perturbation Logic
+To eliminate imaginary vibrational modes and descend toward a stable local minimum, the system must be perturbed along the eigenvector $\mathbf{e}_{\text{imag}}$ corresponding to the unstable mode. The updated coordinates $\mathbf{R}_{\text{new}}$ are calculated as:
+$$\mathbf{R}_{\text{new}} = \mathbf{R}_{\text{old}} + \sum_{k \in \text{imag}} \alpha_k \cdot \mathbf{e}_k$$
+where $\alpha_k$ is the perturbation scale factor. This coordinated displacement moves the system away from the unstable region of the PES, allowing the subsequent relaxation to find a lower-energy minimum.
 
-The refinement workflow follows a "Perturb-and-Relax" cycle:
+---
 
-### A. Sensitivity-Driven Phonon Analysis
-We utilize the finite displacement method to construct the Hessian. To differentiate between actual PES curvature and numerical artifacts (noise), we performed a sensitivity study across varying displacement scales ($u$):
-- **Displacement Parameter ($u$)**: Tested at $0.01, 0.005, \text{ and } 0.001$ A.
+## 2. Strategic Objectives & Workflow
 
-### B. Hierarchical Relaxation Scheme
-To ensure the system reaches the deepest part of the local potential well, we implement a two-stage relaxation:
-1. **Conjugate Gradient (CG)**: Utilized for rapid initial descent from the high-energy perturbed state.
-2. **FIRE (Fast Inertial Relaxation Engine)**: A robust inertia-based optimizer used for final convergence to an ultra-tight threshold.
-- **Convergence Criterion**: $f_{max} < 0.001 \text{ eV/A}$.
+The workflow implements a "Perturb-Analyze-Relax" cycle to systematically eliminate imaginary modes.
 
-### C. Mode-Following Perturbation
-Stability refinement is achieved by updating the atomic coordinates $\mathbf{R}$ through a controlled displacement along the unstable normal modes:
-
-$$\mathbf{R}_{\text{new}} = \mathbf{R}_{\text{old}} + \alpha \cdot \mathbf{e}_{\text{imag}}$$
-
-The criteria and parameters for this perturbation are defined as follows:
-- **Identification Threshold**: Modes are selected for refinement if the frequency $\nu$ is less than $-0.1$ THz.
-- **Perturbation Scale ($\alpha$)**: An initial displacement factor of $0.1$ A is applied to move the system away from the saddle point.
-- **Directional Vector ($\mathbf{e}_{\text{imag}}$)**: The normalized eigenvector associated with the specific imaginary frequency.
-
-## 3. Simulation Results and Analysis
-
-Recent experimental runs for the DIPAS (Diisopropylaminosilane) molecule using the refined workflow (linear combination of modes) yielded the following convergence behavior:
-
-| Cycle | Energy (eV) | Min Freq (THz) | Alpha (Ang) | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| 0 (Initial) | -130.453484 | -1.0071 | 0.000 | Unstable |
-| 1 | -130.461327 | -0.1372 | 0.500 | Refined |
-| 2 | -130.463844 | -0.1258 | 0.500 | Refined |
-| 3 | -130.464692 | -0.1050 | 0.250 | Near Target |
-| **4 (Final)** | **-130.464943** | **-0.0921** | **0.125** | **Converged** |
-
-- **Effect of Mode Following**: The transition from Cycle 0 (-1.0071 THz) to Cycle 1 (-0.1372 THz) demonstrates the power of the "Perturb-and-Relax" strategy. A single coordinated displacement along unstable modes moved the system out of a significant saddle point region.
-- **Initial Relaxation Sensitivity**: The initial frequency is highly dependent on the number of relaxation steps. Increasing `steps` from 200 to 1000 in `config.yaml` can improve the starting frequency to approximately -0.1074 THz even before mode following, highlighting the importance of thorough local optimization.
-
-## 4. Physical Interpretation of Zero-Frequency Modes
-
-During analysis, you will notice exactly **6 modes** with frequencies very close to zero (typically within $\pm 0.05$ THz). This is a physically expected result for an isolated molecular system.
-
-### A. Degrees of Freedom
-For a non-linear molecule with $N$ atoms, the $3N$ total degrees of freedom are partitioned as:
-1.  **3 Translational Modes**: Global movement of the molecule along the $x, y, z$ axes.
-2.  **3 Rotational Modes**: Global rotation of the molecule around the $x, y, z$ axes.
-3.  **$3N - 6$ Vibrational Modes**: Internal relative motions of the atoms.
-
-### B. Symmetry and Invariance
-The potential energy surface $V(\mathbf{R})$ of an isolated molecule is invariant under global translation and rotation. Consequently, the Hessian matrix possesses 6 eigenvectors with zero eigenvalues, corresponding to these infinitesimal symmetry operations. In solids (periodic systems), rotational symmetry is broken by the lattice, leaving only 3 translational (acoustic) zero modes.
-
-## 5. Usage Instructions
-
-To execute the refinement study:
-
-```powershell
-# Run the refinement with a specific displacement
-python run_phonon_refinement.py config.yaml 0.001
+### Architecture Map
+```mermaid
+graph TD
+    A["Input Structure (Stationary Point Candidate)"] --> B["Tight Structural Relaxation (FIRE/CG)"]
+    B --> C["Vibrational Analysis (ASE Vibrations)"]
+    C --> D{"Imaginary Modes Found? (ν < -0.1 THz)"}
+    D -- Yes --> E["Calculate Multi-Mode Perturbation Vector"]
+    E --> F["Apply Atomic Displacement (α * Σ e_imag)"]
+    F --> B
+    D -- No --> G["Stable Structure (Local Minimum)"]
+    G --> H["Final Output & Verification Report"]
 ```
 
-The script will generate:
-- `stability_u[u].log`: Detailed iteration history.
-- `refined_u[u]_final.vasp`: The optimized stable structure.
-- `mode_anims/`: Animation files (`.extxyz`) showing the direction of the followed modes.
+---
 
-## 6. Implementation Credits & References
-- **Potential Model**: MACE-MP-0 (Materials Project Foundation Model).
-- **Phonon Engine**: Phonopy.
-- **Optimizer**: ASE (Atomic Simulation Environment).
-- **Logic**: AutoFlow-SRXN Stability Module.
+## 3. Example Descriptions
 
+This repository provides two distinct use cases for mode-following:
+
+### A. Precursor Stability (`/precursor`)
+- **System**: Isolated DIPAS (Diisopropylaminosilane) molecule.
+- **Physical Constraint**: Isolated boundary conditions (`center_in_vacuum: true`).
+- **Objective**: Identify internal rotation or inversion modes that lead to structural instability.
+
+### B. Surface/Slab Relaxation (`/slab`)
+- **System**: Adsorbate on a periodic Si(110) surface.
+- **Physical Constraint**: Partial Hessian Vibrational Analysis (PHVA) with a frozen substrate zone (`phva.enabled: true`).
+- **Objective**: Eliminate "ghost" imaginary modes often caused by insufficient surface relaxation or high-symmetry adsorption sites.
+
+---
+
+## 4. Result Interpretation & Analysis
+
+### A. Convergence Behavior
+A successful refinement is marked by a drop in potential energy and an increase in the minimum frequency ($ \nu_{min} $).
+
+| Cycle | Energy (eV) | Min Freq (THz) | Interpretation |
+| :--- | :--- | :--- | :--- |
+| 0 | $E_0$ | $-1.00$ | Significant instability |
+| 1 | $E_1 < E_0$ | $-0.15$ | Symmetry broken; approaching minimum |
+| Final | $E_f < E_1$ | $+0.02$ | **Stable (Local Minimum)** |
+
+### B. Physical Interpretation of Zero Modes
+Zero modes ($\omega \approx 0$) correspond to infinitesimal symmetry operations of the system. In computational results, numerical noise usually results in values within $\pm 0.05$ THz.
+
+1.  **Isolated Molecules**:
+    - **Non-linear Molecule**: $3N$ total modes consist of **6 zero modes** (3 translations + 3 rotations) and $3N-6$ vibrations.
+    - **Linear Molecule**: **5 zero modes** (3 translations + 2 rotations, as rotation along the molecular axis has no moment of inertia) and $3N-5$ vibrations.
+2.  **Solid State (Bulk)**:
+    - Rotational symmetry is broken by the lattice. Only **3 translational (acoustic) modes** exist at the $\Gamma$-point.
+3.  **Slab Structures**:
+    - Similar to bulk, slabs typically exhibit **3 translational (acoustic) modes**. 
+    - However, in a **Fixed-Bottom Slab** (common in surface science), all translational modes may shift to non-zero values because the center-of-mass motion is constrained by the frozen atoms. In a fully relaxed slab, the Z-translation (perpendicular to surface) and XY-translations remain as acoustic modes at $\Gamma$.
+
+**Note**: These zero modes should not be followed for structural refinement, as they represent global movement rather than internal structural instability.
+
+---
+
+## 5. Usage
+
+To execute the examples, navigate to the directory and run the local wrapper:
+
+```powershell
+# Example: Precursor refinement
+cd precursor
+python run_mode_following.py
+```
+
+### Physical Standards & Units
+| Property | Unit | Standard/Threshold |
+| :--- | :--- | :--- |
+| Energy | eV | - |
+| Frequency | THz | Stability > -0.1 THz |
+| Displacement ($u$) | Å | 0.005 - 0.01 Å |
+| Perturbation ($\alpha$) | Å | 0.1 - 0.5 Å |
+| Force ($f_{max}$) | eV/Å | < 0.001 eV/Å |
+
+---
+
+## 6. Implementation Credits
+- **Potential Model**: MACE-MP-0 (ML-IAP).
+- **Phonon Engine**: **ASE Vibrations Module** (Finite displacement method).
+- **Interoperability**: Phonopy-compatible `qpoints.yaml` output for post-processing and validation.
+- **Logic**: `autoflow_srxn.vibrational.mode_following`.
