@@ -295,56 +295,7 @@ engine:
                              #    cutoff_inner and the pair-specific (or fallback) outer
                              #    cutoff — forces are continuous everywhere.
 
-  # Default geometry optimization settings (engine-level).
-  # Note: The primary relaxation parameters are now configured in the top-level
-  # `relaxation` block.  The values here serve as a secondary fallback when the
-  # top-level block is absent (e.g., older config files).
-  relaxation:
-    fmax:      0.05    # Max-force convergence criterion (eV/A). Recommended: 0.05 (coarse), 0.01 (tight).
-    steps:     200     # Max optimization steps.
-    
-    # --- Relaxation Algorithms (Optimizers) ---
-    # Choice of algorithm significantly impacts convergence stability and speed.
-    #
-    # "BFGS" (Default)
-    #   Standard Quasi-Newton algorithm. Uses Hessian approximation for smooth convergence.
-    #   Best for: General surface optimizations and near-equilibrium structures.
-    #
-    # "LBFGS"
-    #   Limited-memory variant of BFGS. 
-    #   Best for: Large supercells (> 500 atoms) where storing a full Hessian is costly.
-    #
-    # "FIRE"
-    #   Fast Inertial Relaxation Engine. MD-based damped dynamics.
-    #   Best for: Highly unstable initial guesses or when BFGS shoots away due to high forces.
-    #
-    # "CG_FIRE"
-    #   Two-stage hybrid: SciPy's Conjugate Gradient followed by FIRE.
-    #   Best for: Escaping from very high-energy configurations before fine-tuning.
-    #
-    # "GPMin"
-    #   Gaussian Process Minimization. Uses ML to learn the potential energy surface.
-    #   Best for: Extremely expensive calculators where each force call counts. 
-    #   (Note: Can be slower per-step due to GP training overhead).
-    optimizer: "BFGS"
 
-    # Atom-freezing constraints applied during every relax() call.
-    # Merged additively with any FixAtoms constraints already set on the atoms object.
-    # null -> no additional constraint is applied.
-    frozen_z_ang:     null   # Fix atoms whose z < z_min(atoms) + this value (A).
-    fix_atom_indices: null   # Fix atoms by explicit index list, e.g. [0, 1, 2, 100].
-
-  # Default NVT molecular dynamics settings.
-  # Inherited by surface_prep.equilibration.
-  md:
-    temperature_K: 500     # Thermostat temperature (K).
-    timestep_fs:   1.0     # Integration timestep (fs). 1 fs is safe for most systems.
-    md_steps:      2000    # Total integration steps.
-    damping:       100.0   # Langevin friction timescale (fs).
-
-    # Atom-freezing constraints (same semantics as engine.relaxation above).
-    frozen_z_ang:     null
-    fix_atom_indices: null
 
 
 # -----------------------------------------------------------------------------
@@ -566,7 +517,7 @@ reaction_search:
       physisorption:
         enabled:          true
         placement_height: 3.5   # Initial height above top surface layer (A), see height_mode
-        rot_steps:        8     # Fibonacci-sphere sampling orientations
+        n_rot:            8     # Fibonacci-sphere sampling orientations per site
         center:           "com" # "com", "closest", element symbol, or atom index
 
         # ── Height interpretation mode ──────────────────────────────────────
@@ -608,7 +559,7 @@ reaction_search:
       physisorption:
         enabled:          true
         placement_height: 3.5
-        rot_steps:        8
+        n_rot:            8     # Fibonacci-sphere sampling orientations per site
         center:           "com"
 
         # ── Height interpretation mode (same semantics as inhibitor block above)
@@ -720,12 +671,13 @@ analysis:
     #     (or kept, see save_cache) after the run.
     #
     #   "lammps_dump"
-    #     Runs a custom finite-difference loop.  Every displaced configuration
-    #     is saved as a LAMMPS custom dump file:
-    #       {name}/ref.dump                  — undisplaced reference
-    #       {name}/disp.{atom:04d}.{x|y|z}.{p|m}.dump  — ±δ per DOF
+    #     Runs a custom finite-difference loop. Every displaced configuration
+    #     is saved in a subdirectory as a LAMMPS custom dump file:
+    #       {name}/0/force.dump              — undisplaced reference
+    #       {name}/{i}/force.dump            — i-th displacement (i = 1, 2, ...)
     #       {name}/types.map                 — integer type → element mapping
-    #     Columns: id  type  x  y  z  fx  fy  fz
+    #       {name}/disp_manifest.txt         — mapping of index i to atom/direction
+    #     Columns in force.dump: id  type  x  y  z  fx  fy  fz
     #     Positions in Å; forces in eV/Å (ASE native).
     #     Both orthogonal and triclinic cells are supported.
     #

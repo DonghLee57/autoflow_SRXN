@@ -154,6 +154,8 @@ autoflow_srxn/               # Main package
 │   │                        #   passivation, oxidation, VSEPR dangling-bond vectors
 │   ├── ads_workflow_mgr.py  #   AdsorptionWorkflowManager: symmetry-aware site enumeration,
 │   │                        #   gravity-pull physisorption, Hungarian deduplication
+│   ├── site_map.py          #   plot_adsorption_site_map(), generate_and_plot_site_map() —
+│   │                        #   top-view site visualization for any surface/composition
 │   └── chemisorption_builder.py
 │                            #   Algorithmic chemisorption: dissociative, exchange, single-site
 │
@@ -164,11 +166,13 @@ autoflow_srxn/               # Main package
 │   │                        #   (Sackur-Tetrode, rotational entropy, symmetry number σ)
 │   └── qpoint_handler.py   #   Phonopy qpoints.yaml parser — imaginary-mode extraction
 │
-├── analysis/                # 분석 도구 — 진동·전이상태 분석
-│   └── vibrational_analyzer.py
-│                            #   VibrationalAnalyzer (PHVA/FHVA), MultiModeFollower,
-│                            #   GradientFlippingCalculator, AdaptiveGradientFlippingCalculator,
-│                            #   TSSearcher (Hessian-based gradient flipping), MAC, participation
+├── vibrational/             # 분석 도구 — 진동·전이상태 분석
+│   ├── vibrational_analyzer.py
+│   │                        #   VibrationalAnalyzer (PHVA/FHVA), MultiModeFollower,
+│   │                        #   GradientFlippingCalculator, AdaptiveGradientFlippingCalculator,
+│   │                        #   TSSearcher (Hessian-based gradient flipping), MAC, participation
+│   └── mode_following.py    #   run_mode_following(config_path) — standalone PHVA → mode-following
+│                            #   → thermochemistry pipeline; entry point for per-system scripts
 │
 ├── metadynamics/            # 자동 반응 탐색 — 메타다이나믹스 기반 반응 경로 탐색 (개발 중)
 │   ├── coverage.py          #   CoverageManager: 표면 피복 열역학, μ(T,P), 그랜드 퍼텐셜
