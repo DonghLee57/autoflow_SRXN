@@ -128,8 +128,8 @@ Handles the creation and modification of the substrate surface.
 
 ### 4.3 Slab Relaxation & Equilibration
 These stages are enabled via the top-level `workflow` block (see §1.1).
-- **`surface_prep.slab_relaxation.frozen_z_ang`**: Fix atoms below this Z-height during slab relaxation (Å).  Uses `relaxation.fmax` / `relaxation.steps` from the top-level `relaxation` block unless overridden here.
-- **`surface_prep.equilibration.enabled`**: NVT MD pre-equilibration of the substrate.  Parameters fall back to the top-level `equilibration` block.
+- **`surface_prep.surface_analysis.ideal_coordination`**: Expected coordination for VSEPR bond detection.
+- **`surface_prep.surface_analysis.symprec`**: Precision for symmetry detection.
 
 ---
 

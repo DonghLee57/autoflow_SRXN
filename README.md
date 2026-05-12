@@ -48,12 +48,21 @@ The engine integrates vibrational data to calculate finite-temperature thermodyn
 - **Vibrational Partition Function**: $Z_{vib} = \prod_i \frac{e^{-\beta \hbar \omega_i / 2}}{1 - e^{-\beta \hbar \omega_i}}$
 - **Gibbs Free Energy**: $G(T) = E_{pot} + ZPE + \int C_p dT - TS$
 
-### 1.7 Iterative Mode-Following Refinement
+### 1.5 Iterative Mode-Following Refinement
 To ensure all generated structures represent true local minima, the framework implements an iterative mode-following algorithm. If a relaxed structure contains imaginary vibrational modes (frequency < -0.1 THz), the system is autonomously perturbed along the Cartesian displacement vector $\mathbf{u}_k$ of the most unstable mode:
 $$ \mathbf{R}_{new} = \mathbf{R}_{old} + \alpha \frac{\mathbf{u}_k}{\|\mathbf{u}_k\|} $$
 where $\mathbf{u}_{k,i} = \mathbf{e}_{k,i} / \sqrt{m_i}$ is derived from the mass-weighted eigenvector $\mathbf{e}_k$. The process repeats until all significant imaginary frequencies are eliminated.
 
+### 1.8 Optimized Batch Architecture & Bare Slab Support
+The framework is designed for large-scale screening with maximum computational efficiency.
+- **Global Slab Preparation**: In batch mode, substrate generation, passivation, and relaxation are performed **once per batch** rather than once per pair, significantly reducing redundant potential evaluations.
+- **Bare Slab Workflow**: Supports running with `null` precursors/inhibitors to generate and optimize standardized substrate models for reference.
+- **Intelligent Center Atom Selection**: 
+  - **Precursors**: Automatically detects central reactive atoms by matching against a list (e.g., `["Si", "Fe", "Ti"]`) or identifying metal/semiconductor elements (non-HCNO).
+  - **Inhibitors**: Defaults to **Center of Mass (COM)** for general physisorption-based surface functionalization.
+
 ---
+
 
 ## 2. Strategic Objectives
 - **High-Throughput Exploration**: Rational search of the potential energy surface (PES) using symmetry-aware site identification.

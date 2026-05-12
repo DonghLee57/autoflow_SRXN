@@ -35,7 +35,7 @@ class TestSurfaceConstruction(unittest.TestCase):
     def test_h_passivation_top(self):
         """Test H-passivation on the top side."""
         slab = build_si100_slab(self.bulk_si, size=(2, 2), layers=4)
-        passivated = passivate_surface_coverage_general(slab, h_coverage=1.0, valence_map=self.valence_map, side="top")
+        passivated = passivate_surface_coverage_general(slab, coverage=1.0, valence_map=self.valence_map, side="top")
 
         h_atoms = [a for a in passivated if a.symbol == "H"]
         self.assertGreater(len(h_atoms), 0)
@@ -49,7 +49,7 @@ class TestSurfaceConstruction(unittest.TestCase):
         """Test H-passivation on the bottom side."""
         slab = build_si100_slab(self.bulk_si, size=(2, 2), layers=4)
         passivated = passivate_surface_coverage_general(
-            slab, h_coverage=1.0, valence_map=self.valence_map, side="bottom"
+            slab, coverage=1.0, valence_map=self.valence_map, side="bottom"
         )
 
         h_atoms = [a for a in passivated if a.symbol == "H"]
@@ -65,11 +65,11 @@ class TestSurfaceConstruction(unittest.TestCase):
         slab = build_si100_slab(self.bulk_si, size=(2, 2), layers=4)
         # Passivate top
         passivated_top = passivate_surface_coverage_general(
-            slab, h_coverage=1.0, valence_map=self.valence_map, side="top"
+            slab, coverage=1.0, valence_map=self.valence_map, side="top"
         )
         # Passivate bottom of the top-passivated slab
         passivated_both = passivate_surface_coverage_general(
-            passivated_top, h_coverage=1.0, valence_map=self.valence_map, side="bottom"
+            passivated_top, coverage=1.0, valence_map=self.valence_map, side="bottom"
         )
 
         h_atoms = [a for a in passivated_both if a.symbol == "H"]

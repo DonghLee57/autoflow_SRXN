@@ -474,23 +474,6 @@ surface_prep:
       C:  4
       H:  1
 
-  # ── Potential-required ─────────────────────────────────────────────────────
-
-  slab_relaxation:               # [REQUIRES POTENTIAL — toggle via workflow.slab_relax]
-    # Stage-specific overrides for slab-only relaxation.
-    # Enable/disable is controlled by workflow.slab_relax (top-level).
-    # If the values below are null, the global `relaxation` block is used.
-    fmax:         null   # null → inherits relaxation.fmax
-    steps:        null   # null → inherits relaxation.steps
-    frozen_z_ang: 4.0    # Fix bottom slab layers during substrate relaxation (A).
-
-  equilibration:                 # [REQUIRES POTENTIAL — toggle via workflow.md_equilibrate]
-    # Stage-specific MD override for substrate pre-equilibration (distinct from
-    # candidate MD which is controlled by workflow.md_equilibrate).
-    # Parameters fall back to the top-level `equilibration` block if null.
-    enabled:      false
-    frozen_z_ang: 5.5    # Fix the bottom part of the slab during MD (A).
-
 
 # -----------------------------------------------------------------------------
 # Stage 2 — Reaction Search
@@ -553,7 +536,11 @@ reaction_search:
     # This stage simulates the adsorption of the target ALD/CVD precursor
     # on the surfaces selected from Stage 1.
     precursor:
-      center:           "Si"    # Central reactive atom in the molecule
+      center:           ["Si", "Ti", "Al", "Fe"]    # Central reactive atom. Supports:
+                                                    # - Single element ("Si")
+                                                    # - List of elements (autodetects first match in molecule)
+                                                    # - "com" (Center of Mass)
+                                                    # - null (autodetects metal/semiconductor)
 
       # Search Mechanisms for Stage 2 (Main Precursor)
       physisorption:

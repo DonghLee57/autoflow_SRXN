@@ -115,12 +115,12 @@ def get_all_dangling_bonds_general(atoms, valence_map, vector_generator=None, cu
                     all_bonds.append({"parent": idx, "vector": v, "parent_sym": sym})
     return all_bonds
 
-def passivate_surface_coverage_general(atoms, h_coverage, valence_map, vector_generator=None, element="H", cutoff=3.1, side="top", verbose=False):
+def passivate_surface_coverage_general(atoms, coverage, valence_map, vector_generator=None, element="H", cutoff=3.1, side="top", verbose=False):
     """Uniformly passivate a surface using a greedy max-min distance algorithm."""
     from ase.geometry import get_distances
     candidates = get_all_dangling_bonds_general(atoms, valence_map, vector_generator, cutoff, side)
     if not candidates: return standardize_vasp_atoms(atoms, z_min_offset=0.5)
-    n_target = int(round(len(candidates) * h_coverage))
+    n_target = int(round(len(candidates) * coverage))
     if n_target == 0: return atoms
     current_atoms = atoms.copy()
     success = 0

@@ -1,0 +1,76 @@
+# =============================================================================
+# Batch Test Config: Directory-based Precursors & Inhibitors
+# =============================================================================
+
+paths:
+  substrate_bulk: "../../structures/Si_mp149.vasp"
+  precursor:      "test_precursors"
+  inhibitor:      "test_inhibitors"
+  include_no_inhibitor: true
+  output_prefix:  "results_batch_test"
+  restart: true
+
+# =============================================================================
+# Pipeline Control (Potentials disabled for fast geometry check)
+# =============================================================================
+workflow:
+  slab_relax:       false
+  candidate_relax:  false
+  md_equilibrate:   false
+  post_md_relax:    false
+
+# =============================================================================
+# Surface Preparation
+# =============================================================================
+surface_prep:
+  slab_generation:
+    enabled:           true
+    miller:            [1, 1, 0]
+    thickness_ang:     8.0
+    vacuum_ang:        10.0
+    target_area_ang2:  100.0
+
+  passivation:
+    enabled: true
+    element: "H"
+    side:    "bottom"
+
+# =============================================================================
+# Reaction Search
+# =============================================================================
+reaction_search:
+  mechanisms:
+    inhibitor:
+      enabled: true
+      center:  "com"
+      physisorption:
+        enabled:          true
+        placement_height: 3.2
+        height_mode:      "clearance"
+      chemisorption:
+        enabled: false
+      branching_limit: 1
+
+    precursor:
+      center: ["Si", "Fe", "Ti", "Al"]  # List of potential centers
+      physisorption:
+        enabled:          true
+        placement_height: 4.0
+        height_mode:      "clearance"
+        n_rot:            4
+      chemisorption:
+        enabled:  true
+        rot_steps: 4
+
+  candidate_filter:
+    symprec:       0.2
+    overlap_scale: 0.65
+
+# =============================================================================
+# Simulation Engine
+# =============================================================================
+engine:
+  potential:
+    backend: "mace"
+    model:   "medium"
+    device:  "cpu"

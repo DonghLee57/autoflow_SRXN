@@ -44,10 +44,10 @@ class TestPHVAVariationSi110(unittest.TestCase):
 
         # 3. Passivate Both Sides
         cls.slab = passivate_surface_coverage_general(
-            cls.slab, h_coverage=1.0, valence_map=SI_VALENCE_MAP, side="top", verbose=True
+            cls.slab, coverage=1.0, valence_map=SI_VALENCE_MAP, side="top", verbose=True
         )
         cls.slab = passivate_surface_coverage_general(
-            cls.slab, h_coverage=1.0, valence_map=SI_VALENCE_MAP, side="bottom", verbose=True
+            cls.slab, coverage=1.0, valence_map=SI_VALENCE_MAP, side="bottom", verbose=True
         )
 
         # 4. Load DIPAS Adsorbate

@@ -129,9 +129,6 @@ class VibrationalAnalyzer:
 
         # ── Resolve PHVA parameters ──────────────────────────────────────────
         frozen_z = phva_cfg.get("frozen_z_ang")
-        # Legacy fallback: surface_prep.equilibration.frozen_z_ang
-        if frozen_z is None:
-            frozen_z = config.get("surface_prep", {}).get("equilibration", {}).get("frozen_z_ang")
 
         radius     = phva_cfg.get("radius_ang")
         center_cfg = phva_cfg.get("center", None)

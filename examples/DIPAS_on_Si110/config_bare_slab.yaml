@@ -1,0 +1,65 @@
+# =============================================================================
+# Bare Slab Config: Si(110) Slab Generation & Relaxation only
+# =============================================================================
+
+paths:
+  substrate_bulk: "../../structures/Si_mp149.vasp"
+  precursor:      null
+  inhibitor:      null
+  include_no_inhibitor: false
+  output_prefix:  "results_bare_slab"
+  restart: true
+
+# =============================================================================
+# Pipeline Control
+# =============================================================================
+workflow:
+  slab_relax:       true   # Enable slab relaxation
+  candidate_relax:  false
+  md_equilibrate:   false
+  post_md_relax:    false
+
+# =============================================================================
+# Relaxation parameters
+# =============================================================================
+relaxation:
+  fmax:         0.05
+  steps:        100
+  frozen_z_ang: 5.5
+
+# =============================================================================
+# Surface Preparation
+# =============================================================================
+surface_prep:
+  slab_generation:
+    enabled:           true
+    miller:            [1, 1, 0]
+    thickness_ang:     12.0
+    vacuum_ang:        15.0
+    target_area_ang2:  250.0
+
+  passivation:
+    enabled: true
+    element: "H"
+    side:    "bottom"
+
+# =============================================================================
+# Reaction Search (Disabled for bare slab)
+# =============================================================================
+reaction_search:
+  mechanisms:
+    inhibitor:
+      enabled: false
+    precursor:
+      enabled: false
+
+# =============================================================================
+# Simulation Engine
+# =============================================================================
+engine:
+  potential:
+    backend: "mace"
+    model:   "medium"
+    device:  "cpu"
+    dtype:   "float64"
+    d3:      false

@@ -56,23 +56,13 @@ def _resolve_workflow(config):
           candidate_relax:  true
           md_equilibrate:   false
           post_md_relax:    true
-
-    Legacy format (still accepted):
-        surface_prep.slab_relaxation.enabled
-        verification.relaxation.enabled
-        verification.equilibration.enabled / post_relax
     """
     wf = config.get("workflow", {})
-    # Legacy fall-backs
-    legacy_sr  = config.get("surface_prep", {}).get("slab_relaxation", {}).get("enabled", False)
-    legacy_cr  = config.get("verification", {}).get("relaxation", {}).get("enabled", False)
-    legacy_md  = config.get("verification", {}).get("equilibration", {}).get("enabled", False)
-    legacy_pmd = config.get("verification", {}).get("equilibration", {}).get("post_relax", True)
     return {
-        "slab_relax":      wf.get("slab_relax",      legacy_sr),
-        "candidate_relax": wf.get("candidate_relax",  legacy_cr),
-        "md_equilibrate":  wf.get("md_equilibrate",   legacy_md),
-        "post_md_relax":   wf.get("post_md_relax",    legacy_pmd),
+        "slab_relax":      wf.get("slab_relax",      False),
+        "candidate_relax": wf.get("candidate_relax",  False),
+        "md_equilibrate":  wf.get("md_equilibrate",   False),
+        "post_md_relax":   wf.get("post_md_relax",    True),
     }
 
 
@@ -84,17 +74,12 @@ def _resolve_relax_params(config):
           fmax:         0.05
           steps:        100
           frozen_z_ang: 5.5
-
-    Legacy: config.verification.relaxation / config.engine.relaxation
     """
-    new  = config.get("relaxation", {})
-    lv   = config.get("verification", {}).get("relaxation", {})
-    le   = config.get("engine", {}).get("relaxation", {})
+    new = config.get("relaxation", {})
     return {
-        "fmax":         new.get("fmax",         lv.get("fmax",  le.get("fmax",  0.05))),
-        "steps":        new.get("steps",        lv.get("steps", le.get("steps", 100))),
-        "frozen_z_ang": new.get("frozen_z_ang", lv.get("frozen_z_ang",
-                                                le.get("frozen_z_ang", None))),
+        "fmax":         new.get("fmax",         0.05),
+        "steps":        new.get("steps",        100),
+        "frozen_z_ang": new.get("frozen_z_ang", None),
     }
 
 
@@ -105,17 +90,14 @@ def _resolve_equil_params(config):
         equilibration:
           temperature_K: 300
           md_steps:      1000
-
-    Legacy: config.verification.equilibration
     """
     new = config.get("equilibration", {})
-    lv  = config.get("verification", {}).get("equilibration", {})
     return {
-        "temperature_K": new.get("temperature_K", lv.get("temperature_K", 300)),
-        "md_steps":      new.get("md_steps",      lv.get("md_steps",      1000)),
-        "timestep_fs":   new.get("timestep_fs",   lv.get("timestep_fs",   1.0)),
-        "damping":       new.get("damping",        lv.get("damping",       100.0)),
-        "frozen_z_ang":  new.get("frozen_z_ang",  lv.get("frozen_z_ang",  None)),
+        "temperature_K": new.get("temperature_K", 300),
+        "md_steps":      new.get("md_steps",      1000),
+        "timestep_fs":   new.get("timestep_fs",   1.0),
+        "damping":       new.get("damping",       100.0),
+        "frozen_z_ang":  new.get("frozen_z_ang",  None),
     }
 
 
@@ -320,6 +302,33 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
     chem_cfg  = stage_cfg.get("chemisorption",  {"enabled": False})
     symprec   = rs_cfg.get("candidate_filter", {}).get("symprec", 0.2)
 
+    # --- Intelligent Center Selection ---
+    actual_center = center_target
+    if stage_type == "inhibitor":
+        # Default inhibitor center to COM (Center of Mass)
+        actual_center = "com"
+    else:
+        # Precursor logic:
+        # 1. If center_target is a list, find first match in molecule
+        # 2. If no match or not a list, look for non-HCNO elements
+        # 3. Fallback to 'com' if still nothing found
+        mol_symbols = set(mol.get_chemical_symbols())
+        if isinstance(center_target, list):
+            found = False
+            for c in center_target:
+                if c in mol_symbols:
+                    actual_center = c
+                    found = True
+                    break
+            if not found:
+                others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+                actual_center = others[0] if others else "com"
+        elif isinstance(center_target, str) and center_target not in mol_symbols and center_target != "com":
+             others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+             actual_center = others[0] if others else "com"
+             if others:
+                 logger.info(f"  [Stage: {stage_type}] '{center_target}' not found. Auto-selected '{actual_center}' as center.")
+
     mgr       = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=True)
     all_cands = []
 
@@ -344,7 +353,7 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
             height=physi_cfg.get("placement_height", 3.5),
             n_rot=physi_cfg.get("n_rot", 32),
             tag=tag,
-            rot_center=physi_cfg.get("rotation_center", center_target),
+            rot_center=actual_center,
             height_mode=physi_cfg.get("height_mode", "clearance"),
             gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False}),
         )
@@ -355,10 +364,10 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
     if chem_cfg.get("enabled", False):
         logger.info(
             f"  [Stage: {stage_type}] Chemisorption search for "
-            f"{mol.get_chemical_formula()} (center={center_target})..."
+            f"{mol.get_chemical_formula()} (center={actual_center})..."
         )
         chem_cands = build_chemisorption_structures(
-            molecule=mol, center_target=center_target, surface=slab,
+            molecule=mol, center_target=actual_center, surface=slab,
             config=config, tag=tag,
             results_dir=os.path.dirname(out_prefix),
         )
@@ -379,65 +388,21 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
 # Top-level workflow
 # =============================================================================
 
-def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_energy=0.0):
-    """Main workflow: slab → inhibitor → precursor."""
+def execute_discovery_workflow(config, logger, slab, gas_energy_map=None, slab_base_energy=0.0):
+    """Main workflow: inhibitor → precursor using a pre-prepared slab."""
     paths     = config["paths"]
-    sp_cfg    = config.get("surface_prep", {})
     rs_cfg    = config.get("reaction_search", {})
     mechs_cfg = rs_cfg.get("mechanisms", {})
     inh_cfg   = mechs_cfg.get("inhibitor", {})
     wf        = _resolve_workflow(config)
-    rp        = _resolve_relax_params(config)
 
     precursor_file = paths.get("precursor")
     inh_file       = paths.get("inhibitor")
     out_dir        = paths.get("output_prefix", "results")
     mol = read(precursor_file) if precursor_file and os.path.exists(precursor_file) else None
 
-    # --- Stage 0: Slab generation ---
-    sub_gen_cfg = sp_cfg.get("slab_generation", {})
-    if sub_gen_cfg.get("enabled", False):
-        log_stage_title(logger, "STAGE 0", "Generating substrate slab...")
-        slab = create_slab_from_bulk(
-            bulk_atoms=read(paths["substrate_bulk"]),
-            miller_indices=sub_gen_cfg.get("miller", [1, 0, 0]),
-            thickness=sub_gen_cfg.get("thickness_ang", 10.0),
-            vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
-            target_area=sub_gen_cfg.get("target_area_ang2"),
-            verbose=True,
-        )
-    else:
-        slab = standardize_vasp_atoms(read(paths["input_structure"]), z_min_offset=0.5)
-    slab.set_tags(0)
-
-    # --- Stage 0.5: Slab relaxation ---
-    if wf["slab_relax"]:
-        from autoflow_srxn.simulation.potentials import SimulationEngine
-        log_stage_title(logger, "STAGE 0.5", "Slab relaxation...")
-        engine = SimulationEngine(config)
-        slab.calc = engine.get_calculator()
-        e_init = slab.get_potential_energy()
-        engine.relax(
-            slab,
-            fmax=rp["fmax"],
-            steps=200,
-            frozen_z_ang=rp["frozen_z_ang"],
-        )
-        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
-        slab_base_energy = slab.get_potential_energy()
-        log_energy_comparison(logger, "Slab Relax", e_init, slab_base_energy)
-    else:
-        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
-        if not slab_base_energy and wf["candidate_relax"]:
-            from autoflow_srxn.simulation.potentials import SimulationEngine
-            engine = SimulationEngine(config)
-            slab.calc = engine.get_calculator()
-            slab_base_energy = slab.get_potential_energy()
-        else:
-            slab_base_energy = slab_base_energy or 0.0
-
     # --- Stage 1: Inhibitor discovery ---
-    base_slabs = [slab]
+    base_slabs = [slab.copy()]
     if inh_cfg.get("enabled", False) and inh_file and os.path.exists(inh_file):
         log_stage_title(logger, "STAGE 1", f"Inhibitor Discovery ({os.path.basename(inh_file)})")
         e_gas_inh = (gas_energy_map.get(inh_file, 0.0) if gas_energy_map
@@ -466,7 +431,10 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
         for i, s in enumerate(base_slabs):
             e_base_s2 = s.info.get("e_final")
             if e_base_s2 is None:
-                e_base_s2 = s.get_potential_energy() if s.calc is not None else slab_base_energy
+                try:
+                    e_base_s2 = s.get_potential_energy() if s.calc is not None else slab_base_energy
+                except Exception:
+                    e_base_s2 = slab_base_energy
             suffix  = f"_branch{i}" if len(base_slabs) > 1 else ""
             results = execute_discovery_stage(
                 s, mol, config,
@@ -486,6 +454,9 @@ def execute_discovery_workflow(config, logger, gas_energy_map=None, slab_base_en
 def run_generic_adsorption_study(config_path="config.yaml"):
     config = load_config(config_path)
     paths  = config["paths"]
+    sp_cfg = config.get("surface_prep", {})
+    wf     = _resolve_workflow(config)
+    rp     = _resolve_relax_params(config)
 
     def get_files(p):
         if not p:
@@ -506,6 +477,67 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         inhibitors = [None]
 
     global_prefix = paths.get("output_prefix", "discovery")
+    os.makedirs(global_prefix, exist_ok=True)
+    
+    # Setup global logger for common stages
+    master_logger = setup_logger(log_path=os.path.join(global_prefix, "master_workflow.log"), mode="w")
+
+    # --- SHARED STAGE: Slab preparation (only once) ---
+    sub_gen_cfg = sp_cfg.get("slab_generation", {})
+    if sub_gen_cfg.get("enabled", False):
+        log_stage_title(master_logger, "GLOBAL STAGE 0", "Generating substrate slab...")
+        slab = create_slab_from_bulk(
+            bulk_atoms=read(paths["substrate_bulk"]),
+            miller_indices=sub_gen_cfg.get("miller", [1, 0, 0]),
+            thickness=sub_gen_cfg.get("thickness_ang", 10.0),
+            vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
+            target_area=sub_gen_cfg.get("target_area_ang2"),
+            verbose=True,
+        )
+    else:
+        slab = standardize_vasp_atoms(read(paths["input_structure"]), z_min_offset=0.5)
+    slab.set_tags(0)
+
+    # --- GLOBAL STAGE 0.1: Passivation ---
+    pass_cfg = sp_cfg.get("passivation", {})
+    if pass_cfg.get("enabled", False):
+        log_stage_title(master_logger, "GLOBAL STAGE 0.1", f"Passivating surface with {pass_cfg.get('element', 'H')}...")
+        valence_map = sp_cfg.get("surface_analysis", {}).get("ideal_coordination", {})
+        slab = passivate_surface_coverage_general(
+            slab,
+            coverage=pass_cfg.get("coverage", 1.0),
+            valence_map=valence_map,
+            element=pass_cfg.get("element", "H"),
+            side=pass_cfg.get("side", "bottom"),
+            verbose=True,
+        )
+
+    # --- GLOBAL STAGE 0.5: Slab relaxation ---
+    slab_base_energy = 0.0
+    if wf["slab_relax"]:
+        from autoflow_srxn.simulation.potentials import SimulationEngine
+        log_stage_title(master_logger, "GLOBAL STAGE 0.5", "Slab relaxation...")
+        engine = SimulationEngine(config)
+        slab.calc = engine.get_calculator()
+        e_init = slab.get_potential_energy()
+        engine.relax(slab, fmax=rp["fmax"], steps=200, frozen_z_ang=rp["frozen_z_ang"])
+        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
+        slab_base_energy = slab.get_potential_energy()
+        log_energy_comparison(master_logger, "Slab Relax", e_init, slab_base_energy)
+    else:
+        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
+        if wf["candidate_relax"]:
+            from autoflow_srxn.simulation.potentials import SimulationEngine
+            engine = SimulationEngine(config)
+            slab.calc = engine.get_calculator()
+            try:
+                slab_base_energy = slab.get_potential_energy()
+            except Exception:
+                slab_base_energy = 0.0
+
+    write(os.path.join(global_prefix, "prepared_slab.extxyz"), slab)
+
+    # --- Pre-calculate gas phase energies ---
     unique_mols   = list(set(f for f in precursors + inhibitors if f and os.path.exists(f)))
     gas_energy_map = {}
     if unique_mols:
@@ -513,13 +545,17 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         for m_path in unique_mols:
             gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, tmp_logger)
 
+    # --- BATCH LOOP ---
     for inh_path in inhibitors:
         for pre_path in precursors:
-            if not pre_path:
-                continue
             inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "clean"
-            pre_name = os.path.splitext(os.path.basename(pre_path))[0]
-            run_name = f"{inh_name}_pretreated_{pre_name}"
+            pre_name = os.path.splitext(os.path.basename(pre_path))[0] if pre_path else "none"
+            
+            if not pre_path and inh_name == "clean":
+                run_name = "bare_slab"
+            else:
+                run_name = f"{inh_name}_on_{pre_name}"
+            
             run_dir  = os.path.join(global_prefix, run_name)
             os.makedirs(run_dir, exist_ok=True)
 
@@ -532,9 +568,14 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             run_config["paths"]["output_prefix"] = run_dir
 
             try:
-                execute_discovery_workflow(run_config, logger, gas_energy_map=gas_energy_map)
+                execute_discovery_workflow(run_config, logger, slab=slab, 
+                                           gas_energy_map=gas_energy_map, 
+                                           slab_base_energy=slab_base_energy)
             except Exception as exc:
                 logger.error(f"Discovery workflow failed for {run_name}: {exc}")
+                import traceback
+                logger.error(traceback.format_exc())
+
 
 
 if __name__ == "__main__":

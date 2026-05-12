@@ -65,7 +65,7 @@ class TestAdsorption(unittest.TestCase):
 
         slab = build_si100_slab(self.bulk_si, size=(2, 2), layers=4)
         # Passivate top with H
-        passivated = passivate_surface_coverage_general(slab, h_coverage=1.0, valence_map={"Si": 4, "H": 1}, side="top")
+        passivated = passivate_surface_coverage_general(slab, coverage=1.0, valence_map={"Si": 4, "H": 1}, side="top")
         # Manually tag H atoms as 10 to be picked up by 'tag' heuristic
         tags = passivated.get_tags()
         for i, atom in enumerate(passivated):
@@ -96,7 +96,7 @@ class TestAdsorption(unittest.TestCase):
         # Case 2: Passivated surface (should trigger protector exchange)
         from autoflow_srxn.surface.surface_utils import passivate_surface_coverage_general
 
-        passivated = passivate_surface_coverage_general(slab, h_coverage=1.0, valence_map={"Si": 4, "H": 1}, side="top")
+        passivated = passivate_surface_coverage_general(slab, coverage=1.0, valence_map={"Si": 4, "H": 1}, side="top")
         # Tag H atoms as 10 for 'tag' heuristic
         tags = passivated.get_tags()
         for i, atom in enumerate(passivated):
