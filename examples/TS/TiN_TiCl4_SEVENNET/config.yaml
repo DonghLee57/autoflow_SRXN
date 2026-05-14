@@ -1,0 +1,62 @@
+# =============================================================================
+# TiN(111) + TiCl4 (SevenNet-0) Example
+# Same geometry as TiN_TiCl4_MACE; uses SevenNet 7net-0 for better TiCl4
+# adsorption energetics on TiN(111).
+# =============================================================================
+
+paths:
+  substrate_bulk:  "../../../structures/TiN_bulk.vasp"
+  precursor:       "../../../structures/TiCl4.vasp"
+  output_prefix:   "results"
+
+surface_prep:
+  slab_generation:
+    enabled:          true
+    miller:           [1, 1, 1]
+    thickness_ang:    12.0
+    vacuum_ang:       15.0
+    supercell_matrix: [[2, 0], [0, 2]]
+  surface_analysis:
+    ideal_coordination:
+      Ti: 6
+      N: 6
+  passivation:
+    enabled: false
+
+reaction_search:
+  symprec: 1.0
+  mechanisms:
+    precursor:
+      center: "Ti"
+      physisorption:
+        enabled: true
+        placement_height: 3.5
+        n_rot: 8
+        gravity_pull:
+          enabled: true
+      chemisorption:
+        enabled: true
+        verbose: true
+      ts_search:
+        enabled:          true
+        n_images:         7
+        fmax:             0.03
+        mapping_mode:     "geometric"
+        verification:     true
+
+workflow:
+  slab_relax:       true
+  candidate_relax:  true
+  md_equilibrate:   false
+  post_md_relax:    true
+
+relaxation:
+  fmax:         0.03
+  steps:        200
+  frozen_z_ang: 6.0
+
+engine:
+  potential:
+    backend: "sevennet"
+    model:   "7net-0"
+    device:  "cpu"

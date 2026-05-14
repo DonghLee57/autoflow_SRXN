@@ -19,6 +19,7 @@ from autoflow_srxn.surface.ads_workflow_mgr import AdsorptionWorkflowManager
 from autoflow_srxn.surface.chemisorption_builder import build_chemisorption_structures
 from autoflow_srxn.surface.site_map import generate_and_plot_site_map
 from autoflow_srxn.utils.logger_utils import log_energy_comparison, log_results_table, log_stage_title, setup_logger
+from autoflow_srxn.utils.perf_tracker import PerfTracker, perf_stage, set_perf_tracker
 from autoflow_srxn.surface.surface_utils import (
     create_slab_from_bulk,
     passivate_surface_coverage_general,
@@ -287,6 +288,16 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     return processed_cands
 
 
+# Thin timing shim — wraps execute_verification_stage with a perf_stage block
+_orig_verification = execute_verification_stage
+
+
+def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_gas=0.0, e_base=0.0):
+    label = f"verification ({len(candidates)} candidates)"
+    with perf_stage(label):
+        return _orig_verification(candidates, config, logger, out_prefix, tag=tag, e_gas=e_gas, e_base=e_base)
+
+
 # =============================================================================
 # Discovery stage
 # =============================================================================
@@ -323,18 +334,19 @@ def execute_ts_search_stage(results, config, logger, out_prefix):
 
     for i, chem in enumerate(chem_results):
         ts_dir = os.path.join(os.path.dirname(out_prefix), f"ts_search_{i}")
-        try:
-            ts_structure = workflow.run_ts_search(
-                best_phy, chem,
-                n_images=ts_cfg.get("n_images", 5),
-                fmax_neb=ts_cfg.get("fmax", 0.05),
-                output_dir=ts_dir
-            )
-            if ts_structure:
-                ts_structure.info["mechanism"] = f"TS_{chem.info.get('mechanism')}"
-                ts_results.append(ts_structure)
-        except Exception as e:
-            logger.error(f"  [TS Search] Candidate {i} failed: {e}")
+        with perf_stage(f"ts_search_{i} (NEB+ARTn+Vib)"):
+            try:
+                ts_structure = workflow.run_ts_search(
+                    best_phy, chem,
+                    n_images=ts_cfg.get("n_images", 5),
+                    fmax_neb=ts_cfg.get("fmax", 0.05),
+                    output_dir=ts_dir
+                )
+                if ts_structure:
+                    ts_structure.info["mechanism"] = f"TS_{chem.info.get('mechanism')}"
+                    ts_results.append(ts_structure)
+            except Exception as e:
+                logger.error(f"  [TS Search] Candidate {i} failed: {e}")
 
     if ts_results:
         write(f"{out_prefix}_ts_results.extxyz", ts_results)
@@ -399,15 +411,16 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
         except Exception as _sm_exc:
             logger.warning(f"  [SiteMap] Could not generate site map: {_sm_exc}")
 
-        phy_cands = mgr.generate_physisorption_candidates(
-            mol,
-            height=physi_cfg.get("placement_height", 3.5),
-            n_rot=physi_cfg.get("n_rot", 32),
-            tag=tag,
-            rot_center=actual_center,
-            height_mode=physi_cfg.get("height_mode", "clearance"),
-            gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False}),
-        )
+        with perf_stage(f"physi_candidates ({stage_type}/{mol.get_chemical_formula()})"):
+            phy_cands = mgr.generate_physisorption_candidates(
+                mol,
+                height=physi_cfg.get("placement_height", 3.5),
+                n_rot=physi_cfg.get("n_rot", 32),
+                tag=tag,
+                rot_center=actual_center,
+                height_mode=physi_cfg.get("height_mode", "clearance"),
+                gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False}),
+            )
         for c in phy_cands:
             c.info.setdefault("mechanism", "physisorption")
         all_cands.extend(phy_cands)
@@ -417,12 +430,13 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
             f"  [Stage: {stage_type}] Chemisorption search for "
             f"{mol.get_chemical_formula()} (center={actual_center})..."
         )
-        chem_cands = build_chemisorption_structures(
-            molecule=mol, center_target=actual_center, surface=slab,
-            rot_steps=chem_cfg.get("rot_steps", 8),
-            config=config, tag=tag,
-            results_dir=os.path.dirname(out_prefix),
-        )
+        with perf_stage(f"chem_candidates ({stage_type}/{mol.get_chemical_formula()})"):
+            chem_cands = build_chemisorption_structures(
+                molecule=mol, center_target=actual_center, surface=slab,
+                rot_steps=chem_cfg.get("rot_steps", 8),
+                config=config, tag=tag,
+                results_dir=os.path.dirname(out_prefix),
+            )
         for c in chem_cands:
             c.info["mechanism"] = "chemisorption"
         all_cands.extend(chem_cands)
@@ -536,40 +550,45 @@ def run_generic_adsorption_study(config_path="config.yaml"):
 
     global_prefix = paths.get("output_prefix", "discovery")
     os.makedirs(global_prefix, exist_ok=True)
-    
+
     # Setup global logger for common stages
     master_logger = setup_logger(log_path=os.path.join(global_prefix, "master_workflow.log"), mode="w")
 
+    # --- Init performance tracker ---
+    tracker = PerfTracker(sample_interval=1.0, log_on_exit=True)
+    set_perf_tracker(tracker)
+
     # --- SHARED STAGE: Slab preparation (only once) ---
     sub_gen_cfg = sp_cfg.get("slab_generation", {})
-    if sub_gen_cfg.get("enabled", False):
-        log_stage_title(master_logger, "GLOBAL STAGE 0", "Generating substrate slab...")
-        slab = create_slab_from_bulk(
-            bulk_atoms=read(paths["substrate_bulk"]),
-            miller_indices=sub_gen_cfg.get("miller", [1, 0, 0]),
-            thickness=sub_gen_cfg.get("thickness_ang", 10.0),
-            vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
-            target_area=sub_gen_cfg.get("target_area_ang2"),
-            supercell_matrix=sub_gen_cfg.get("supercell_matrix"),
-            verbose=True,
-        )
-    else:
-        slab = standardize_vasp_atoms(read(paths["input_structure"]), z_min_offset=0.5)
-    slab.set_tags(0)
+    with perf_stage("slab_generation"):
+        if sub_gen_cfg.get("enabled", False):
+            log_stage_title(master_logger, "GLOBAL STAGE 0", "Generating substrate slab...")
+            slab = create_slab_from_bulk(
+                bulk_atoms=read(paths["substrate_bulk"]),
+                miller_indices=sub_gen_cfg.get("miller", [1, 0, 0]),
+                thickness=sub_gen_cfg.get("thickness_ang", 10.0),
+                vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
+                target_area=sub_gen_cfg.get("target_area_ang2"),
+                supercell_matrix=sub_gen_cfg.get("supercell_matrix"),
+                verbose=True,
+            )
+        else:
+            slab = standardize_vasp_atoms(read(paths["input_structure"]), z_min_offset=0.5)
+        slab.set_tags(0)
 
-    # --- GLOBAL STAGE 0.1: Passivation ---
-    pass_cfg = sp_cfg.get("passivation", {})
-    if pass_cfg.get("enabled", False):
-        log_stage_title(master_logger, "GLOBAL STAGE 0.1", f"Passivating surface with {pass_cfg.get('element', 'H')}...")
-        valence_map = sp_cfg.get("surface_analysis", {}).get("ideal_coordination", {})
-        slab = passivate_surface_coverage_general(
-            slab,
-            coverage=pass_cfg.get("coverage", 1.0),
-            valence_map=valence_map,
-            element=pass_cfg.get("element", "H"),
-            side=pass_cfg.get("side", "bottom"),
-            verbose=True,
-        )
+        # --- GLOBAL STAGE 0.1: Passivation ---
+        pass_cfg = sp_cfg.get("passivation", {})
+        if pass_cfg.get("enabled", False):
+            log_stage_title(master_logger, "GLOBAL STAGE 0.1", f"Passivating surface with {pass_cfg.get('element', 'H')}...")
+            valence_map = sp_cfg.get("surface_analysis", {}).get("ideal_coordination", {})
+            slab = passivate_surface_coverage_general(
+                slab,
+                coverage=pass_cfg.get("coverage", 1.0),
+                valence_map=valence_map,
+                element=pass_cfg.get("element", "H"),
+                side=pass_cfg.get("side", "bottom"),
+                verbose=True,
+            )
 
     # --- GLOBAL STAGE 0.5: Slab relaxation ---
     # Open ref_energies logger early so slab energy is also captured there
@@ -579,12 +598,13 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     if wf["slab_relax"]:
         from autoflow_srxn.simulation.potentials import SimulationEngine
         log_stage_title(master_logger, "GLOBAL STAGE 0.5", "Slab relaxation...")
-        engine = SimulationEngine(config)
-        slab.calc = engine.get_calculator()
-        e_init = slab.get_potential_energy()
-        engine.relax(slab, fmax=rp["fmax"], steps=200, frozen_z_ang=rp["frozen_z_ang"])
-        slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
-        slab_base_energy = slab.get_potential_energy()
+        with perf_stage("slab_relax"):
+            engine = SimulationEngine(config)
+            slab.calc = engine.get_calculator()
+            e_init = slab.get_potential_energy()
+            engine.relax(slab, fmax=rp["fmax"], steps=200, frozen_z_ang=rp["frozen_z_ang"])
+            slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
+            slab_base_energy = slab.get_potential_energy()
         log_energy_comparison(master_logger, "Slab Relax", e_init, slab_base_energy)
         ref_logger.info(f"  [Slab] E_relaxed: {slab_base_energy:12.4f} eV  ({slab.get_chemical_formula()})")
     else:
@@ -602,23 +622,24 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     write(os.path.join(global_prefix, "prepared_slab.extxyz"), slab)
 
     # --- Pre-calculate gas phase energies ---
-    unique_mols   = list(set(f for f in precursors + inhibitors if f and os.path.exists(f)))
+    unique_mols = list(set(f for f in precursors + inhibitors if f and os.path.exists(f)))
     gas_energy_map = {}
-    for m_path in unique_mols:
-        gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, ref_logger)
+    with perf_stage(f"gas_phase_energies ({len(unique_mols)} molecules)"):
+        for m_path in unique_mols:
+            gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, ref_logger)
 
     # --- BATCH LOOP ---
     for inh_path in inhibitors:
         for pre_path in precursors:
             inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "clean"
             pre_name = os.path.splitext(os.path.basename(pre_path))[0] if pre_path else "none"
-            
+
             if not pre_path and inh_name == "clean":
                 run_name = "bare_slab"
             else:
                 run_name = f"{inh_name}_on_{pre_name}"
-            
-            run_dir  = os.path.join(global_prefix, run_name)
+
+            run_dir = os.path.join(global_prefix, run_name)
             os.makedirs(run_dir, exist_ok=True)
 
             logger = setup_logger(log_path=os.path.join(run_dir, "workflow.log"), mode="w")
@@ -640,6 +661,13 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                 import traceback
                 logger.error(traceback.format_exc())
                 master_logger.error(f"BATCH FAIL:  {run_name}  — {exc}")
+
+    # --- Write performance report ---
+    perf_path = os.path.join(global_prefix, "perf_report.log")
+    tracker.write_report(perf_path)
+    tracker.log_report(master_logger)
+    master_logger.info(f"Performance report written to {os.path.relpath(perf_path)}")
+    set_perf_tracker(None)  # reset singleton
 
 
 
