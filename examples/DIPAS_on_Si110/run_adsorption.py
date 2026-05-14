@@ -291,6 +291,56 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
 # Discovery stage
 # =============================================================================
 
+def execute_ts_search_stage(results, config, logger, out_prefix):
+    """Pairs physisorption and chemisorption results and runs automated TS search."""
+    rs_cfg = config.get("reaction_search", {})
+    mechs_cfg = rs_cfg.get("mechanisms", {})
+    # Look for ts_search config in either precursor or generic block
+    ts_cfg = mechs_cfg.get("precursor", {}).get("ts_search", {"enabled": False})
+    
+    if not ts_cfg.get("enabled", False):
+        return []
+
+    phy_results = [c for c in results if str(c.info.get("mechanism", "")).lower().startswith("physisorption")]
+    chem_results = [c for c in results if str(c.info.get("mechanism", "")).lower().startswith("chemisorption")]
+
+    if not phy_results or not chem_results:
+        logger.info("  [TS Search] Skipping: Need both physisorption and chemisorption candidates.")
+        return []
+
+    from autoflow_srxn.simulation.potentials import SimulationEngine
+    from autoflow_srxn.transition.workflow import TransitionStateWorkflow
+
+    engine = SimulationEngine(config)
+    workflow = TransitionStateWorkflow(engine)
+    
+    # Strategy: Match each chemisorption candidate with the BEST physisorption candidate
+    # (In a more advanced version, we could match by site proximity)
+    best_phy = min(phy_results, key=lambda x: x.info.get("e_final", 1e10))
+    
+    ts_results = []
+    log_stage_title(logger, "TS SEARCH", f"Running NEB+ARTn for {len(chem_results)} chemisorption candidates")
+
+    for i, chem in enumerate(chem_results):
+        ts_dir = os.path.join(os.path.dirname(out_prefix), f"ts_search_{i}")
+        try:
+            ts_structure = workflow.run_ts_search(
+                best_phy, chem,
+                n_images=ts_cfg.get("n_images", 5),
+                fmax_neb=ts_cfg.get("fmax", 0.05),
+                output_dir=ts_dir
+            )
+            if ts_structure:
+                ts_structure.info["mechanism"] = f"TS_{chem.info.get('mechanism')}"
+                ts_results.append(ts_structure)
+        except Exception as e:
+            logger.error(f"  [TS Search] Candidate {i} failed: {e}")
+
+    if ts_results:
+        write(f"{out_prefix}_ts_results.extxyz", ts_results)
+    return ts_results
+
+
 def execute_discovery_stage(slab, mol, config, out_prefix, logger,
                             tag=2, center_target="Si", e_gas=0.0, e_base=0.0,
                             stage_type="precursor"):
@@ -328,6 +378,9 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
              actual_center = others[0] if others else "com"
              if others:
                  logger.info(f"  [Stage: {stage_type}] '{center_target}' not found. Auto-selected '{actual_center}' as center.")
+ 
+    # symprec was already resolved from candidate_filter block above (line ~353); reuse it here.
+    # (Do NOT re-read from reaction_search.symprec — that key does not exist in the schema.)
 
     mgr       = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=True)
     all_cands = []
@@ -368,6 +421,7 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
         )
         chem_cands = build_chemisorption_structures(
             molecule=mol, center_target=actual_center, surface=slab,
+            rot_steps=chem_cfg.get("rot_steps", 8),
             config=config, tag=tag,
             results_dir=os.path.dirname(out_prefix),
         )
@@ -378,10 +432,16 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
     if all_cands:
         write(f"{out_prefix}_candidates.extxyz", all_cands)
 
-    return execute_verification_stage(
+    results = execute_verification_stage(
         all_cands, config, logger, out_prefix,
         tag=tag, e_gas=e_gas, e_base=e_base,
     )
+
+    # --- NEW: Automated TS Search ---
+    if stage_type == "precursor":
+        execute_ts_search_stage(results, config, logger, out_prefix)
+
+    return results
 
 
 # =============================================================================
@@ -492,6 +552,7 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             thickness=sub_gen_cfg.get("thickness_ang", 10.0),
             vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
             target_area=sub_gen_cfg.get("target_area_ang2"),
+            supercell_matrix=sub_gen_cfg.get("supercell_matrix"),
             verbose=True,
         )
     else:
