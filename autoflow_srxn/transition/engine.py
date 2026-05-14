@@ -132,21 +132,22 @@ class ARTSearcher:
         work_atoms = atoms.copy()
         work_atoms.calc = self.engine.get_calculator()
         
+        artn_freqs, artn_eigs = None, None
         if direction is None:
             from ..vibrational.vibrational_analyzer import VibrationalAnalyzer
             vib = VibrationalAnalyzer(work_atoms, self.engine)
-            _, eigs = vib.run_analysis()
-            v_ts = eigs[:, 0]
+            artn_freqs, artn_eigs = vib.run_analysis()
+            v_ts = artn_eigs[:, 0]
         else:
             v_ts = direction.ravel()
-            
+
         v_ts /= np.linalg.norm(v_ts)
         work_atoms.set_positions(work_atoms.positions + displacement_ang * v_ts.reshape(-1, 3))
-        
+
         gf_calc = GradientFlippingCalculator(self.engine.get_calculator(), v_ts)
         work_atoms.calc = gf_calc
         FIRE(work_atoms, logfile="-").run(fmax=fmax, steps=steps)
-        return work_atoms
+        return work_atoms, artn_freqs, artn_eigs
 
 class TSSearcher:
     """Hessian-Based Gradient Flipping Searcher."""

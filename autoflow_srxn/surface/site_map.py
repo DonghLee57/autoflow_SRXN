@@ -312,6 +312,7 @@ def generate_and_plot_site_map(
     output_path: str,
     *,
     symprec: float = 0.2,
+    mgr=None,
     title: str | None = None,
     **plot_kwargs,
 ) -> list:
@@ -339,7 +340,6 @@ def generate_and_plot_site_map(
     sites : list of ndarray (3,)
         Unique site Cartesian coordinates (same as used by the workflow).
     """
-    from .ads_workflow_mgr import AdsorptionWorkflowManager
     from .surface_utils import find_surface_indices
     from scipy.spatial import Delaunay
 
@@ -369,7 +369,9 @@ def generate_and_plot_site_map(
         except Exception:
             pass
 
-    mgr = AdsorptionWorkflowManager(sub, symprec=symprec, verbose=False)
+    if mgr is None:
+        from .ads_workflow_mgr import AdsorptionWorkflowManager
+        mgr = AdsorptionWorkflowManager(sub, symprec=symprec, verbose=False)
     sites = mgr.get_unique_coordinates(sub, raw_sites, symprec=symprec)
 
     plot_adsorption_site_map(slab, sites, output_path, title=title, **plot_kwargs)

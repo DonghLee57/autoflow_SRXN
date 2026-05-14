@@ -124,8 +124,11 @@ class TransitionStateWorkflow:
         # ARTn Phase
         self.logger.info("  [TS Workflow] Starting ARTn refinement from NEB peak...")
         art_searcher = ARTSearcher(self.engine)
+        artn_freqs = None
         try:
-            ts_refined = art_searcher.find_saddle(ts_candidate, fmax=fmax_art, steps=steps, displacement_ang=0.1)
+            ts_refined, artn_freqs, _ = art_searcher.find_saddle(
+                ts_candidate, fmax=fmax_art, steps=steps, displacement_ang=0.1
+            )
             write(os.path.join(output_dir, "ts_refined.vasp"), ts_refined)
         except Exception as e:
             self.logger.error(f"  [TS Workflow] ARTn refinement failed: {e}")
@@ -133,29 +136,46 @@ class TransitionStateWorkflow:
 
         barrier = ts_refined.get_potential_energy() - energies[0]
         self.logger.info(f"  [TS Workflow] Completed. Barrier: {barrier:.4f} eV")
-            
-        # Vibrational Verification
-        self.verify_transition_state(ts_refined, output_dir)
+
+        # Vibrational Verification — reuse ARTn frequencies if available
+        self.verify_transition_state(ts_refined, output_dir, freqs=artn_freqs)
         return ts_refined
 
-    def verify_transition_state(self, ts_atoms: Atoms, output_dir: str):
-        """Confirm exactly one imaginary frequency at the saddle point."""
+    def verify_transition_state(self, ts_atoms: Atoms, output_dir: str, freqs=None):
+        """Confirm exactly one imaginary frequency at the saddle point.
+
+        Parameters
+        ----------
+        freqs : array-like or None
+            Pre-computed frequency array (e.g. from ARTn vib run).  When
+            provided the vibrational calculation is skipped and these values
+            are used directly, avoiding a redundant Hessian evaluation.
+        """
         self.logger.info("  [TS Workflow] Starting Vibrational Verification...")
-        vib_dir = os.path.join(output_dir, "vibrations")
-        vib = VibrationalAnalyzer(ts_atoms, self.engine, name=vib_dir)
-        
+
         try:
-            freqs, _ = vib.run_analysis()
+            if freqs is not None:
+                self.logger.info("  [VibAnalyzer] Reusing frequencies from ARTn (skipping duplicate Hessian).")
+            else:
+                vib_dir = os.path.join(output_dir, "vibrations")
+                vib = VibrationalAnalyzer(ts_atoms, self.engine, name=vib_dir)
+                freqs, _ = vib.run_analysis()
+
             imag_freqs = [f for f in freqs if f < -0.1]
             n_imag = len(imag_freqs)
-            
+
             status = "SUCCESS" if n_imag == 1 else "FAILED"
-            msg = f"Exactly 1 imaginary frequency found ({imag_freqs[0]:.2f} THz)." if n_imag == 1 else f"{n_imag} imaginary modes found."
+            msg = (
+                f"Exactly 1 imaginary frequency found ({imag_freqs[0]:.2f} THz)."
+                if n_imag == 1
+                else f"{n_imag} imaginary modes found."
+            )
             self.logger.info(f"  [TS Workflow] VERIFICATION {status}: {msg}")
-            
+
             with open(os.path.join(output_dir, "verification.log"), "w") as f:
                 f.write(f"STATUS: {status}\nMODES: {n_imag}\n")
-                if n_imag > 0: f.write(f"IMAG_FREQS: {[float(f) for f in imag_freqs]}\n")
+                if n_imag > 0:
+                    f.write(f"IMAG_FREQS: {[float(f) for f in imag_freqs]}\n")
             return n_imag == 1
         except Exception as e:
             self.logger.error(f"  [TS Workflow] Vibrational verification failed: {e}")

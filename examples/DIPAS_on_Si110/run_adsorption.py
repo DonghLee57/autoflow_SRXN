@@ -379,9 +379,6 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
              if others:
                  logger.info(f"  [Stage: {stage_type}] '{center_target}' not found. Auto-selected '{actual_center}' as center.")
  
-    # symprec was already resolved from candidate_filter block above (line ~353); reuse it here.
-    # (Do NOT re-read from reaction_search.symprec — that key does not exist in the schema.)
-
     mgr       = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=True)
     all_cands = []
 
@@ -395,6 +392,7 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
                 slab,
                 site_map_path,
                 symprec=symprec,
+                mgr=mgr,
                 title=f"Adsorption site map — {stage_type} ({mol.get_chemical_formula()})",
             )
             logger.info(f"  [SiteMap] Saved: {os.path.relpath(site_map_path)}")
@@ -574,6 +572,9 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         )
 
     # --- GLOBAL STAGE 0.5: Slab relaxation ---
+    # Open ref_energies logger early so slab energy is also captured there
+    ref_logger = setup_logger(log_path=os.path.join(global_prefix, "ref_energies.log"), mode="w")
+
     slab_base_energy = 0.0
     if wf["slab_relax"]:
         from autoflow_srxn.simulation.potentials import SimulationEngine
@@ -585,6 +586,7 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
         slab_base_energy = slab.get_potential_energy()
         log_energy_comparison(master_logger, "Slab Relax", e_init, slab_base_energy)
+        ref_logger.info(f"  [Slab] E_relaxed: {slab_base_energy:12.4f} eV  ({slab.get_chemical_formula()})")
     else:
         slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
         if wf["candidate_relax"]:
@@ -593,6 +595,7 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             slab.calc = engine.get_calculator()
             try:
                 slab_base_energy = slab.get_potential_energy()
+                ref_logger.info(f"  [Slab] E_static:  {slab_base_energy:12.4f} eV  ({slab.get_chemical_formula()})")
             except Exception:
                 slab_base_energy = 0.0
 
@@ -601,10 +604,8 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     # --- Pre-calculate gas phase energies ---
     unique_mols   = list(set(f for f in precursors + inhibitors if f and os.path.exists(f)))
     gas_energy_map = {}
-    if unique_mols:
-        tmp_logger = setup_logger(log_path=os.path.join(global_prefix, "ref_energies.log"), mode="w")
-        for m_path in unique_mols:
-            gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, tmp_logger)
+    for m_path in unique_mols:
+        gas_energy_map[m_path] = calculate_gas_energy(read(m_path), config, ref_logger)
 
     # --- BATCH LOOP ---
     for inh_path in inhibitors:
@@ -628,14 +629,17 @@ def run_generic_adsorption_study(config_path="config.yaml"):
             run_config["paths"]["inhibitor"]     = inh_path
             run_config["paths"]["output_prefix"] = run_dir
 
+            master_logger.info(f"BATCH START: {run_name}  →  {run_dir}")
             try:
-                execute_discovery_workflow(run_config, logger, slab=slab, 
-                                           gas_energy_map=gas_energy_map, 
+                execute_discovery_workflow(run_config, logger, slab=slab,
+                                           gas_energy_map=gas_energy_map,
                                            slab_base_energy=slab_base_energy)
+                master_logger.info(f"BATCH DONE:  {run_name}  [OK]")
             except Exception as exc:
                 logger.error(f"Discovery workflow failed for {run_name}: {exc}")
                 import traceback
                 logger.error(traceback.format_exc())
+                master_logger.error(f"BATCH FAIL:  {run_name}  — {exc}")
 
 
 
