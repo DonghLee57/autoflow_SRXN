@@ -350,7 +350,7 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger,
     stage_cfg = mechs_cfg.get(stage_type, {})
     physi_cfg = stage_cfg.get("physisorption", {"enabled": False})
     chem_cfg  = stage_cfg.get("chemisorption",  {"enabled": False})
-    symprec   = rs_cfg.get("candidate_filter", {}).get("symprec", 0.2)
+    symprec   = rs_cfg.get("symprec", 0.2)
 
     # --- Intelligent Center Selection ---
     actual_center = center_target

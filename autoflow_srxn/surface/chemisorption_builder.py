@@ -1,4 +1,4 @@
-﻿import os
+import os
 from itertools import combinations
 
 import numpy as np
@@ -182,7 +182,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     lattice = surface.get_cell()
     pos = surface.get_scaled_positions()
     nums = surface.get_atomic_numbers()
-    symprec = config.get("reaction_search", {}).get("candidate_filter", {}).get("symprec", 0.2)
+    symprec = config.get("reaction_search", {}).get("symprec", 0.2)
 
     equiv_atoms = np.arange(len(surface))
     for prec in [symprec, 0.5]:
@@ -222,12 +222,14 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     return results
 
 
-def analyze_molecule_ligands(molecule, center_target="Si", verbose=True):
+def analyze_molecule_ligands(molecule, center_target="Si", verbose=True, config=None):
     """Algorithmically fragments the precursor molecule to identify reactive ligands.
     Uses AdsorptionWorkflowManager implicitly for the heavy lifting.
     """
-    # Create a temporary manager to use its fragmentation logic
-    mgr = AdsorptionWorkflowManager(molecule, verbose=verbose)
+    symprec = config.get("reaction_search", {}).get("symprec", 0.2) if config else 0.2
+    # Create a temporary manager to use its fragmentation logic.
+    # Set verbose=False to silence molecule/fragment symmetry logs.
+    mgr = AdsorptionWorkflowManager(molecule, symprec=symprec, verbose=False)
     c_idx, ligands = mgr.discover_ligands(molecule, center_target=center_target, verbose=verbose)
     return c_idx, ligands
 
@@ -253,7 +255,7 @@ def build_chemisorption_structures(
     surface = standardize_vasp_atoms(surface)
     
     sites = analyze_surface_reactivity(surface, config, verbose=verbose, results_dir=results_dir)
-    c_idx, ligands = analyze_molecule_ligands(molecule, center_target=center_target, verbose=verbose)
+    c_idx, ligands = analyze_molecule_ligands(molecule, center_target=center_target, verbose=verbose, config=config)
 
     candidates = []
 
@@ -262,8 +264,12 @@ def build_chemisorption_structures(
             print("  [Warning] No detachable ligands found. Aborting chemisorption.")
         return candidates
 
-    # We instantiate a manager scoped to the current surface for coordinate placement/overlap tests
-    mgr = AdsorptionWorkflowManager(surface, config=config, verbose=verbose)
+    # Get symmetry precision from config
+    symprec = config.get("reaction_search", {}).get("symprec", 0.2)
+    
+    # We instantiate a manager scoped to the current surface for coordinate placement/overlap tests.
+    # Silence redundant symmetry logs as they were already printed in the discovery stage.
+    mgr = AdsorptionWorkflowManager(surface, config=config, symprec=symprec, verbose=False)
 
     # Generic Cohesive Dissociation on active site pairs
     if sites.get("pairs"):
@@ -390,6 +396,10 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                         )
                         combined.info["reaction_type"] = "h_exchange"
                         combined.info["isolated_byproduct"] = p_b
+                        combined.info["index_mapping"] = {
+                            "frag_a": indices_a,
+                            "frag_b": indices_b
+                        }
                         best_pose = combined
                 else:
                     stats["overlap"] += 1
@@ -439,7 +449,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                 if l_info["hapticity"] == 1 and frag_b.symbols[binding_idx_b[0]] == "H":
                     bond_len_b = 1.48
                 elif l_info["hapticity"] > 1:
-                    bond_len_b = 1.8
+                    bond_len_b = 2.0
 
                 for angle in np.linspace(0, 360, rot_steps, endpoint=False):
                     stats["total_tries"] += 1
@@ -476,10 +486,12 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                     frag_a_indices = list(range(new_start, new_start + len(frag_a)))
                     frag_b_indices = list(range(new_start + len(frag_a), new_start + len(frag_a) + len(frag_b)))
 
-                    skip_pairs = [
-                        (active_1["index"], new_start + binding_idx_a),
-                        (active_2["index"], new_start + len(frag_a) + binding_idx_b[0]),
-                    ]
+                    # Support haptic ligands: skip overlap for ALL atoms in the binding set
+                    skip_pairs = [(active_1["index"], new_start + binding_idx_a)]
+                    
+                    # For frag_b (ligand)
+                    for b_idx in binding_idx_b:
+                        skip_pairs.append((active_2["index"], new_start + len(frag_a) + b_idx))
                     skip_pairs += list(combinations(frag_a_indices, 2))
                     skip_pairs += list(combinations(frag_b_indices, 2))
 
@@ -487,13 +499,14 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                         clearance = _min_nonbonded_clearance(combined, new_start, skip_pairs=skip_pairs)
                         if clearance > best_clearance:
                             best_clearance = clearance
-                            comp_a = "".join(frag_a.symbols)
-                            combined.info["mechanism"] = (
-                                f"Generic Chemisorption: {comp_a} on {active_1['index']}, "
-                                f"{frag_b.symbols[binding_idx_b[0]]} on {active_2['index']}, "
-                                f"tag={tag}, rot={angle:.1f}"
-                            )
+                            formula_a = frag_a.get_chemical_formula()
+                            formula_b = frag_b.get_chemical_formula()
+                            combined.info["mechanism"] = f"Chemisorption (Dissociation: {formula_a}+{formula_b})"
                             combined.info["reaction_type"] = "chemisorption"
+                            combined.info["index_mapping"] = {
+                                "frag_a": indices_a,
+                                "frag_b": indices_b
+                            }
                             best_pose = combined
                     else:
                         stats["overlap"] += 1
@@ -573,7 +586,10 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                     new_backbone_idx -= 1
 
                 n_slab_trimmed = len(mgr.slab) - 1
+                
+                # Support haptic ligands: skip overlap for ALL atoms in the binding set
                 skip_pairs = [(new_backbone_idx, n_slab_trimmed + binding_idx_a)]
+                
                 frag_a_indices = list(range(n_slab_trimmed, n_slab_trimmed + len(frag_a)))
                 for i in range(len(frag_a_indices)):
                     for j in range(i + 1, len(frag_a_indices)):
@@ -591,6 +607,12 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                         )
                         combined.info["reaction_type"] = "protector_exchange"
                         combined.info["isolated_byproduct"] = byproduct
+                        combined.info["index_mapping"] = {
+                            "frag_a": indices_a,
+                            "frag_b": indices_b,
+                            "protector_idx": s["index"]
+                        }
+
                         best_pose = combined
                 else:
                     stats["overlap"] += 1

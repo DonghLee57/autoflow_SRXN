@@ -480,6 +480,21 @@ surface_prep:
 # -----------------------------------------------------------------------------
 reaction_search:
 
+  # ── Global symmetry precision ─────────────────────────────────────────────
+  # Single parameter that governs ALL symmetry-reduction steps in the reaction
+  # search: surface-site deduplication (AdsorptionWorkflowManager), dangling-
+  # bond site equivalence (chemisorption builder), and coordinate deduplication
+  # (get_unique_coordinates / generate_and_plot_site_map).
+  #
+  # Increase to collapse more sites and shrink the candidate set (faster but
+  # may merge genuinely inequivalent sites).  Decrease for high-symmetry slabs
+  # where aggressive grouping hides real binding configurations.
+  #
+  # Typical values:
+  #   0.1 – 0.2 A   Conservative — keeps most distinct sites (recommended default)
+  #   0.5 – 1.0 A   Aggressive   — strong grouping for large or near-symmetric cells
+  symprec: 0.2
+
   # ── Geometry-only ──────────────────────────────────────────────────────────
 
   # ── Adsorption Mechanisms & Discovery Logic ───────────────────────────────
@@ -565,6 +580,26 @@ reaction_search:
           cutoff:    7.0        # A
           visualize: true       # Generate proximity map visualization
 
+      # [STAGE 2.5: TRANSITION STATE DISCOVERY]
+      # Connects physisorption and chemisorption states via NEB and ARTn refinement.
+      # Features automated PBC alignment and vibrational saddle-point verification.
+      ts_search:
+        enabled:          true
+        n_images:         7       # Number of intermediate images for NEB path
+        fmax:             0.05    # Force convergence for TS refinement (eV/A)
+        steps:            200     # Max steps for TS searchers
+        
+        # ── Advanced TS Logic ───────────────────────────────────────────────
+        # mapping_mode: "geometric" (default)
+        #   Uses a Hungarian algorithm to automatically map atom indices between 
+        #   external structures if they are shuffled. Enforces element consistency.
+        #
+        # verification: true (default)
+        #   Automatically runs vibrational analysis after TS refinement to
+        #   confirm exactly one imaginary frequency (saddle point).
+        mapping_mode:     "geometric"
+        verification:     true
+
     # [SPECIAL MECHANISM: PROTECTOR EXCHANGE]
     # Simulates exchange reactions within established protector layers.
     protector_exchange:
@@ -596,7 +631,6 @@ reaction_search:
     # overrides the vdW-based threshold for that call only.
     overlap_scale:  0.65
 
-    symprec:        0.2    # Symmetry equivalence cutoff for site deduplication (A)
     max_pair_dist:  5.0    # Max distance between two dangling-bond sites to form a reaction pair (A)
 
   # ── Potential-required ─────────────────────────────────────────────────────

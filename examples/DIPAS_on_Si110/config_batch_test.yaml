@@ -39,6 +39,7 @@ surface_prep:
 # Reaction Search
 # =============================================================================
 reaction_search:
+  symprec: 0.2
   mechanisms:
     inhibitor:
       enabled: true
@@ -63,7 +64,6 @@ reaction_search:
         rot_steps: 4
 
   candidate_filter:
-    symprec:       0.2
     overlap_scale: 0.65
 
 # =============================================================================

@@ -1,4 +1,4 @@
-﻿# AutoFlow-SRXN Configuration Manual
+# AutoFlow-SRXN Configuration Manual
 
 This document provides a comprehensive guide to all parameters available in the `AutoFlow-SRXN` workflow. 
 
@@ -136,6 +136,24 @@ These stages are enabled via the top-level `workflow` block (see §1.1).
 ## 5. Reaction Search (`reaction_search`)
 Explores the configuration space of adsorbates through two sequential stages.
 
+### 5.0 Global Symmetry Precision (`reaction_search.symprec`)
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `symprec` | Float (Å) | `0.2` | Single tolerance applied to **all** symmetry-reduction steps: surface-site deduplication (`AdsorptionWorkflowManager`), dangling-bond equivalence (chemisorption builder), and coordinate deduplication (`get_unique_coordinates`, `generate_and_plot_site_map`). |
+
+```yaml
+reaction_search:
+  symprec: 0.2   # single knob for all site-grouping in this stage
+```
+
+**Tuning guide**:
+
+| Value | Effect |
+| :--- | :--- |
+| `0.1–0.2` Å | Conservative — preserves most distinct sites (recommended default) |
+| `0.5–1.0` Å | Aggressive grouping — useful for large or near-symmetric supercells (e.g. TiN 2×2) |
+
 ### 5.1 Stage-Specific Controls
 The `mechanisms` block is now split into two independent stages. Each stage defines its own `physisorption` and `chemisorption` settings.
 
@@ -212,8 +230,9 @@ Bond placement is purely geometric (no MLIP required):
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `overlap_scale` | Float | `0.65` | Scaling factor for the Alvarez (2013) vdW overlap criterion (see below). |
-| `symprec` | Float (A) | `0.2` | Symmetry-equivalence tolerance for site deduplication via spglib. |
 | `max_pair_dist` | Float (A) | `5.0` | Maximum distance between two dangling-bond sites to form a dissociative chemisorption pair. |
+
+> **`symprec` has moved** — symmetry tolerance is now a top-level `reaction_search.symprec` key (§5.0), not nested under `candidate_filter`. Configs that still have `candidate_filter.symprec` will silently ignore that key; move it up one level.
 
 #### Overlap criterion — Alvarez (2013) vdW radii
 
@@ -238,6 +257,22 @@ Selected reference radii (A):
 | `0.75` | Strict — tighter exclusion; may reject valid poses for compact molecules |
 
 > **Note on `cutoff` override**: An explicit flat threshold (e.g., `cutoff=1.4 A`) can be passed directly to `check_overlap()` for cases where element-independent thresholds are needed (e.g., the chemisorption builder uses `cutoff=1.4` for newly formed bond distance checks). The flat `cutoff` takes precedence over the vdW-based calculation for that specific call.
+
+### 5.7 Transition State Search (Stage 2.5)
+This stage connects the physisorption and chemisorption states using a hybrid NEB-ARTn pipeline.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `n_images` | Integer | `7` | Number of intermediate images for the NEB path. |
+| `fmax` | Float | `0.05` | Force convergence for TS refinement. |
+| `mapping_mode` | String | `"geometric"` | `"geometric"` uses Hungarian algorithm for index mapping; `"identity"` assumes fixed order. |
+| `verification` | Boolean | `true` | Automatically runs vibrational analysis after TS refinement to confirm exactly one imaginary frequency. |
+
+#### Hybrid TS Search Workflow
+1.  **Alignment & Mapping**: The initial and final states are aligned using the **Minimum Image Convention (MIC)** to ensure periodic boundary consistency. This prevents artificial high-energy barriers caused by atoms crossing unit cell boundaries. If atom indices are inconsistent (e.g., from external VASP files), the **Geometric Mapping Engine** reorders them automatically.
+2.  **NEB Interpolation**: An initial reaction path is generated via linear interpolation (or IDPP if enabled).
+3.  **ARTn Refinement**: The highest energy image is used as a starting point for the Activation Relaxation Technique (ARTn) to find the exact saddle point.
+4.  **Verification**: A partial Hessian is computed at the saddle point to verify the existence of a single imaginary mode corresponding to the reaction coordinate.
 
 ---
 
@@ -388,5 +423,16 @@ Convenience wrapper that:
 ### 8.3 Key Engine Parameters
 - **`dtype`**: `"float32"` (MD / coarse screening) or `"float64"` (geometry optimisation, vibrations).
 - **`d3`**: Enable Grimme D3(BJ) dispersion — recommended for physisorption and weakly-bound precursors.
-- **`zbl.enabled`**: Add ZBL screened-Coulomb repulsion to prevent MLIP instabilities at sub-bonding distances.
+- **zbl.enabled**: Add ZBL screened-Coulomb repulsion to prevent MLIP instabilities at sub-bonding distances.
+- **Haptic Ligand Support**: Specialized `skip_pairs` logic for $\eta^n$ ligands (Allyl, Cp) ensures multiple bonding atoms are excluded from overlap checks.
 
+### 8.4 Advanced Simulation Logic
+
+#### 8.4.1 Geometric Mapping (Hungarian Algorithm)
+To support externally calculated structures (e.g., from VASP) where atom orderings might differ, AutoFlow-SRXN employs an optimal bipartite matching algorithm. It minimizes the total RMSD between states under PBC, ensuring a 1:1 atom correspondence even if indices are randomized.
+
+#### 8.4.2 Constraint-Aware Vibrations
+When atoms are frozen (e.g., bottom slab layers), the engine automatically pads the Hessian and eigenvectors. This ensures compatibility with TS searchers (like ARTn) that expect full-rank arrays while correctly ignoring the force contributions from fixed atoms.
+
+#### 8.4.3 Physics-Informed Physisorption Alignment
+The physisorption engine uses PCA to align the molecule's thin axis with the surface normal (Flat Alignment). Additionally, it calculates the average hydrogen direction relative to the center of mass; if hydrogens point towards the surface, the molecule is automatically flipped 180° (H-up Logic) to maximize physical plausibility.
