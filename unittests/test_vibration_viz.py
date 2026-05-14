@@ -5,7 +5,7 @@ from ase.build import molecule
 
 # Add src to sys.path
 from autoflow_srxn.simulation.potentials import SimulationEngine
-from autoflow_srxn.analysis.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
+from autoflow_srxn.vibrational.vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
 
 
 class TestVibrationViz(unittest.TestCase):

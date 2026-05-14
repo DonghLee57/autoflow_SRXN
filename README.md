@@ -61,8 +61,23 @@ The framework is designed for large-scale screening with maximum computational e
   - **Precursors**: Automatically detects central reactive atoms by matching against a list (e.g., `["Si", "Fe", "Ti"]`) or identifying metal/semiconductor elements (non-HCNO).
   - **Inhibitors**: Defaults to **Center of Mass (COM)** for general physisorption-based surface functionalization.
 
----
+### 1.9 Automated Transition State Pipeline (NEB-ARTn)
+The framework autonomously connects discovered physisorption (Initial) and chemisorption (Final) states to calculate reaction barriers.
+- **Robust MIC Alignment**: Implements per-atom Minimum Image Convention (MIC) to handle periodic boundary crossings, ensuring smooth NEB interpolation and preventing unphysical energy spikes.
+- **Hybrid Refinement**: Uses NEB for initial path generation followed by ARTn (Activation Relaxation Technique) for precise saddle-point localization.
+- **Byproduct-Aware NEB**: Correctly merges dissociated fragments (e.g., byproduct ligands in exchange reactions) back into the simulation cell to maintain constant atom counts and lattice consistency.
 
+### 1.10 Geometric Atom Mapping Engine
+Supports importing structures from external sources (e.g., VASP, Materials Project) where atom indices may be randomized.
+- **Hungarian Matching**: Employs an optimal bipartite matching algorithm to reconstruct 1:1 atom correspondence between disparate structural inputs based on periodic distance minimization.
+- **Integrity Guard**: Enforces strict stoichiometry and element composition checks before any simulation to prevent unphysical calculations.
+
+### 1.11 Physics-Informed Physisorption Alignment
+Optimizes initial placements using geometric and chemical heuristics:
+- **PCA Flat Orientation**: Aligns the molecule's thinnest axis with the surface normal to maximize contact area.
+- **H-up Flip Logic**: Analyzes hydrogen distribution relative to the center of mass. Automatically flips the molecule 180° if hydrogens point towards the surface, ensuring the more reactive/less hindered side faces the substrate.
+
+---
 
 ## 2. Strategic Objectives
 - **High-Throughput Exploration**: Rational search of the potential energy surface (PES) using symmetry-aware site identification.

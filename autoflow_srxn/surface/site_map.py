@@ -369,7 +369,7 @@ def generate_and_plot_site_map(
         except Exception:
             pass
 
-    mgr = AdsorptionWorkflowManager(sub, symprec=symprec)
+    mgr = AdsorptionWorkflowManager(sub, symprec=symprec, verbose=False)
     sites = mgr.get_unique_coordinates(sub, raw_sites, symprec=symprec)
 
     plot_adsorption_site_map(slab, sites, output_path, title=title, **plot_kwargs)

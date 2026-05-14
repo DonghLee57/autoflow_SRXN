@@ -46,9 +46,10 @@ class AdsorptionWorkflowManager:
             inh_surface = np.array([], dtype=int)
 
         all_surface = np.unique(np.concatenate([sub_surface, inh_surface]))
+        target_label = "Substrate" if len(self.slab) > 10 else "Molecule/Fragment"
         self.surface_indices = self.get_unique_surface_indices(self.slab, all_surface, symprec=self.symprec)
         self.logger.info(
-            f"Surface Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites."
+            f"{target_label} Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites."
         )
 
     def calculate_molecule_lateral_extent(self, molecule):
@@ -150,69 +151,49 @@ class AdsorptionWorkflowManager:
             # Fallback: use all operations (e.g. symmetric slab where top≡bottom)
             ops_2d = list(zip(rotations, translations))
 
-        # --- Design: separate equivalence-test position from output position ---
-        #
-        # WRONG (previous): store orbit-best-member (closest to cell centre) for
-        #   equivalence testing.  With 24–48 orbit members densely covering the cell,
-        #   two genuinely different site types (bridge vs hollow) can each have an
-        #   orbit member near (0.5, 0.5), so their "best members" are < equiv_tol
-        #   apart and the second is incorrectly merged into the first.
-        #
-        # CORRECT (now): store the ORIGINAL input fractional coordinate for testing,
-        #   use a tight 0.3 Å tolerance (pure numerical precision of the symmetry
-        #   operation).  Orbit-best-member is computed only for the OUTPUT coordinate.
-        #   Genuinely different sites have originals that no 2D operation maps to
-        #   within 0.3 Å of each other → no false merges.
+        # Use the user-defined symprec for coordinate equivalence
+        EQUIV_TOL = self.symprec
 
-        accepted_orig_fracs = []   # first-occurrence frac coords — for equiv testing
-        accepted_carts      = []   # closest-to-centre Cartesian   — output positions
+        def get_order(c_frac):
+            count = 0
+            for r, t in ops_2d:
+                mapped = np.dot(r, c_frac) + t
+                diff = mapped[:2] - c_frac[:2]
+                diff -= np.round(diff)
+                d_cart = np.linalg.norm(diff[0] * lattice[0] + diff[1] * lattice[1])
+                if d_cart < 0.2:
+                    count += 1
+            return count
 
-        EQUIV_TOL = 0.5   # Å — slightly larger tolerance for supercells with noise
+        accepted_info = [] # List of {frac, cart, order}
 
         for c in coords:
             c_frac = np.dot(c, inv_lattice)
-            z_orig = c[2]
-            z_frac = c_frac[2]
-
-            # --- Equivalence test: compare original input against stored originals ---
-            is_new = True
-            for orig_frac in accepted_orig_fracs:
+            c_order = get_order(c_frac)
+            
+            found_idx = -1
+            for i, info in enumerate(accepted_info):
+                is_equiv = False
                 for r, t in ops_2d:
                     mapped = np.dot(r, c_frac) + t
-                    diff_xy = mapped[:2] - orig_frac[:2]
-                    diff_xy -= np.round(diff_xy)
-                    d_cart = np.linalg.norm(diff_xy[0] * lattice[0] + diff_xy[1] * lattice[1])
+                    diff = mapped[:2] - info['frac'][:2]
+                    diff -= np.round(diff)
+                    d_cart = np.linalg.norm(diff[0] * lattice[0] + diff[1] * lattice[1])
+                    
                     if d_cart < EQUIV_TOL:
-                        is_new = False
+                        is_equiv = True
                         break
-                if not is_new:
+                if is_equiv:
+                    found_idx = i
                     break
+            
+            if found_idx == -1:
+                accepted_info.append({'frac': c_frac, 'cart': c, 'order': c_order})
+            else:
+                if c_order > accepted_info[found_idx]['order']:
+                    accepted_info[found_idx] = {'frac': c_frac, 'cart': c, 'order': c_order}
 
-            if not is_new:
-                continue
-
-            # --- New class: store original frac for future tests ---
-            accepted_orig_fracs.append(c_frac.copy())
-
-            # --- Pick most-central orbit member for molecule placement ---
-            orbit_fxy = []
-            for r, t in ops_2d:
-                img = np.dot(r, c_frac) + t
-                img_xy = img[:2] - np.floor(img[:2])   # wrap to [0, 1)
-                if not any(
-                    np.linalg.norm((img_xy - x)[0] * lattice[0] + (img_xy - x)[1] * lattice[1]) < 0.1
-                    for x in orbit_fxy
-                ):
-                    orbit_fxy.append(img_xy)
-
-            best_fxy = orbit_fxy[int(np.argmin([np.linalg.norm(f - 0.5) for f in orbit_fxy]))]
-            best_frac_full = np.array([best_fxy[0], best_fxy[1], z_frac])
-            best_cart = np.dot(best_frac_full, lattice)
-            best_cart[2] = z_orig   # restore absolute Cartesian Z
-
-            accepted_carts.append(best_cart)
-
-        return accepted_carts
+        return [info['cart'] for info in accepted_info]
 
     def get_unique_geometric_sites(self, slab, indices, cutoff=1.5):
         if not len(indices):
@@ -407,7 +388,20 @@ class AdsorptionWorkflowManager:
             pos = m.positions
             cov = np.cov(pos.T)
             evals, evecs = np.linalg.eigh(cov)
+            
+            # Align shortest axis (evecs[:, 0]) with Z-axis
             m.rotate(evecs[:, 0], [0, 0, 1], center=[0, 0, 0])
+            
+            # --- H-up Flip Logic ---
+            # Calculate the average direction of Hydrogen atoms relative to COM.
+            h_indices = [a.index for a in m if a.symbol == "H"]
+            if h_indices:
+                h_pos = m.positions[h_indices]
+                avg_h_vec = np.mean(h_pos, axis=0) # Relative to COM [0,0,0]
+                
+                # If hydrogens are pointing down (-z), flip the molecule 180 deg
+                if avg_h_vec[2] < 0:
+                    m.rotate(180, 'x', center=[0, 0, 0])
         elif isinstance(mode, str) and len(mode) <= 2:
             # Anchor element alignment
             indices = [a.index for a in m if a.symbol == mode]
@@ -640,51 +634,10 @@ class AdsorptionWorkflowManager:
             for m_pose in orient_iter:
                 stats["total"] += 1
 
-                # height_mode: compute nominal rotation-center Z for this orientation
-                min_z_template = m_pose.positions[:, 2].min()
-                if height_mode == "clearance":
-                    z_nominal = z_surface_ref + height - min_z_template
-                else:  # "center"
-                    z_nominal = z_surface_ref + height
-
-                if grav_enabled:
-                    z_final = self._find_contact_z(
-                        m_pose, target_xy,
-                        z_lo=z_surface_ref,
-                        z_hi=z_nominal + 5.0,
-                        overlap_scale=overlap_scale,
-                        tag=tag,
-                    )
-                else:
-                    # Fixed placement: quick single overlap check
-                    probe = m_pose.copy()
-                    probe.translate([target_xy[0], target_xy[1], z_nominal])
-                    combined_check = self.slab.copy()
-                    combined_check += probe
-                    if self.check_overlap(combined_check, overlap_scale=overlap_scale,
-                                          check_internal=False):
-                        stats["overlap"] += 1
-                        continue
-                    z_final = z_nominal
-
-                # Build final combined structure
-                final_pose = m_pose.copy()
-                final_pose.translate([target_xy[0], target_xy[1], z_final])
-                combined = self.slab.copy()
-                combined += final_pose
-                combined.info["mechanism"] = (
-                    f"Physisorption, site=({target_xy[0]:.2f},{target_xy[1]:.2f}), "
-                    f"z={z_final:.2f}, gravity={grav_enabled}"
-                )
-
-                # Within-site deduplication: compare orientations at the same site only
-                ads_idx = np.where(combined.get_tags() >= 2)[0]
-                if len(ads_idx) == 0:
-                    site_candidates.append(combined)
-                    continue
-
-                ads_pos = combined.positions[ads_idx]
-                ads_sym = np.array(combined.get_chemical_symbols())[ads_idx]
+                # 1. Deduplicate orientations based on site symmetry BEFORE expensive gravity pull
+                # (rel_pos is invariant to Z, so we can check it now)
+                ads_pos = m_pose.positions
+                ads_sym = np.array(m_pose.get_chemical_symbols())
                 rel_pos = ads_pos - np.mean(ads_pos, axis=0)
 
                 is_dup = False
@@ -701,7 +654,6 @@ class AdsorptionWorkflowManager:
                         for sym_type in np.unique(ads_sym):
                             ci = np.where(ads_sym == sym_type)[0]
                             ri = np.where(ref_sym == sym_type)[0]
-                            # Use linear sum assignment to check if sets of points match
                             D = cdist(rel_pos[ci], mapped_ref[ri])
                             rw, cw = linear_sum_assignment(D)
                             if np.any(D[rw, cw] > 0.4):
@@ -713,11 +665,49 @@ class AdsorptionWorkflowManager:
                     if is_dup:
                         break
 
-                if not is_dup:
-                    site_candidates.append(combined)
-                    site_rel_poses.append((rel_pos, ads_sym))
-                else:
+                if is_dup:
                     stats["dedup"] += 1
+                    continue
+
+                # 2. Only perform placement logic (fixed or gravity) for unique orientations
+                min_z_template = m_pose.positions[:, 2].min()
+                if height_mode == "clearance":
+                    z_nominal = z_surface_ref + height - min_z_template
+                else:  # "center"
+                    z_nominal = z_surface_ref + height
+
+                if grav_enabled:
+                    z_final = self._find_contact_z(
+                        m_pose, target_xy,
+                        z_lo=z_surface_ref,
+                        z_hi=z_nominal + 5.0,
+                        overlap_scale=overlap_scale,
+                        tag=tag,
+                    )
+                else:
+                    # Fixed placement
+                    probe = m_pose.copy()
+                    probe.translate([target_xy[0], target_xy[1], z_nominal])
+                    combined_check = self.slab.copy()
+                    combined_check += probe
+                    if self.check_overlap(combined_check, overlap_scale=overlap_scale, check_internal=False):
+                        stats["overlap"] += 1
+                        continue
+                    z_final = z_nominal
+
+                # 3. Build final combined structure
+                final_pose = m_pose.copy()
+                final_pose.translate([target_xy[0], target_xy[1], z_final])
+                combined = self.slab.copy()
+                combined += final_pose
+                
+                # Clean labeling
+                combined.info["mechanism"] = f"Physisorption (Site {site_idx + 1})"
+                combined.info["site_id"] = site_idx + 1
+                combined.info["reaction_type"] = "physisorption"
+
+                site_candidates.append(combined)
+                site_rel_poses.append((rel_pos, ads_sym))
 
             candidates.extend(site_candidates)
 
@@ -729,7 +719,7 @@ class AdsorptionWorkflowManager:
         )
         return candidates
 
-    def discover_ligands(self, molecule, center_target="Si", skin=0.2, verbose=None):
+    def discover_ligands(self, molecule, center_target="Si", skin=0.3, verbose=None):
         if verbose is None: verbose = self.verbose
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components

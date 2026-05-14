@@ -12,7 +12,7 @@ from autoflow_srxn.surface.surface_utils import (
     passivate_surface_coverage_general,
     SI_VALENCE_MAP,
 )
-from autoflow_srxn.analysis.vibrational_analyzer import VibrationalAnalyzer, calculate_mac
+from autoflow_srxn.vibrational.vibrational_analyzer import VibrationalAnalyzer, calculate_mac
 
 
 class EngineMock:

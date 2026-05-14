@@ -40,3 +40,8 @@ examples/**/*.json
 **/results/
 **/vibrations/
 **/discovery/
+
+# Secret Inhibitor Exclusions
+*secret_inhibitor*
+**/results/*secret_inhibitor*
+structures/secret_inhibitor.vasp

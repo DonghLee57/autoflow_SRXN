@@ -20,13 +20,23 @@ This document serves as the primary instructional context for Gemini CLI when in
 2.  **Stage 1 (Surface Prep):** Slab generation (asymmetric/symmetric), surface reconstruction (VSEPR-based), and passivation.
 3.  **Stage 2 (Reaction Search):** Potential-free candidate generation via symmetry-aware site enumeration and Fibonacci-sphere sampling.
 4.  **Stage 3 (Simulation/Verification):** MLIP-driven structural relaxation and NVT-MD equilibration.
-5.  **Stage 4 (Analysis):** Vibrational analysis (Partial Hessian - PHVA), iterative mode-following, and thermodynamic property calculation.
+5. **Stage 4 (Analysis):** Vibrational analysis (Partial Hessian - PHVA), iterative mode-following, and thermodynamic property calculation.
+6. **Stage 5 (Metadynamics/TS):** Transition state search via Nudged Elastic Band (NEB) and Activation Relaxation Technique (ARTn).
 
 ---
 
 ## 2. Operational Harness
 
+### Development Workflow
+- **Module Development**: All new feature development or speculative research must take place in the `devs/` directory.
+- **Sandbox Environment**: Use `devs/*.py` scripts to test new modules. Ensure `PYTHONPATH` is set to the project root:
+  ```powershell
+  $env:PYTHONPATH='.' ; python devs/my_new_feature.py
+  ```
+- **Promotion**: Once a module in `devs/` is validated via `unittests/` and `VALIDATION.md`, it is promoted to the core `autoflow_srxn/` package.
+
 ### Building and Running
+
 - **Installation:**
   ```bash
   pip install .        # Standard
@@ -95,4 +105,4 @@ $$ \mathbf{R}_{new} = \mathbf{R}_{old} + \alpha \frac{\mathbf{u}_k}{\|\mathbf{u}
 
 - **Date Created:** 2026-05-12
 - **Agent Version:** Gemini CLI v1.0
-- **Project Status:** Active Development (Metadynamics module in progress)
+- **Project Status:** Active Development (NEB/ARTn implemented)

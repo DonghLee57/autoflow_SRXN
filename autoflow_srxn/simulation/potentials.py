@@ -226,9 +226,9 @@ class ExplosionMonitor:
             is_unstable = False
             reason = ""
             
-            if e_per_atom > 0.0:
+            if e_per_atom > self.threshold_per_atom:
                 is_unstable = True
-                reason = f"Positive energy ({e_per_atom:.2f} eV/atom)"
+                reason = f"High energy ({e_per_atom:.2f} eV/atom)"
             elif abs(delta_per_atom) > self.threshold_per_atom:
                 is_unstable = True
                 reason = f"Massive energy jump ({delta_per_atom:.2f} eV/atom)"

@@ -61,16 +61,25 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     if not summary_data:
         return
 
-    # Find best (lowest e_final) for each mechanism group
-    best_by_mech = {}
+    # 1. Find the absolute global best across all mechanisms
+    global_best_row = None
+    for row in summary_data:
+        e_final = row.get("e_final")
+        if e_final is not None:
+            if global_best_row is None or e_final < global_best_row.get("e_final", 1e10):
+                global_best_row = row
+    
+    # 2. Find the local best for each unique mechanism/site group
+    local_best_by_mech = {}
     for row in summary_data:
         m = row.get("mech", "unknown")
         e_final = row.get("e_final")
         if e_final is not None:
-            if m not in best_by_mech or e_final < best_by_mech[m].get("e_final", 1e10):
-                best_by_mech[m] = row
-
-    best_ids = {res["id"] for res in best_by_mech.values()} if best_by_mech else set()
+            if m not in local_best_by_mech or e_final < local_best_by_mech[m].get("e_final", 1e10):
+                local_best_by_mech[m] = row
+    
+    global_best_id = global_best_row["id"] if global_best_row else None
+    local_best_ids = {res["id"] for res in local_best_by_mech.values()} if local_best_by_mech else set()
 
     logger.info("\n" + "=" * 135)
     logger.info(f" {title}")
@@ -92,7 +101,12 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     logger.info("-" * 135)
     
     for row in summary_data:
-        marker = "* (Best Pose)" if row.get("id") in best_ids else ""
+        if row.get("id") == global_best_id:
+            marker = "* (Best Pose)"
+        elif row.get("id") in local_best_ids:
+            marker = "+ (Local Minima)"
+        else:
+            marker = ""
         e_ads = row.get("e_ads", 0.0)
         mech = row.get("mech", "unknown")
         

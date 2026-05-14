@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 
 # Add src to sys.path
-from autoflow_srxn.analysis.vibrational_analyzer import calculate_atomic_participation, calculate_mac
+from autoflow_srxn.vibrational.vibrational_analyzer import calculate_atomic_participation, calculate_mac
 
 
 def parse_qpoints(file_path):
