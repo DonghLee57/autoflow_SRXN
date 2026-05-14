@@ -81,25 +81,25 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     global_best_id = global_best_row["id"] if global_best_row else None
     local_best_ids = {res["id"] for res in local_best_by_mech.values()} if local_best_by_mech else set()
 
-    logger.info("\n" + "=" * 135)
+    logger.info("\n" + "=" * 139)
     logger.info(f" {title}")
-    logger.info("-" * 135)
-    
+    logger.info("-" * 139)
+
     # Dynamic header based on available keys
     has_e_final = any("e_final" in r for r in summary_data)
     has_e_init = any("e_initial" in r for r in summary_data)
     has_stage = any("stage" in r for r in summary_data)
-    
+
     header = f"{'ID':<4} | "
     if has_stage: header += f"{'Stage':<10} | "
-    header += f"{'Mechanism':<15} | "
+    header += f"{'Mechanism':<19} | "
     if has_e_init: header += f"{'E_initial (eV)':<15} | "
     if has_e_final: header += f"{'E_final (eV)':<15} | {'Delta (eV)':<10} | "
     header += f"{'E_ads (eV)':<10} | {'Note'}"
-    
+
     logger.info(header)
-    logger.info("-" * 135)
-    
+    logger.info("-" * 139)
+
     for row in summary_data:
         if row.get("id") == global_best_id:
             marker = "* (Best Pose)"
@@ -109,15 +109,15 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
             marker = ""
         e_ads = row.get("e_ads", 0.0)
         mech = row.get("mech", "unknown")
-        
+
         line = f"{row.get('id', 0):<4} | "
         if has_stage: line += f"{row.get('stage', ''):<10} | "
-        line += f"{mech[:15]:<15} | "
+        line += f"{mech[:19]:<19} | "
         if has_e_init:
             line += f"{row.get('e_initial', 0.0):15.4f} | "
         if has_e_final:
             line += f"{row.get('e_final', 0.0):15.4f} | {row.get('delta', 0.0):10.4f} | "
         line += f"{e_ads:10.4f} | {row.get('note', marker)}"
-        
+
         logger.info(line)
-    logger.info("=" * 135 + "\n")
+    logger.info("=" * 139 + "\n")
