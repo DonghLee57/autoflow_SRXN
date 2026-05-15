@@ -131,6 +131,9 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
                             }
                         )
                         break
+    
+    if verbose:
+        print(f"  [Reactivity Analysis] Identified {len(dangling_sites)} dangling sites and {len(exchange_sites)} exchange sites.")
 
     # --- Proximity Filtering Logic ---
     mechs_cfg = config.get("reaction_search", {}).get("mechanisms", {})
