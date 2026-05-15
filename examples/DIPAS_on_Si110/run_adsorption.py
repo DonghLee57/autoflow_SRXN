@@ -323,7 +323,7 @@ def execute_ts_search_stage(results, config, logger, out_prefix):
     from autoflow_srxn.transition.workflow import TransitionStateWorkflow
 
     engine = SimulationEngine(config)
-    workflow = TransitionStateWorkflow(engine)
+    workflow = TransitionStateWorkflow(engine, config=ts_cfg)
     
     # Strategy: Match each chemisorption candidate with the BEST physisorption candidate
     # (In a more advanced version, we could match by site proximity)

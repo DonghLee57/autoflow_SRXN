@@ -157,8 +157,9 @@ class TransitionStateWorkflow:
         barrier = ts_refined.get_potential_energy() - energies[0]
         self.logger.info(f"  [TS Workflow] Completed. Barrier: {barrier:.4f} eV")
 
-        # Vibrational Verification — reuse ARTn frequencies if available
-        self.verify_transition_state(ts_refined, output_dir, freqs=artn_freqs)
+        # Vibrational Verification — optional
+        if self.config.get("verification", True):
+            self.verify_transition_state(ts_refined, output_dir, freqs=artn_freqs)
         return ts_refined
 
     def verify_transition_state(self, ts_atoms: Atoms, output_dir: str, freqs=None):
