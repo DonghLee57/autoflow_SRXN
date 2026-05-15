@@ -191,9 +191,9 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
             if verbose:
                 print(f"  [Proximity Filter] Visualization saved to {os.path.relpath(img_path)}")
 
-    results = {"single": dangling_sites, "pairs": [], "exchange": exchange_sites}
+    results = {"single": dangling_sites, "unique_single": [], "pairs": [], "exchange": exchange_sites}
 
-    # Analyze Symmetry to reduce pair redundancies
+    # Analyze Symmetry to reduce pair redundancies AND single-site duplicates
     import spglib
 
     lattice = surface.get_cell()
@@ -214,6 +214,15 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
         except Exception:
             pass
 
+    # --- Symmetry-reduced single sites (one representative per symmetry class) ---
+    unique_single_by_class = {}
+    for s in dangling_sites:
+        cls = int(equiv_atoms[s["index"]])
+        if cls not in unique_single_by_class:
+            unique_single_by_class[cls] = s
+    results["unique_single"] = list(unique_single_by_class.values())
+
+    # --- Symmetry-reduced pairs ---
     unique_pairs = {}
     pair_count = 0
 
@@ -234,7 +243,8 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     if verbose:
         print(
             f"  [Generic Reactivity] Identified {pair_count} potential active site pairs -> "
-            f"Symmetry-reduced to {len(results['pairs'])} unique reaction pairs."
+            f"Symmetry-reduced to {len(results['pairs'])} unique reaction pairs, "
+            f"{len(results['unique_single'])} unique single sites."
         )
 
     return results
@@ -289,13 +299,27 @@ def build_chemisorption_structures(
     # Silence redundant symmetry logs as they were already printed in the discovery stage.
     mgr = AdsorptionWorkflowManager(surface, config=config, symprec=symprec, verbose=False)
 
-    # Generic Cohesive Dissociation on active site pairs
+    # Route 1: Single-site adsorption — main fragment binds to one dangling bond,
+    # departing ligand is placed above the surface as a gas-phase byproduct.
+    # Runs when unique_single sites exist; the symmetry-reduced list avoids
+    # generating duplicate structures for equivalent surface atoms.
+    if sites.get("unique_single"):
+        if verbose:
+            print(f"  -> Routing to Generic Single-Site Chemisorption on {len(sites['unique_single'])} Sites...")
+        s_cands = _execute_generic_single_site(
+            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag
+        )
+        candidates.extend(s_cands)
+
+    # Route 2: Dissociative adsorption on active site pairs — both the main
+    # fragment and the departing ligand bind to surface dangling-bond sites.
     if sites.get("pairs"):
         if verbose:
             print(f"  -> Routing to Generic Dissociative Chemisorption on {len(sites['pairs'])} Pairs...")
         d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites["pairs"], rot_steps, tag=tag, verbose=chem_verbose)
         candidates.extend(d_cands)
 
+    # Route 3: Protector exchange — reactive leaf of an inhibitor layer is replaced.
     if sites.get("exchange"):
         if verbose:
             print(f"  -> Routing to Protector Exchange Chemisorption on {len(sites['exchange'])} Sites...")
@@ -399,9 +423,19 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
 
                 skip_indices = [s["index"]] + [len(mgr.slab) + i for i in range(len(p_a))]
 
-                if not mgr.check_overlap(combined, skip_indices=skip_indices, verbose=False):
+                # Build explicit skip_pairs: new bond (surface site → frag_a center)
+                # + all intra-fragment pairs.  check_internal=False avoids the
+                # global internal check that would flag TiCl3 Ti–Cl bonds as overlaps.
+                new_start = len(mgr.slab)
+                frag_a_indices_local = list(range(new_start, new_start + len(p_a)))
+                skip_pairs_local = [(s["index"], new_start + binding_idx_a)]
+                skip_pairs_local += list(combinations(frag_a_indices_local, 2))
+
+                if not mgr.check_overlap(combined, skip_pairs=skip_pairs_local,
+                                         verbose=False, check_internal=False):
                     clearance = _min_nonbonded_clearance(
-                        combined, len(mgr.slab), skip_indices=skip_indices
+                        combined, len(mgr.slab),
+                        skip_pairs=skip_pairs_local,
                     )
                     if clearance > best_clearance:
                         best_clearance = clearance
@@ -410,9 +444,9 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                         if comp_b == "HH":
                             comp_b = "H2"
                         combined.info["mechanism"] = (
-                            f"Generic Single-Site: {comp_a} on {s['index']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
+                            f"Single-Site Chemisorption: {comp_a} on {s['index']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
                         )
-                        combined.info["reaction_type"] = "h_exchange"
+                        combined.info["reaction_type"] = "single_site_chemisorption"
                         combined.info["isolated_byproduct"] = p_b
                         combined.info["index_mapping"] = {
                             "frag_a": indices_a,
