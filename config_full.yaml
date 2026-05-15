@@ -103,6 +103,7 @@ workflow:
 relaxation:
   fmax:             0.05    # Force convergence criterion (eV/Å)
   steps:            200     # Max optimization steps per call
+  optimizer:        "BFGS"  # "BFGS", "LBFGS", "LBFGSLineSearch", or "FIRE"
   frozen_z_ang:     null    # Fix atoms below z_min + this value (Å); null → no constraint
 
 # -----------------------------------------------------------------------------
@@ -542,6 +543,15 @@ reaction_search:
       chemisorption:
         enabled:          true
         rot_steps:        8     # Rotation attempts for bond-alignment
+        
+        # ── Coordination Analysis ───────────────────────────────────────────
+        # Parameters for identifying dangling bonds and exchange sites.
+        coordination_analysis:
+          bond_slack: 0.2        # Slack added to covalent radii sum (A).
+                                 # 0.2 is recommended for TiN/Oxides to avoid
+                                 # counting 2nd neighbors as bonds.
+          max_neighbor_dist: 4.0 # Search radius for initial neighbor detection (A).
+
         proximity_filter:
           enabled:   false      # false -> check all sites | true -> check only near inhibitors
           cutoff:    7.0        # A, max distance from any inhibitor atom to site
@@ -575,6 +585,12 @@ reaction_search:
       chemisorption:
         enabled:          true
         rot_steps:        8
+        
+        # ── Coordination Analysis ───────────────────────────────────────────
+        coordination_analysis:
+          bond_slack: 0.2
+          max_neighbor_dist: 4.0
+
         proximity_filter:
           enabled:   true       # Recommended for inhibited surfaces
           cutoff:    7.0        # A
