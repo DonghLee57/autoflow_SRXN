@@ -56,6 +56,9 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     bond_slack = coord_cfg.get("bond_slack", 0.2)
     max_nb_dist = coord_cfg.get("max_neighbor_dist", 4.0)
 
+    z_max = max(surface.positions[:, 2])
+    z_sub_max = max(surface.positions[sub_idx, 2]) if len(sub_idx) else z_max
+
     # Use a NeighborList for efficient per-atom lookups
     from ase.neighborlist import NeighborList
     # Pre-calculate covalent radii for all elements in the surface
