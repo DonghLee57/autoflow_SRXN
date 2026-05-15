@@ -50,13 +50,16 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     dangling_sites = []
     exchange_sites = []
 
-    z_max = max(surface.positions[:, 2])
-    z_sub_max = max(surface.positions[sub_idx, 2]) if len(sub_idx) else z_max
+    # --- Configuration for Coordination Analysis ---
+    chem_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    coord_cfg = chem_cfg.get("coordination_analysis", {})
+    bond_slack = coord_cfg.get("bond_slack", 0.2)
+    max_nb_dist = coord_cfg.get("max_neighbor_dist", 4.0)
 
     # Use a NeighborList for efficient per-atom lookups
     from ase.neighborlist import NeighborList
     # Pre-calculate covalent radii for all elements in the surface
-    radii = [chem_kb.get_radius(s, "covalent") + 0.2 for s in surface.symbols]
+    radii = [chem_kb.get_radius(s, "covalent") + bond_slack for s in surface.symbols]
     nl = NeighborList(radii, skin=0.0, self_interaction=False, bothways=True)
     nl.update(surface)
 
@@ -98,22 +101,20 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
         # --- Mechanism 2: Substrate Dangling Bonds ---
         indices, offsets = nl.get_neighbors(idx)
         actual_coord = 0
-        neighbor_dists = []
         for n_idx, offset in zip(indices, offsets):
             pos_j = surface.positions[n_idx] + np.dot(offset, surface.cell)
             dist = np.linalg.norm(pos_j - surface.positions[idx])
             bond_cutoff = chem_kb.get_radius(sym, "covalent") + \
-                          chem_kb.get_radius(surface.symbols[n_idx], "covalent") + 0.2
+                          chem_kb.get_radius(surface.symbols[n_idx], "covalent") + bond_slack
             if dist < bond_cutoff:
                 actual_coord += 1
-                neighbor_dists.append(round(dist, 3))
         
         _ideal_coord = config.get("surface_prep", {}).get("surface_analysis", {}).get("ideal_coordination", {})
         expected = chem_kb.get_ideal_coordination(sym, _ideal_coord)
 
         if verbose:
             if surface.positions[idx, 2] > z_sub_max - 1.5:
-                 print(f"  [Debug] Atom {idx}({sym}) at z={surface.positions[idx, 2]:.2f}: actual={actual_coord}, expected={expected}, dists={neighbor_dists}")
+                 print(f"  [Debug] Atom {idx}({sym}) at z={surface.positions[idx, 2]:.2f}: actual={actual_coord}, expected={expected}")
 
         if actual_coord < expected:
             from .surface_utils import generate_vsepr_vectors
