@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from autoflow_srxn.simulation.potentials import SimulationEngine
 from autoflow_srxn.utils.logger_utils import setup_logger
+from autoflow_srxn.surface import calculate_gas_energy
 
 def run_quick_comparison():
     # 1. Setup logging
@@ -19,23 +20,17 @@ def run_quick_comparison():
     # 2. Load the structures
     mace_results_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TiN_TiCl4_MACE", "results", "clean_on_TiCl4"))
     mace_struct_path = os.path.join(mace_results_dir, "stage2_precursor_relaxed.extxyz")
-    
-    # Also need clean slab and gas molecule from the same run if possible, 
-    # but we can just use the components from the last frame of extxyz if they are separated?
-    # Better: load them from the structures directory and center them.
-    structures_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "structures"))
-    bulk_path = os.path.join(structures_dir, "TiN_bulk.vasp") # Use bulk to regenerate slab or just use prepared_slab
     slab_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TiN_TiCl4_MACE", "results", "prepared_slab.extxyz"))
+    structures_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "structures"))
     mol_path = os.path.join(structures_dir, "TiCl4.vasp")
 
     if not all(os.path.exists(p) for p in [mace_struct_path, slab_path, mol_path]):
-        logger.error("Required structure files not found!")
+        logger.error("Required structure files not found! Please run the MACE example first.")
         return
 
     ads_struct = read(mace_struct_path, "-1")
     slab_struct = read(slab_path, "0")
     mol_struct = read(mol_path)
-    mol_struct.center(vacuum=10.0)
 
     # 3. Define Potential Configs
     potentials = [
@@ -48,14 +43,14 @@ def run_quick_comparison():
 
     for pot in potentials:
         logger.info(f"\n--- Testing Potential: {pot['name']} ---")
-        engine = SimulationEngine(config={"engine": {"potential": pot}})
+        config = {"engine": {"potential": pot}, "workflow": {"candidate_relax": True}}
+        engine = SimulationEngine(config=config)
         
         try:
             calc = engine.get_calculator()
             
-            # E_gas
-            mol_struct.calc = calc
-            e_gas = mol_struct.get_potential_energy()
+            # E_gas (Using modular core function)
+            e_gas = calculate_gas_energy(mol_struct, config, logger)
             
             # E_slab
             slab_struct.calc = calc

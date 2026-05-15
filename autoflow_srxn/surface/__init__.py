@@ -25,6 +25,14 @@ from .chemisorption_builder import (
     analyze_molecule_ligands,
     build_chemisorption_structures,
 )
+from .main_workflow import (
+    run_generic_adsorption_study,
+    prepare_slab_stage,
+    relax_slab_stage,
+    calculate_gas_energy,
+    execute_discovery_stage,
+    execute_discovery_workflow,
+)
 
 __all__ = [
     "standardize_vasp_atoms",
@@ -51,4 +59,10 @@ __all__ = [
     "analyze_surface_reactivity",
     "analyze_molecule_ligands",
     "build_chemisorption_structures",
+    "run_generic_adsorption_study",
+    "prepare_slab_stage",
+    "relax_slab_stage",
+    "calculate_gas_energy",
+    "execute_discovery_stage",
+    "execute_discovery_workflow",
 ]
