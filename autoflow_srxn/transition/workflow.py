@@ -78,9 +78,15 @@ class TransitionStateWorkflow:
             
         return aligned_initial
 
-    def run_ts_search(self, initial: Atoms, final: Atoms, 
-                      n_images: int = 7, fmax_neb: float = 0.05, 
-                      fmax_art: float = 0.05, steps: int = 200,
+    def run_ts_search(self, initial: Atoms, final: Atoms,
+                      n_images: int = 7,
+                      fmax_neb: float = 0.05,
+                      steps_neb: int = 100,
+                      interpolate: str = "idpp",
+                      climbing_image: bool = False,
+                      fmax_art: float = 0.05,
+                      steps_art: int = 200,
+                      displacement_ang: float = 0.1,
                       output_dir: str = "ts_search"):
         """Full pipeline: Alignment -> NEB -> ARTn Refinement -> Verification."""
         if not os.path.exists(output_dir):
@@ -111,12 +117,24 @@ class TransitionStateWorkflow:
         # NEB Phase
         neb_searcher = NEBSearcher(self.engine)
         images = neb_searcher.run(
-            aligned_initial, final, 
-            n_images=n_images, fmax=fmax_neb, steps=steps, 
-            trajectory=os.path.join(output_dir, "neb_path.extxyz")
+            aligned_initial, final,
+            n_images=n_images,
+            fmax=fmax_neb,
+            steps=steps_neb,
+            interpolate=interpolate,
+            climbing_image=climbing_image,
+            trajectory=os.path.join(output_dir, "neb_path.extxyz"),
         )
         
-        energies = [img.get_potential_energy() for img in images]
+        # Read energies from SinglePointCalculators attached by NEBSearcher.run()
+        # — no new calculator calls needed (shared-calculator cache already invalid)
+        energies = []
+        for img in images:
+            calc = getattr(img, 'calc', None)
+            if calc is not None and hasattr(calc, 'results') and 'energy' in calc.results:
+                energies.append(calc.results['energy'])
+            else:
+                energies.append(img.get_potential_energy())
         ts_idx = np.argmax(energies)
         ts_candidate = images[ts_idx].copy()
         ts_candidate.calc = self.engine.get_calculator()
@@ -127,7 +145,8 @@ class TransitionStateWorkflow:
         artn_freqs = None
         try:
             ts_refined, artn_freqs, _ = art_searcher.find_saddle(
-                ts_candidate, fmax=fmax_art, steps=steps, displacement_ang=0.1
+                ts_candidate, fmax=fmax_art, steps=steps_art,
+                displacement_ang=displacement_ang,
             )
             write(os.path.join(output_dir, "ts_refined.vasp"), ts_refined)
         except Exception as e:

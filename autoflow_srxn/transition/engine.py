@@ -5,6 +5,7 @@ from ase.mep import NEB
 from ase.optimize import FIRE
 from ase.io import write
 from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.singlepoint import SinglePointCalculator
 
 from ..utils.knowledge_engine import chem_kb
 from ..utils.logger_utils import get_workflow_logger
@@ -85,16 +86,17 @@ class NEBSearcher:
         self.config = config or {}
         self.logger = get_workflow_logger()
 
-    def run(self, initial: Atoms, final: Atoms, n_images: int = 7, 
-            fmax: float = 0.05, steps: int = 200, 
-            interpolate: str = 'idpp', trajectory: str = "neb.traj"):
+    def run(self, initial: Atoms, final: Atoms, n_images: int = 7,
+            fmax: float = 0.05, steps: int = 100,
+            interpolate: str = 'idpp', climbing_image: bool = False,
+            trajectory: str = "neb.extxyz"):
         self.logger.info(f"  [NEB] Starting NEB with {n_images} images")
         images = [initial.copy()]
         for _ in range(n_images):
             images.append(initial.copy())
         images.append(final.copy())
         
-        neb = NEB(images, allow_shared_calculator=True)
+        neb = NEB(images, allow_shared_calculator=True, climb=climbing_image)
         mic = any(initial.pbc)
         if interpolate.lower() == 'idpp':
             try:
@@ -109,14 +111,99 @@ class NEBSearcher:
         calc = self.engine.get_calculator()
         for image in images: image.calc = calc
             
-        dyn = FIRE(neb, trajectory=trajectory, logfile="-")
+        # 1. Trajectory and Output Handling
+        results_dir = os.path.dirname(trajectory) if trajectory else "."
+        if trajectory and not trajectory.endswith(".extxyz"):
+            trajectory += ".extxyz"
+        # Remove stale trajectory file so append-writes start clean
+        if trajectory and os.path.exists(trajectory):
+            os.remove(trajectory)
+
+        def _snapshot_from_cache(neb):
+            """Build a list of Atoms with SinglePointCalculator from NEB's
+            internal cache (neb.energies / neb.real_forces).
+            Zero new calculator calls — avoids shared-calculator cache misses."""
+            energies   = getattr(neb, 'energies',    None)   # shape (nimages,)
+            real_forces = getattr(neb, 'real_forces', None)  # shape (nimages, natoms, 3)
+            snapshots = []
+            for i, img in enumerate(neb.images):
+                a = img.copy()
+                kwargs = {}
+                if energies is not None:
+                    e = energies[i]
+                    if np.isfinite(e):
+                        kwargs['energy'] = float(e)
+                if real_forces is not None:
+                    kwargs['forces'] = real_forces[i].copy()
+                if kwargs:
+                    a.calc = SinglePointCalculator(a, **kwargs)
+                snapshots.append(a)
+            return snapshots
+
+        # Callback: append one NEB snapshot per step to the trajectory file.
+        # Uses cached neb.energies / neb.real_forces — zero redundant evals.
+        class NEBLogger:
+            def __init__(self, neb, traj_path, log_interval):
+                self.neb = neb
+                self.traj_path = traj_path
+                self.log_interval = log_interval
+                self.count = 0
+            def __call__(self):
+                if self.traj_path and (self.count % self.log_interval == 0):
+                    snapshots = _snapshot_from_cache(self.neb)
+                    write(self.traj_path, snapshots, append=True)
+                self.count += 1
+
+        log_interval = max(1, steps // 20)   # ~20 snapshots over the full run
+        neb_logger = NEBLogger(neb, trajectory, log_interval)
+
+        dyn = FIRE(neb, trajectory=None, logfile="-")
+        dyn.attach(neb_logger, interval=1)
         dyn.run(fmax=fmax, steps=steps)
 
-        # Ensure path is saved in extxyz if requested
-        if trajectory and trajectory.endswith(".extxyz"):
-            write(trajectory, images)
+        # 2. Append final converged path (always saved regardless of interval)
+        if trajectory:
+            self.logger.info(f"  [NEB] Saving converged path to {trajectory}")
+            write(trajectory, _snapshot_from_cache(neb), append=True)
+
+        # 3. Visualization — read energies from cache, not from calculator
+        cached_energies = list(getattr(neb, 'energies', [None] * len(images)))
+        self.plot_profile(images, results_dir, cached_energies=cached_energies)
 
         return images
+
+    def plot_profile(self, images, output_dir, cached_energies=None):
+        """Generates energy profile plots (neb_profile.png)."""
+        try:
+            import matplotlib.pyplot as plt
+            if cached_energies is not None and all(
+                    e is not None and np.isfinite(e) for e in cached_energies):
+                energies = [float(e) for e in cached_energies]
+            else:
+                energies = [img.get_potential_energy() for img in images]
+            rel_energies = [e - min(energies) for e in energies]
+            barrier = max(energies) - energies[0]
+            
+            # ── Final Profile ──────────────────────────────────────────────────
+            plt.figure(figsize=(8, 5))
+            x = range(len(images))
+            plt.plot(x, rel_energies, 'ro-', linewidth=2, markersize=8)
+            plt.xlabel("Configurations", fontsize=12)
+            plt.ylabel("Relative Energy (eV)", fontsize=12)
+            plt.title("NEB Energy Profile", fontsize=14)
+            plt.grid(True, linestyle='--', alpha=0.7)
+            
+            # Label the barrier
+            plt.text(len(images)//2, max(rel_energies) * 1.05, f"Barrier: {barrier:.2f} eV", 
+                     ha='center', fontsize=12, color='blue', fontweight='bold')
+            
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, "neb_profile.png"), dpi=300)
+            plt.savefig(os.path.join(output_dir, "neb_opt_profile.png"), dpi=300) # Duplicate for now or use history
+            plt.close()
+            self.logger.info(f"  [NEB] Energy profiles saved to {output_dir}")
+        except Exception as e:
+            self.logger.warning(f"  [NEB] Could not generate plots: {e}")
 
 class ARTSearcher:
     """Activation Relaxation Technique (ARTn) searcher."""

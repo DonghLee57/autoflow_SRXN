@@ -332,14 +332,23 @@ def execute_ts_search_stage(results, config, logger, out_prefix):
     ts_results = []
     log_stage_title(logger, "TS SEARCH", f"Running NEB+ARTn for {len(chem_results)} chemisorption candidates")
 
+    neb_cfg = ts_cfg.get("neb", {})
+    art_cfg = ts_cfg.get("artn", {})
+
     for i, chem in enumerate(chem_results):
         ts_dir = os.path.join(os.path.dirname(out_prefix), f"ts_search_{i}")
         with perf_stage(f"ts_search_{i} (NEB+ARTn+Vib)"):
             try:
                 ts_structure = workflow.run_ts_search(
                     best_phy, chem,
-                    n_images=ts_cfg.get("n_images", 5),
-                    fmax_neb=ts_cfg.get("fmax", 0.05),
+                    n_images       = neb_cfg.get("n_images",    ts_cfg.get("n_images", 7)),
+                    fmax_neb       = neb_cfg.get("fmax",        ts_cfg.get("fmax",     0.05)),
+                    steps_neb      = neb_cfg.get("steps",       ts_cfg.get("steps",    100)),
+                    interpolate    = neb_cfg.get("interpolate", "idpp"),
+                    climbing_image = neb_cfg.get("climbing_image", False),
+                    fmax_art       = art_cfg.get("fmax",        ts_cfg.get("fmax",     0.05)),
+                    steps_art      = art_cfg.get("steps",       ts_cfg.get("steps",    200)),
+                    displacement_ang = art_cfg.get("displacement_ang", 0.1),
                     output_dir=ts_dir
                 )
                 if ts_structure:

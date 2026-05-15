@@ -585,13 +585,10 @@ reaction_search:
       # Features automated PBC alignment and vibrational saddle-point verification.
       ts_search:
         enabled:          true
-        n_images:         7       # Number of intermediate images for NEB path
-        fmax:             0.05    # Force convergence for TS refinement (eV/A)
-        steps:            200     # Max steps for TS searchers
-        
+
         # ── Advanced TS Logic ───────────────────────────────────────────────
         # mapping_mode: "geometric" (default)
-        #   Uses a Hungarian algorithm to automatically map atom indices between 
+        #   Uses a Hungarian algorithm to automatically map atom indices between
         #   external structures if they are shuffled. Enforces element consistency.
         #
         # verification: true (default)
@@ -599,6 +596,51 @@ reaction_search:
         #   confirm exactly one imaginary frequency (saddle point).
         mapping_mode:     "geometric"
         verification:     true
+
+        # ── NEB (Nudged Elastic Band) ────────────────────────────────────────
+        neb:
+          n_images:       7       # Number of movable intermediate images (endpoints excluded).
+                                  # More images → smoother path but proportionally more cost.
+                                  # Typical: 5–9. For flat/barrierless surfaces, 3–5 is enough.
+
+          fmax:           0.05    # Force convergence criterion (eV/Å).
+                                  # Applied to the NEB spring-projected forces.
+                                  # 0.05 eV/Å is standard; tighten to 0.03 for accurate barriers.
+
+          steps:          100     # Max FIRE optimizer steps.
+                                  # NEB cost ≈ steps × n_images × single-point time.
+                                  # 100 steps is usually sufficient when IDPP initialises well;
+                                  # raise to 200 for difficult paths (large barriers, many images).
+
+          interpolate:    "idpp"  # Initial path interpolation method.
+                                  # "idpp"   Image-Dependent Pair Potential — minimises
+                                  #          artificial bond stretching along the path.
+                                  #          Strongly recommended for molecular adsorbates.
+                                  # "linear" Simple Cartesian linear interpolation.
+                                  #          Fast but can pass through high-energy regions;
+                                  #          use only as a fallback.
+
+          climbing_image: false   # Climbing Image NEB (CI-NEB).
+                                  # false (default) — standard NEB; all images feel spring forces.
+                                  # true — the highest-energy image climbs toward the saddle
+                                  #        point without spring forces, giving a more accurate
+                                  #        barrier. Recommended after an initial NEB run converges
+                                  #        and you want to sharpen the TS estimate.
+                                  # Note: CI-NEB can diverge if the initial path is far from
+                                  #       the saddle; run plain NEB first.
+
+        # ── ARTn (Activation-Relaxation Technique) ───────────────────────────
+        artn:
+          fmax:           0.05    # Force convergence criterion (eV/Å) for ARTn FIRE optimizer.
+
+          steps:          200     # Max FIRE optimizer steps for ARTn saddle search.
+                                  # ARTn evaluates 1 image at a time, so each step is cheap
+                                  # (~single-point time). 200 is a safe default.
+
+          displacement_ang: 0.1   # Initial displacement magnitude (Å) along the softest mode.
+                                  # Larger values escape shallow local minima faster but may
+                                  # overshoot the saddle region.
+                                  # Typical range: 0.05 – 0.3 Å.
 
     # [SPECIAL MECHANISM: PROTECTOR EXCHANGE]
     # Simulates exchange reactions within established protector layers.

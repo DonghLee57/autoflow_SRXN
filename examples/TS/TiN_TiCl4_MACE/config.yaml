@@ -1,7 +1,6 @@
 # =============================================================================
-# TiN(111) + TiCl4 (SevenNet-0) Example
-# Same geometry as TiN_TiCl4_MACE; uses SevenNet 7net-0 for better TiCl4
-# adsorption energetics on TiN(111).
+# TiN(111) + TiCl4 (MACE-MP) Example
+# Final Optimized Configuration: 2x2 Slab, 1.0 A Symmetry Precision, Gravity Pull Enabled
 # =============================================================================
 
 paths:
@@ -15,7 +14,7 @@ surface_prep:
     miller:           [1, 1, 1]
     thickness_ang:    12.0
     vacuum_ang:       15.0
-    supercell_matrix: [[2, 0], [0, 2]]
+    supercell_matrix: [[2, 0], [0, 2]] 
   surface_analysis:
     ideal_coordination:
       Ti: 6
@@ -65,6 +64,7 @@ relaxation:
 
 engine:
   potential:
-    backend: "sevennet"
-    model:   "7net-0"
+    backend: "mace"
+    model:   "medium"
     device:  "cpu"
+    dtype:   "float64"
