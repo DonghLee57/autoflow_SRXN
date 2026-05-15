@@ -512,7 +512,13 @@ class SimulationEngine:
                     dyn.attach(lambda _p=pb: _p.update(1))
                 dyn.run(fmax=fmax, steps=steps)
             else:
-                opt_map = {"BFGS": BFGS, "FIRE": FIRE, "LBFGS": LBFGS}
+                from ase.optimize import LBFGSLineSearch
+                opt_map = {
+                    "BFGS": BFGS, 
+                    "FIRE": FIRE, 
+                    "LBFGS": LBFGS, 
+                    "LBFGSLINESEARCH": LBFGSLineSearch
+                }
                 opt_class = opt_map.get(optimizer.upper(), BFGS)
                 dyn = opt_class(atoms, logfile=sys.stdout if verbose else None, trajectory=trajectory)
                 dyn.attach(monitor)
