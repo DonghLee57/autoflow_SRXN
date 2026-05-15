@@ -721,6 +721,33 @@ class AdsorptionWorkflowManager:
             f"  [Physisorption] {len(candidates)} unique candidates "
             f"({stats['overlap']} overlap-rejected, {stats['dedup']} deduplicated within sites)"
         )
+
+        if not candidates:
+            _total   = stats["total"]
+            _overlap = stats["overlap"]
+            _dedup   = stats["dedup"]
+            _placed  = _total - _overlap - _dedup
+            if not target_centers:
+                self.logger.warning(
+                    "[Physisorption] WARNING: 0 candidates — no surface sites were generated. "
+                    "Check that the slab has a valid surface layer and that site-generation "
+                    "parameters (symprec, grid_resolution) are appropriate."
+                )
+            else:
+                self.logger.warning(
+                    f"[Physisorption] WARNING: 0 candidates generated.\n"
+                    f"  Sites: {len(target_centers)}  |  Orientations sampled: {len(sampled_poses)}\n"
+                    f"  Rejection breakdown (total {_total} orientation trials):\n"
+                    f"    Deduplicated (symmetry)         : {_dedup}\n"
+                    f"    External overlap (mol vs slab)  : {_overlap}\n"
+                    f"    Placed but not added (bug?)     : {_placed}\n"
+                    f"  Common causes:\n"
+                    f"    - placement_height too small → molecule placed inside surface.\n"
+                    f"    - overlap_scale too large → valid poses rejected as overlapping.\n"
+                    f"    - Internal molecular bond overlap (old bug): occurs when "
+                    f"check_internal=True is used (should be False for physisorption)."
+                )
+
         return candidates
 
     def discover_ligands(self, molecule, center_target="Si", skin=0.3, verbose=None):

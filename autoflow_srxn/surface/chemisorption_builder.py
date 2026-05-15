@@ -327,7 +327,31 @@ def build_chemisorption_structures(
         candidates.extend(x_cands)
 
     if verbose:
-        print(f"--- Finished Chemisorption Builder. Total Generated: {len(candidates)} ---\n")
+        print(f"--- Finished Chemisorption Builder. Total Generated: {len(candidates)} ---")
+        if not candidates:
+            n_unique_single = len(sites.get("unique_single", []))
+            n_pairs         = len(sites.get("pairs", []))
+            n_exchange      = len(sites.get("exchange", []))
+            if n_unique_single == 0 and n_pairs == 0 and n_exchange == 0:
+                print(
+                    "  [Chemisorption] WARNING: 0 candidates — no active surface sites found "
+                    "(dangling bonds, pairs, or exchange sites). Possible causes:\n"
+                    "    - Surface is fully saturated (all expected bonds satisfied).\n"
+                    "    - Coordination number thresholds in config may not match this surface termination.\n"
+                    "    - Try adjusting 'coord_num_threshold' or 'symprec' in config."
+                )
+            else:
+                print(
+                    f"  [Chemisorption] WARNING: 0 candidates despite active sites "
+                    f"(unique_single={n_unique_single}, pairs={n_pairs}, exchange={n_exchange}).\n"
+                    f"  All poses were rejected — see per-route warnings above for details.\n"
+                    f"  Common causes:\n"
+                    f"    - Molecule too large for available surface geometry.\n"
+                    f"    - Internal molecular bonds flagged as overlap "
+                    f"(check_internal=True bug — verify check_internal=False is used).\n"
+                    f"    - Placement bond length too short (fragment centre placed inside surface atom)."
+                )
+        print()
 
     return candidates
 
@@ -459,6 +483,27 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
             if best_pose:
                 candidates.append(best_pose)
 
+    if not candidates:
+        _tried = stats["total_tries"]
+        _ov    = stats["overlap"]
+        if _tried == 0:
+            print(
+                f"  [SingleSite] WARNING: 0 candidates — no site/ligand combinations to try "
+                f"({len(sites)} site(s), {len(list(_unique_ligands(ligands)))} unique ligand(s))."
+            )
+        else:
+            print(
+                f"  [SingleSite] WARNING: 0 candidates generated from {_tried} poses "
+                f"across {len(sites)} site(s).\n"
+                f"    Rejection breakdown:\n"
+                f"      external overlap (fragment vs surface) : {_ov}\n"
+                f"      passed overlap but yielded no pose    : {_tried - _ov}\n"
+                f"    Note: internal molecular bond pairs are excluded from the overlap check "
+                f"(check_internal=False).\n"
+                f"    If all rejections are external, the surface sites may be too crowded "
+                f"or the placement height too low."
+            )
+
     return candidates
 
 
@@ -566,8 +611,28 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
             if best_pose:
                 candidates.append(best_pose)
 
-    if mgr.verbose and stats["total_tries"] > 0:
-        print(f"  [Dissociation Stats] Tried {stats['total_tries']} poses, {stats['overlap']} failed overlap check.")
+    _tried = stats["total_tries"]
+    _ov    = stats["overlap"]
+    if not candidates:
+        if _tried == 0:
+            print(
+                f"  [Dissociation] WARNING: 0 candidates — no site pair/ligand combinations to try "
+                f"({len(pairs)} pair(s), {len(list(_unique_ligands(ligands)))} unique ligand(s))."
+            )
+        else:
+            print(
+                f"  [Dissociation] WARNING: 0 candidates generated from {_tried} poses "
+                f"across {len(pairs)} pair(s).\n"
+                f"    Rejection breakdown:\n"
+                f"      external overlap (fragment vs surface) : {_ov}\n"
+                f"      passed overlap but yielded no pose    : {_tried - _ov}\n"
+                f"    Note: internal molecular bond pairs are excluded from the overlap check "
+                f"(check_internal=False).\n"
+                f"    Tip: a high external overlap count often means the two surface sites are "
+                f"too close for the molecule to bridge both simultaneously."
+            )
+    elif mgr.verbose and _tried > 0:
+        print(f"  [Dissociation Stats] Tried {_tried} poses, {_ov} failed overlap check.")
 
     return candidates
 
