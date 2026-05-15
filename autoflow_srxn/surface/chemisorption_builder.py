@@ -44,7 +44,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
 
     sub_idx, prot_idx = identify_protectors(surface, config, verbose=False)
 
-    i_list, j_list, D_list = neighbor_list("ijD", surface, cutoff=3.0)
+    i_list, j_list, D_list = neighbor_list("ijD", surface, cutoff=4.0)
     d_list = np.linalg.norm(D_list, axis=1)
 
     dangling_sites = []
@@ -53,56 +53,72 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     z_max = max(surface.positions[:, 2])
     z_sub_max = max(surface.positions[sub_idx, 2]) if len(sub_idx) else z_max
 
+    # Use a NeighborList for efficient per-atom lookups
+    from ase.neighborlist import NeighborList
+    # Pre-calculate covalent radii for all elements in the surface
+    radii = [chem_kb.get_radius(s, "covalent") + 0.2 for s in surface.symbols]
+    nl = NeighborList(radii, skin=0.0, self_interaction=False, bothways=True)
+    nl.update(surface)
+
     for idx in range(len(surface)):
         sym = surface.symbols[idx]
         
         # Substrate filtering: Only ignore inner substrate atoms.
-        # This uses 'z_sub_max' so it's independent of how tall the inhibitor is.
         if idx in sub_idx and surface.positions[idx, 2] < z_sub_max - 2.0:
             continue
 
+        # --- Mechanism 1: Protector Exchange ---
         if idx in prot_idx:
-            _protex = (
-                config.get("reaction_search", {})
-                .get("mechanisms", {})
-                .get("protector_exchange", config.get("protector", {}))
-            )
-            reactive_leaves = _protex.get("reactive_leaves", [])
+            _protex = config.get("reaction_search", {}).get("mechanisms", {}).get("protector_exchange", {})
+            reactive_leaves = _protex.get("reactive_leaves", ["H"])
             if sym in reactive_leaves:
-                neighbors = []
-                for n_i, n_j, dist, vec in zip(i_list, j_list, d_list, D_list):
-                    if n_i == idx and dist > 0.1 and dist < 2.0:
-                        neighbors.append((n_j, vec))
-                if len(neighbors) == 1:
-                    db_vec = -neighbors[0][1]
+                indices, offsets = nl.get_neighbors(idx)
+                # For exchange, we expect exactly 1 backbone neighbor within covalent range
+                backbone_neighbors = []
+                for n_idx, offset in zip(indices, offsets):
+                    pos_j = surface.positions[n_idx] + np.dot(offset, surface.cell)
+                    dist = np.linalg.norm(pos_j - surface.positions[idx])
+                    if dist < 2.0: # Hard cutoff for leaf->backbone
+                        backbone_neighbors.append((n_idx, pos_j - surface.positions[idx]))
+                
+                if len(backbone_neighbors) == 1:
+                    db_vec = -backbone_neighbors[0][1]
                     db_vec = db_vec / np.linalg.norm(db_vec)
-                    exchange_sites.append(
-                        {
-                            "index": idx,
-                            "backbone_idx": neighbors[0][0],
-                            "sym": sym,
-                            "pos": surface.positions[neighbors[0][0]],
-                            "leaf_pos": surface.positions[idx],
-                            "db_vector": db_vec,
-                            "missing_bonds": 1,
-                        }
-                    )
+                    exchange_sites.append({
+                        "index": idx,
+                        "backbone_idx": backbone_neighbors[0][0],
+                        "sym": sym,
+                        "pos": surface.positions[backbone_neighbors[0][0]],
+                        "leaf_pos": surface.positions[idx],
+                        "db_vector": db_vec,
+                        "missing_bonds": 1,
+                    })
             continue
 
-        neighbors = []
-        for n_i, n_j, dist in zip(i_list, j_list, d_list):
-            if n_i == idx:
-                cutoff_val = chem_kb.get_radius(surface.symbols[n_i], "covalent") + chem_kb.get_radius(surface.symbols[n_j], "covalent") + 0.3
-                if dist < cutoff_val and dist > 0.1:
-                    neighbors.append(n_j)
-
-        actual_coord = len(neighbors)
+        # --- Mechanism 2: Substrate Dangling Bonds ---
+        indices, offsets = nl.get_neighbors(idx)
+        actual_coord = 0
+        neighbor_dists = []
+        for n_idx, offset in zip(indices, offsets):
+            pos_j = surface.positions[n_idx] + np.dot(offset, surface.cell)
+            dist = np.linalg.norm(pos_j - surface.positions[idx])
+            bond_cutoff = chem_kb.get_radius(sym, "covalent") + \
+                          chem_kb.get_radius(surface.symbols[n_idx], "covalent") + 0.2
+            if dist < bond_cutoff:
+                actual_coord += 1
+                neighbor_dists.append(round(dist, 3))
+        
         _ideal_coord = config.get("surface_prep", {}).get("surface_analysis", {}).get("ideal_coordination", {})
         expected = chem_kb.get_ideal_coordination(sym, _ideal_coord)
 
+        if verbose:
+            if surface.positions[idx, 2] > z_sub_max - 1.5:
+                 print(f"  [Debug] Atom {idx}({sym}) at z={surface.positions[idx, 2]:.2f}: actual={actual_coord}, expected={expected}, dists={neighbor_dists}")
+
         if actual_coord < expected:
             from .surface_utils import generate_vsepr_vectors
-
+            # Use the pre-filtered i_list/j_list/D_list for VSEPR to maintain compatibility
+            # or regenerate if needed. Here we use the original neighbor_list data for VSEPR logic.
             vecs = generate_vsepr_vectors(surface, idx, neighbor_data=(i_list, j_list, D_list))
             for db_vec in vecs:
                 db_vec = db_vec / np.linalg.norm(db_vec)
@@ -111,26 +127,20 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
                     for p in prot_idx:
                         p_vec = surface.positions[p] - surface.positions[idx]
                         proj = np.dot(p_vec, db_vec)
-                        # Only mark as 'hit' if the inhibitor atom is directly in front 
-                        # and very close (steric block)
                         if proj > 0.3: 
                             dist_to_ray = np.linalg.norm(p_vec - proj * db_vec)
-                            if dist_to_ray < 1.0: # Loosened from 1.2 to allow tighter gaps
+                            if dist_to_ray < 1.0: 
                                 hit = True
                                 break
-                if not hit:
-                    # Directional filter: Vector must point into vacuum (+Z)
-                    if db_vec[2] > 0.1:
-                        dangling_sites.append(
-                            {
-                                "index": idx,
-                                "sym": sym,
-                                "pos": surface.positions[idx],
-                                "db_vector": db_vec,
-                                "missing_bonds": expected - actual_coord,
-                            }
-                        )
-                        break
+                if not hit and db_vec[2] > 0.1:
+                    dangling_sites.append({
+                        "index": idx,
+                        "sym": sym,
+                        "pos": surface.positions[idx],
+                        "db_vector": db_vec,
+                        "missing_bonds": expected - actual_coord,
+                    })
+                    break
     
     if verbose:
         print(f"  [Reactivity Analysis] Identified {len(dangling_sites)} dangling sites and {len(exchange_sites)} exchange sites.")
