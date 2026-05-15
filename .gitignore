@@ -45,3 +45,6 @@ examples/**/*.json
 *secret_inhibitor*
 **/results/*secret_inhibitor*
 structures/secret_inhibitor.vasp
+# Temporary scratch files
+scratch/
+**/scratch/
