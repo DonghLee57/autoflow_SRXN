@@ -283,17 +283,75 @@ def execute_ts_search_stage(results, config, logger, out_prefix):
 def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center_target="Si", e_gas=0.0, e_base=0.0, stage_type="precursor"):
     """Generate candidates then run verification and TS search."""
     rs_cfg = config.get("reaction_search", {})
-    stage_cfg = rs_cfg.get("mechanisms", {}).get(stage_type, {})
-    physi_cfg, chem_cfg = stage_cfg.get("physisorption", {}), stage_cfg.get("chemisorption", {})
-    
-    mgr = AdsorptionWorkflowManager(slab, config=config, symprec=rs_cfg.get("symprec", 0.2), verbose=True)
+    mechs_cfg = rs_cfg.get("mechanisms", {})
+    stage_cfg = mechs_cfg.get(stage_type, {})
+    physi_cfg = stage_cfg.get("physisorption", {"enabled": False})
+    chem_cfg  = stage_cfg.get("chemisorption",  {"enabled": False})
+    symprec   = rs_cfg.get("symprec", 0.2)
+
+    # --- Intelligent Center Selection ---
+    actual_center = center_target
+    if stage_type == "inhibitor":
+        actual_center = "com"
+    else:
+        mol_symbols = set(mol.get_chemical_symbols())
+        if isinstance(center_target, list):
+            found = False
+            for c in center_target:
+                if c in mol_symbols:
+                    actual_center = c
+                    found = True
+                    break
+            if not found:
+                others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+                actual_center = others[0] if others else "com"
+        elif isinstance(center_target, str) and center_target not in mol_symbols and center_target != "com":
+             others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+             actual_center = others[0] if others else "com"
+
+    mgr = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=True)
     all_cands = []
 
     if physi_cfg.get("enabled", False):
-        all_cands.extend(mgr.generate_physisorption_candidates(mol, height=physi_cfg.get("placement_height", 3.5), tag=tag))
+        logger.info(f"  [Stage: {stage_type}] Physisorption search for {mol.get_chemical_formula()}...")
+        
+        # Site Map Generation
+        site_map_path = os.path.join(os.path.dirname(out_prefix), "site_map.png")
+        try:
+            generate_and_plot_site_map(
+                slab, site_map_path, symprec=symprec, mgr=mgr,
+                title=f"Adsorption site map — {stage_type} ({mol.get_chemical_formula()})"
+            )
+            logger.info(f"  [SiteMap] Saved: {os.path.relpath(site_map_path)}")
+        except Exception as _sm_exc:
+            logger.warning(f"  [SiteMap] Could not generate site map: {_sm_exc}")
+
+        with perf_stage(f"physi_candidates ({stage_type})"):
+            phy_cands = mgr.generate_physisorption_candidates(
+                mol, 
+                height=physi_cfg.get("placement_height", 3.5), 
+                tag=tag,
+                n_rot=physi_cfg.get("n_rot", 32),
+                rot_center=actual_center,
+                height_mode=physi_cfg.get("height_mode", "clearance"),
+                gravity_pull=physi_cfg.get("gravity_pull", {"enabled": False})
+            )
+        for c in phy_cands: c.info.setdefault("mechanism", "physisorption")
+        all_cands.extend(phy_cands)
     
     if chem_cfg.get("enabled", False):
-        all_cands.extend(build_chemisorption_structures(molecule=mol, surface=slab, config=config, tag=tag, results_dir=os.path.dirname(out_prefix)))
+        logger.info(f"  [Stage: {stage_type}] Chemisorption search for {mol.get_chemical_formula()}...")
+        with perf_stage(f"chem_candidates ({stage_type})"):
+            chem_cands = build_chemisorption_structures(
+                molecule=mol, center_target=actual_center, surface=slab, 
+                rot_steps=chem_cfg.get("rot_steps", 8),
+                config=config, tag=tag, results_dir=os.path.dirname(out_prefix)
+            )
+        for c in chem_cands: c.info["mechanism"] = "chemisorption"
+        all_cands.extend(chem_cands)
+
+    if all_cands:
+        write(f"{out_prefix}_candidates.extxyz", all_cands)
 
     results = execute_verification_stage(all_cands, config, logger, out_prefix, tag=tag, e_gas=e_gas, e_base=e_base)
     if stage_type == "precursor":
@@ -318,18 +376,24 @@ def execute_discovery_workflow(config, logger, slab, gas_energy_map=None, slab_b
     if inh_cfg.get("enabled", False) and inh_file:
         e_gas_inh = gas_energy_map.get(inh_file, 0.0) if gas_energy_map else calculate_gas_energy(read(inh_file), config, logger)
         inh_cands = execute_discovery_stage(slab, read(inh_file), config, os.path.join(out_dir, "stage1_inhibitor"), logger, 
-                                            tag=2, e_gas=e_gas_inh, e_base=slab_base_energy, stage_type="inhibitor")
+                                            tag=2, center_target=inh_cfg.get("center", "O"),
+                                            e_gas=e_gas_inh, e_base=slab_base_energy, stage_type="inhibitor")
         if inh_cands:
             inh_cands.sort(key=lambda x: x.info.get("e_final", 1e10))
             base_slabs = inh_cands[:inh_cfg.get("branching_limit", 1)]
 
+    pre_cfg = mechs_cfg.get("precursor", {})
+    pre_center = pre_cfg.get("center", "Si")
+    
     mol = read(precursor_file) if precursor_file else None
     if mol:
         e_gas_mol = gas_energy_map.get(precursor_file, 0.0) if gas_energy_map else calculate_gas_energy(mol, config, logger)
         for i, s in enumerate(base_slabs):
             suffix = f"_branch{i}" if len(base_slabs) > 1 else ""
             execute_discovery_stage(s, mol, config, os.path.join(out_dir, f"stage2_precursor{suffix}"), logger, 
-                                     tag=3, e_gas=e_gas_mol, e_base=s.info.get("e_final", slab_base_energy), stage_type="precursor")
+                                     tag=3, center_target=pre_center,
+                                     e_gas=e_gas_mol, e_base=s.info.get("e_final", slab_base_energy), 
+                                     stage_type="precursor")
 
 
 def run_generic_adsorption_study(config_path="config.yaml"):
