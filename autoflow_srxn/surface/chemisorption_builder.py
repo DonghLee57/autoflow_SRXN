@@ -216,7 +216,8 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
 
     if verbose:
         print(
-            f"  [Generic Reactivity] Formed {pair_count} active site pairs -> Symmetry reduced to {len(results['pairs'])} unique pairs."
+            f"  [Generic Reactivity] Identified {pair_count} potential active site pairs -> "
+            f"Symmetry-reduced to {len(results['pairs'])} unique reaction pairs."
         )
 
     return results

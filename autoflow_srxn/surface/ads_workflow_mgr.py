@@ -48,8 +48,12 @@ class AdsorptionWorkflowManager:
         all_surface = np.unique(np.concatenate([sub_surface, inh_surface]))
         target_label = "Substrate" if len(self.slab) > 10 else "Molecule/Fragment"
         self.surface_indices = self.get_unique_surface_indices(self.slab, all_surface, symprec=self.symprec)
+        
+        # Clarified logging message
+        site_label = "adsorption" if target_label == "Substrate" else "coordination"
         self.logger.info(
-            f"{target_label} Symmetry Analysis (symprec={self.symprec}): {len(all_surface)} atoms reduced to {len(self.surface_indices)} sites."
+            f"[Symmetry] {target_label} analysis (symprec={self.symprec}): "
+            f"Grouped {len(all_surface)} surface atoms into {len(self.surface_indices)} symmetrically distinct {site_label} sites."
         )
 
     def calculate_molecule_lateral_extent(self, molecule):
