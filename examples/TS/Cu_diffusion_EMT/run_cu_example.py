@@ -70,19 +70,12 @@ def run_cu_diffusion_example():
     a_relaxed = v0**(1/3) 
     logger.info(f"Relaxed Cu lattice constant (EMT): {a_relaxed:.4f} A")
 
-    # 4. Surface Slab Generation (Core Logic: create_slab_from_bulk)
+    # 4. Surface Slab Generation
     logger.info("--- Stage 2: Slab Generation ---")
-    bulk_atoms = bulk('Cu', 'fcc', a=a_relaxed, cubic=True)
-    
-    # Generate Cu(111) surface, ~10 A thickness (~4 layers), vacuum 10 A
-    # target_area ensures enough lateral space for adatom-adatom separation in PBC
-    slab = create_slab_from_bulk(
-        bulk_atoms,
-        miller_indices=[1, 1, 1],
-        thickness=8.0,
-        vacuum=10.0,
-        target_area=60.0
-    )
+    # We use ase.build.fcc111 to ensure the Atoms object has 'adsorbate_info'
+    # so that add_adsorbate(..., position='fcc') works correctly.
+    from ase.build import fcc111
+    slab = fcc111('Cu', size=(3, 3, 4), a=a_relaxed, vacuum=10.0)
     
     # Apply constraints: Fix bottom atoms (approx 2 layers)
     z_min = slab.positions[:, 2].min()
@@ -130,7 +123,7 @@ def run_cu_diffusion_example():
         trajectory=os.path.join(results_dir, "neb_path.extxyz")
     )
 
-    logger.info(f"Example run complete. NEB trajectory saved to {os.path.join(results_dir, 'neb_path.extxyz')}")
+    logger.info(f"Example run complete. NEB trajectory saved to {os.path.relpath(os.path.join(results_dir, 'neb_path.extxyz'))}")
 
 if __name__ == "__main__":
     run_cu_diffusion_example()

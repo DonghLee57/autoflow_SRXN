@@ -3,29 +3,17 @@ engine:
     backend: emt
     device: cpu
 paths:
+  initial_state: "inputs/initial.vasp"
+  final_state: "inputs/final.vasp"
   output_dir: results
-  substrate_bulk: "bulk_relaxed.vasp"
 relaxation:
   fmax: 0.05
   steps: 200
-surface_prep:
-  slab_generation:
-    miller: [1, 1, 1]
-    thickness_ang: 8.0
-    vacuum_ang: 10.0
-    target_area_ang2: 60.0
 reaction_search:
   mechanisms:
     precursor:
       ts_search:
         enabled: true
-        neb:
-          n_images:       5
-          fmax:           0.05
-          steps:          100
-          interpolate:    "idpp"
-          climbing_image: false
-        artn:
-          fmax:           0.05
-          steps:          200
-          displacement_ang: 0.1
+        n_images: 5
+        fmax: 0.05
+        steps: 100

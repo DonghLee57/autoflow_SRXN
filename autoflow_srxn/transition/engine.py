@@ -110,6 +110,10 @@ class NEBSearcher:
             
         calc = self.engine.get_calculator()
         for image in images: image.calc = calc
+        
+        # 0. Capture initial energies (interpolated guess) for comparison plot
+        self.logger.info("  [NEB] Evaluating initial interpolated path energies...")
+        initial_energies = [img.get_potential_energy() for img in images]
             
         # 1. Trajectory and Output Handling
         results_dir = os.path.dirname(trajectory) if trajectory else "."
@@ -163,45 +167,62 @@ class NEBSearcher:
 
         # 2. Append final converged path (always saved regardless of interval)
         if trajectory:
-            self.logger.info(f"  [NEB] Saving converged path to {trajectory}")
+            rel_traj = os.path.relpath(trajectory)
+            self.logger.info(f"  [NEB] Saving converged path to {rel_traj}")
             write(trajectory, _snapshot_from_cache(neb), append=True)
 
         # 3. Visualization — read energies from cache, not from calculator
         cached_energies = list(getattr(neb, 'energies', [None] * len(images)))
-        self.plot_profile(images, results_dir, cached_energies=cached_energies)
+        self.plot_profile(images, results_dir, cached_energies=cached_energies, initial_energies=initial_energies)
 
         return images
 
-    def plot_profile(self, images, output_dir, cached_energies=None):
-        """Generates energy profile plots (neb_profile.png)."""
+    def plot_profile(self, images, output_dir, cached_energies=None, initial_energies=None):
+        """Generates energy profile plots (neb_profile.png and neb_opt_profile.png)."""
         try:
             import matplotlib.pyplot as plt
             if cached_energies is not None and all(
                     e is not None and np.isfinite(e) for e in cached_energies):
-                energies = [float(e) for e in cached_energies]
+                final_energies = [float(e) for e in cached_energies]
             else:
-                energies = [img.get_potential_energy() for img in images]
-            rel_energies = [e - min(energies) for e in energies]
-            barrier = max(energies) - energies[0]
+                final_energies = [img.get_potential_energy() for img in images]
             
-            # ── Final Profile ──────────────────────────────────────────────────
-            plt.figure(figsize=(8, 5))
+            e_min = min(final_energies)
+            rel_final = [e - e_min for e in final_energies]
+            barrier = max(final_energies) - final_energies[0]
             x = range(len(images))
-            plt.plot(x, rel_energies, 'ro-', linewidth=2, markersize=8)
+            
+            # ── Final Profile (Standard) ──────────────────────────────────────
+            plt.figure(figsize=(8, 5))
+            plt.plot(x, rel_final, 'ro-', linewidth=2, markersize=8, label="Optimized")
             plt.xlabel("Configurations", fontsize=12)
             plt.ylabel("Relative Energy (eV)", fontsize=12)
-            plt.title("NEB Energy Profile", fontsize=14)
+            plt.title("NEB Energy Profile (Final)", fontsize=14)
             plt.grid(True, linestyle='--', alpha=0.7)
-            
-            # Label the barrier
-            plt.text(len(images)//2, max(rel_energies) * 1.05, f"Barrier: {barrier:.2f} eV", 
+            plt.text(len(images)//2, max(rel_final) * 1.05, f"Barrier: {barrier:.2f} eV", 
                      ha='center', fontsize=12, color='blue', fontweight='bold')
-            
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, "neb_profile.png"), dpi=300)
-            plt.savefig(os.path.join(output_dir, "neb_opt_profile.png"), dpi=300) # Duplicate for now or use history
             plt.close()
-            self.logger.info(f"  [NEB] Energy profiles saved to {output_dir}")
+
+            # ── Optimization Profile (Comparison) ─────────────────────────────
+            plt.figure(figsize=(8, 5))
+            if initial_energies is not None:
+                rel_initial = [e - e_min for e in initial_energies]
+                plt.plot(x, rel_initial, 'k--', alpha=0.5, label="Initial Guess")
+            
+            plt.plot(x, rel_final, 'ro-', linewidth=2, markersize=8, label="Optimized")
+            plt.xlabel("Configurations", fontsize=12)
+            plt.ylabel("Relative Energy (eV)", fontsize=12)
+            plt.title("NEB Optimization Profile", fontsize=14)
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, "neb_opt_profile.png"), dpi=300)
+            plt.close()
+
+            rel_output = os.path.relpath(output_dir)
+            self.logger.info(f"  [NEB] Energy profiles saved to {rel_output}")
         except Exception as e:
             self.logger.warning(f"  [NEB] Could not generate plots: {e}")
 

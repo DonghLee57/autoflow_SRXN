@@ -186,7 +186,7 @@ def run_mode_following(config_path: str = "config.yaml"):
     log_file = f"{out_prefix}.log"
     logger   = setup_logger(log_path=log_file, verbose=True)
     logger.info(f"Config : {os.path.relpath(config_path)}")
-    logger.info(f"Output : {out_prefix}.*")
+    logger.info(f"Output : {os.path.relpath(out_prefix)}.*")
 
     engine = SimulationEngine(config=config)
     atoms, frozen_idx = _load_structure(config, config_dir, engine, logger)

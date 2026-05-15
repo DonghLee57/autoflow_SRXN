@@ -172,7 +172,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
             filt_sites = dangling_sites + exchange_sites
             plot_site_proximity(surface, all_sites, filt_sites, prot_idx, cutoff, img_path)
             if verbose:
-                print(f"  [Proximity Filter] Visualization saved to {img_path}")
+                print(f"  [Proximity Filter] Visualization saved to {os.path.relpath(img_path)}")
 
     results = {"single": dangling_sites, "pairs": [], "exchange": exchange_sites}
 

@@ -92,7 +92,8 @@ class TransitionStateWorkflow:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
-        self.logger.info(f"--- Starting Automated TS Search: {output_dir} ---")
+        rel_output = os.path.relpath(output_dir)
+        self.logger.info(f"--- Starting Automated TS Search: {rel_output} ---")
         
         # Handle Protector Exchange
         if "isolated_byproduct" in final.info and len(final) < len(initial):

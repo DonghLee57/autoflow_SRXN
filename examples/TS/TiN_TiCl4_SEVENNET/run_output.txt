@@ -1,0 +1,1484 @@
+--- Starting TiN(111) + TiCl4 Study (SevenNet-0) ---
+Potential  : SevenNet 7net-0 on CPU
+Surface    : TiN(111) 2x2 slab
+Molecule   : TiCl4
+Stages     : slab relax -> physi/chem candidates -> verification -> NEB+ARTn TS search
+Est. time  : ~30-90 min depending on CPU (SevenNet is faster than MACE-MP on CPU)
+
+2026-05-15 06:42:06 | INFO     | GLOBAL STAGE 0: Generating substrate slab...
+2026-05-15 06:42:06 | INFO     |   [PerfTracker] slab_generation                     wall=0.0s  CPU N/A  Mem N/A
+2026-05-15 06:42:06 | INFO     | GLOBAL STAGE 0.5: Slab relaxation...
+cueq
+False
+flash
+False
+2026-05-15 06:42:10 | INFO     |   [Engine] Loaded SevenNet (model=7net-0, modal=None).
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?]  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:04]  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:58]  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:20]  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:34]  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:43]  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:48]  [Relax] BFGS:   4%|4         | 8/200 [00:08<03:50]  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:52]                                                          Step     Time          Energy          fmax
+BFGS:    0 06:42:12    -1505.315674        4.926260
+BFGS:    1 06:42:13    -1513.415527        3.866066
+BFGS:    2 06:42:14    -1523.290771        0.785453
+BFGS:    3 06:42:15    -1523.573975        0.201482
+BFGS:    4 06:42:17    -1523.590942        0.168028
+BFGS:    5 06:42:18    -1523.603638        0.101733
+BFGS:    6 06:42:19    -1523.613403        0.058376
+BFGS:    7 06:42:20    -1523.616089        0.037560
+BFGS:    8 06:42:22    -1523.617065        0.027053
+2026-05-15 06:42:22 | INFO     |   [PerfTracker] slab_relax                          wall=16.0s  462% CPU  1515 MB peak
+2026-05-15 06:42:22 | INFO     |   [Slab Relax] E_initial:   -1505.3157 eV, E_final:   -1523.6171 eV, Delta:   -18.3014 eV
+2026-05-15 06:42:22 | INFO     |   [Slab] E_relaxed:   -1523.6171 eV  (N80Ti80)
+cueq
+False
+flash
+False
+2026-05-15 06:42:22 | INFO     |   [Engine] Loaded SevenNet (model=7net-0, modal=None).
+  [Relax] BFGS:   0%|          | 0/100 [00:00<?]                                                2026-05-15 06:42:22 | INFO     |   [Gas Phase] Cl4Ti optimized energy: -23.1930 eV
+2026-05-15 06:42:22 | INFO     |   [PerfTracker] gas_phase_energies (1 molecules)    wall=0.9s  CPU N/A  Mem N/A
+2026-05-15 06:42:22 | INFO     | BATCH RUN: Sequence: clean -> TiCl4
+2026-05-15 06:42:22 | INFO     | BATCH START: clean_on_TiCl4  ¡æ  results\clean_on_TiCl4
+2026-05-15 06:42:22 | INFO     | STAGE 2: Precursor Discovery (TiCl4.vasp)
+2026-05-15 06:42:23 | INFO     | Substrate Symmetry Analysis (symprec=1.0): 32 atoms reduced to 2 sites.
+2026-05-15 06:42:23 | INFO     |   [Stage: precursor] Physisorption search for Cl4Ti...
+2026-05-15 06:42:23 | INFO     |   [SiteMap] Saved: results\clean_on_TiCl4\site_map.png
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\logging\__init__.py", line 1113, in emit
+    stream.write(msg + self.terminator)
+UnicodeEncodeError: 'cp949' codec can't encode character '\xc5' in position 78: illegal multibyte sequence
+Call stack:
+  File "C:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\examples\TS\TiN_TiCl4_SEVENNET\run_tin_sevennet.py", line 34, in <module>
+    run_generic_adsorption_study(config_path)
+  File "C:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\examples\DIPAS_on_Si110\run_adsorption.py", line 655, in run_generic_adsorption_study
+    execute_discovery_workflow(run_config, logger, slab=slab,
+  File "C:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\examples\DIPAS_on_Si110\run_adsorption.py", line 511, in execute_discovery_workflow
+    results = execute_discovery_stage(
+  File "C:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\examples\DIPAS_on_Si110\run_adsorption.py", line 415, in execute_discovery_stage
+    phy_cands = mgr.generate_physisorption_candidates(
+  File "C:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\autoflow_srxn\surface\ads_workflow_mgr.py", line 573, in generate_physisorption_candidates
+    self.logger.info(
+Message: '  [Physisorption] 3 unique sites (height=3.5 \xc5 [clearance], n_rot=8, overlap_scale=0.65, gravity=on)'
+Arguments: ()
+[Physi] sites:   0%|          | 0/3 [00:00<?, ?site/s]
+  site 1/3 orientations:   0%|          | 0/8 [00:00<?, ?rot/s][A
+                                                               [A
+  site 2/3 orientations:   0%|          | 0/8 [00:00<?, ?rot/s][A
+                                                               [A[Physi] sites:  67%|######6   | 2/3 [00:00<00:00, 14.97site/s]
+  site 3/3 orientations:   0%|          | 0/8 [00:00<?, ?rot/s][A
+                                                               [A[Physi] sites: 100%|##########| 3/3 [00:00<00:00, 14.32site/s]
+2026-05-15 06:42:24 | INFO     |   [Physisorption] 21 unique candidates (0 overlap-rejected, 3 deduplicated within sites)
+2026-05-15 06:42:24 | INFO     |   [PerfTracker] physi_candidates (precursor/Cl4Ti)  wall=0.7s  CPU N/A  Mem N/A
+2026-05-15 06:42:24 | INFO     |   [Stage: precursor] Chemisorption search for Cl4Ti (center=Ti)...
+
+--- Starting Algorithmic Chemisorption Routing (tag=3) ---
+  [Generic Reactivity] Formed 33 active site pairs -> Symmetry reduced to 1 unique pairs.
+2026-05-15 06:42:24 | INFO     | Molecule/Fragment Symmetry Analysis (symprec=1.0): 3 atoms reduced to 2 sites.
+Precursor Fragmentation Analysis (Ti centered): Found 4 ligands attached to index 0.
+2026-05-15 06:42:24 | INFO     | Substrate Symmetry Analysis (symprec=1.0): 32 atoms reduced to 2 sites.
+  -> Routing to Generic Dissociative Chemisorption on 1 Pairs...
+[Chem] dissociation pairs:   0%|          | 0/1 [00:00<?, ?pair/s][Chem] dissociation pairs: 100%|##########| 1/1 [00:00<00:00, 31.69pair/s]
+--- Finished Chemisorption Builder. Total Generated: 1 ---
+
+2026-05-15 06:42:24 | INFO     |   [PerfTracker] chem_candidates (precursor/Cl4Ti)   wall=0.3s  CPU N/A  Mem N/A
+C:\Users\user\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\ase\io\extxyz.py:318: UserWarning: Skipping unhashable information index_mapping
+  warnings.warn('Skipping unhashable information '
+2026-05-15 06:42:24 | INFO     | VERIFICATION: Processing 22/22 candidates
+2026-05-15 06:42:24 | INFO     |   Pipeline: candidate_relax=True, md_equilibrate=False, post_md_relax=False | fmax=0.03, steps=200, frozen_z=6.0
+cueq
+False
+flash
+False
+2026-05-15 06:42:25 | INFO     |   [Engine] Loaded SevenNet (model=7net-0, modal=None).
+[Verification] candidates:   0%|          | 0/22 [00:00<?, ?struct/s]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:07][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:57][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:23][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:38][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:45][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:50][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:08<03:54][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:55][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:58][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:57][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:13<03:56][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<03:54][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:53][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:17<03:53][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:52][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:49][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:48][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:22<03:48][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:46][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:25<03:46][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:26<03:45][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:27<03:43][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:41][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:30<03:42][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:31<03:42][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:32<03:41][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:34<03:38][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:35<03:37][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:36<03:35][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:33][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:39<03:33][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:40<03:34][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:40][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:43<03:42][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:44<03:48][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:46<03:43][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:47<03:39][A
+  [Relax] BFGS:  20%|#9        | 39/200 [00:48<03:35][A
+  [Relax] BFGS:  20%|##        | 40/200 [00:50<03:33][A
+  [Relax] BFGS:  20%|##        | 41/200 [00:51<03:34][A
+  [Relax] BFGS:  21%|##1       | 42/200 [00:52<03:32][A
+  [Relax] BFGS:  22%|##1       | 43/200 [00:54<03:26][A
+  [Relax] BFGS:  22%|##2       | 44/200 [00:55<03:24][A
+  [Relax] BFGS:  22%|##2       | 45/200 [00:56<03:28][A
+  [Relax] BFGS:  23%|##3       | 46/200 [00:58<03:28][A
+  [Relax] BFGS:  24%|##3       | 47/200 [00:59<03:22][A
+  [Relax] BFGS:  24%|##4       | 48/200 [01:00<03:24][A
+  [Relax] BFGS:  24%|##4       | 49/200 [01:02<03:27][A
+  [Relax] BFGS:  25%|##5       | 50/200 [01:03<03:26][A
+  [Relax] BFGS:  26%|##5       | 51/200 [01:05<03:23][A
+  [Relax] BFGS:  26%|##6       | 52/200 [01:06<03:28][A
+  [Relax] BFGS:  26%|##6       | 53/200 [01:08<03:28][A
+  [Relax] BFGS:  27%|##7       | 54/200 [01:09<03:26][A
+  [Relax] BFGS:  28%|##7       | 55/200 [01:10<03:21][A
+  [Relax] BFGS:  28%|##8       | 56/200 [01:12<03:20][A
+  [Relax] BFGS:  28%|##8       | 57/200 [01:13<03:19][A
+  [Relax] BFGS:  29%|##9       | 58/200 [01:14<03:16][A
+  [Relax] BFGS:  30%|##9       | 59/200 [01:16<03:14][A
+  [Relax] BFGS:  30%|###       | 60/200 [01:17<03:13][A
+  [Relax] BFGS:  30%|###       | 61/200 [01:18<03:08][A
+  [Relax] BFGS:  31%|###1      | 62/200 [01:20<03:04][A
+  [Relax] BFGS:  32%|###1      | 63/200 [01:21<03:01][A
+  [Relax] BFGS:  32%|###2      | 64/200 [01:22<02:59][A
+  [Relax] BFGS:  32%|###2      | 65/200 [01:24<02:55][A
+  [Relax] BFGS:  33%|###3      | 66/200 [01:25<02:56][A
+  [Relax] BFGS:  34%|###3      | 67/200 [01:26<02:53][A
+  [Relax] BFGS:  34%|###4      | 68/200 [01:28<02:56][A
+  [Relax] BFGS:  34%|###4      | 69/200 [01:29<02:59][A
+  [Relax] BFGS:  35%|###5      | 70/200 [01:30<02:56][A
+  [Relax] BFGS:  36%|###5      | 71/200 [01:32<02:51][A
+  [Relax] BFGS:  36%|###6      | 72/200 [01:33<02:46][A
+  [Relax] BFGS:  36%|###6      | 73/200 [01:34<02:45][A
+  [Relax] BFGS:  37%|###7      | 74/200 [01:36<02:44][A
+  [Relax] BFGS:  38%|###7      | 75/200 [01:37<02:47][A
+  [Relax] BFGS:  38%|###8      | 76/200 [01:38<02:46][A
+  [Relax] BFGS:  38%|###8      | 77/200 [01:40<02:43][A
+  [Relax] BFGS:  39%|###9      | 78/200 [01:41<02:40][A
+                                                     [A[Verification] candidates:   5%|4         | 1/22 [01:42<35:55, 102.66s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:14][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:04][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:30][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:52][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:01][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:05][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:08][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:06][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:03][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:03][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:02][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:04][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:06][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:08][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:03][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:02][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:02][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<04:01][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:57][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:59][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:59][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<04:00][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:59][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:32<03:54][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:49][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:46][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:51][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:51][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:47][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:43][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:41][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:37][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:34][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:45<03:29][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:29][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:32][A
+                                                     [A[Verification] candidates:   9%|9         | 2/22 [02:31<23:40, 71.05s/struct] 
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:11][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:01][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:26][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:39][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:50][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:56][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:07][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:14][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:16][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:15][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:10][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:08][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:05][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:09][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:20<04:08][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:04][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:58][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:53][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:53][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:56][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:55][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<03:54][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:54][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:55][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:52][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:46][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:43][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:41][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:38][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:41][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:42][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:40][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:38][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:44<03:33][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:32][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:32][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:48<03:31][A
+                                                     [A[Verification] candidates:  14%|#3        | 3/22 [03:21<19:27, 61.45s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:19][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:13][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:43][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:58][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:04][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:05][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:06][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:06][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:12][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:09][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:05][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:16<04:01][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<03:58][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:58][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:56][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<03:58][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:00][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:55][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:49][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:49][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:48][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:46][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:49][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:51][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:51][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:45][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:41][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:38][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:37][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:36][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:36][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:37][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:38][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:44<03:35][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:45<03:33][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:29][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:48<03:28][A
+  [Relax] BFGS:  20%|#9        | 39/200 [00:49<03:28][A
+  [Relax] BFGS:  20%|##        | 40/200 [00:51<03:27][A
+  [Relax] BFGS:  20%|##        | 41/200 [00:52<03:27][A
+  [Relax] BFGS:  21%|##1       | 42/200 [00:53<03:24][A
+  [Relax] BFGS:  22%|##1       | 43/200 [00:54<03:20][A
+  [Relax] BFGS:  22%|##2       | 44/200 [00:56<03:19][A
+  [Relax] BFGS:  22%|##2       | 45/200 [00:57<03:18][A
+  [Relax] BFGS:  23%|##3       | 46/200 [00:58<03:16][A
+  [Relax] BFGS:  24%|##3       | 47/200 [00:59<03:15][A
+  [Relax] BFGS:  24%|##4       | 48/200 [01:01<03:17][A
+  [Relax] BFGS:  24%|##4       | 49/200 [01:02<03:26][A
+  [Relax] BFGS:  25%|##5       | 50/200 [01:04<03:26][A
+  [Relax] BFGS:  26%|##5       | 51/200 [01:05<03:23][A
+  [Relax] BFGS:  26%|##6       | 52/200 [01:06<03:20][A
+  [Relax] BFGS:  26%|##6       | 53/200 [01:08<03:19][A
+  [Relax] BFGS:  27%|##7       | 54/200 [01:09<03:17][A
+  [Relax] BFGS:  28%|##7       | 55/200 [01:10<03:12][A
+  [Relax] BFGS:  28%|##8       | 56/200 [01:12<03:09][A
+  [Relax] BFGS:  28%|##8       | 57/200 [01:13<03:09][A
+  [Relax] BFGS:  29%|##9       | 58/200 [01:14<03:10][A
+  [Relax] BFGS:  30%|##9       | 59/200 [01:16<03:07][A
+  [Relax] BFGS:  30%|###       | 60/200 [01:17<03:04][A
+  [Relax] BFGS:  30%|###       | 61/200 [01:18<03:05][A
+  [Relax] BFGS:  31%|###1      | 62/200 [01:20<03:02][A
+  [Relax] BFGS:  32%|###1      | 63/200 [01:21<03:05][A
+  [Relax] BFGS:  32%|###2      | 64/200 [01:22<03:03][A
+  [Relax] BFGS:  32%|###2      | 65/200 [01:24<03:02][A
+  [Relax] BFGS:  33%|###3      | 66/200 [01:25<02:57][A
+  [Relax] BFGS:  34%|###3      | 67/200 [01:26<02:52][A
+  [Relax] BFGS:  34%|###4      | 68/200 [01:28<02:49][A
+  [Relax] BFGS:  34%|###4      | 69/200 [01:29<02:49][A
+  [Relax] BFGS:  35%|###5      | 70/200 [01:30<02:48][A
+  [Relax] BFGS:  36%|###5      | 71/200 [01:31<02:48][A
+  [Relax] BFGS:  36%|###6      | 72/200 [01:33<02:51][A
+  [Relax] BFGS:  36%|###6      | 73/200 [01:34<02:51][A
+  [Relax] BFGS:  37%|###7      | 74/200 [01:36<02:48][A
+  [Relax] BFGS:  38%|###7      | 75/200 [01:37<02:44][A
+  [Relax] BFGS:  38%|###8      | 76/200 [01:38<02:41][A
+  [Relax] BFGS:  38%|###8      | 77/200 [01:39<02:39][A
+  [Relax] BFGS:  39%|###9      | 78/200 [01:41<02:42][A
+  [Relax] BFGS:  40%|###9      | 79/200 [01:42<02:44][A
+                                                     [A[Verification] candidates:  18%|#8        | 4/22 [05:05<23:28, 78.26s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:21][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:11][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:36][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:46][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:53][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:59][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:04][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:09][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:07][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:06][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:02][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<03:59][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<03:56][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:54][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:53][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:55][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:57][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:55][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:51][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:50][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:48][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:44][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:40][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:43][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:44][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:45][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:41][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:44][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:42][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:42][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:40][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:40][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:38][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:44<03:37][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:45<03:33][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:46<03:31][A
+                                                     [A[Verification] candidates:  23%|##2       | 5/22 [05:53<19:05, 67.39s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:09][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:03][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:41][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:53][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:00][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:05][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:10][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:10][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:06][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:05][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:04][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:16<04:05][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:02][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:59][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:58][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<03:59][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:00][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:58][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:59][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<04:03][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:28<04:01][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<03:56][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:49][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:44][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:44][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:42][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:47][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:47][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:43][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:41][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:39][A
+                                                     [A[Verification] candidates:  27%|##7       | 6/22 [06:35<15:40, 58.81s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:06][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:59][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:38][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:57][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:59][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:05][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:10][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:11][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:07][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:05][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:07][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:16<04:13][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:09][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:06][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:20<04:06][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:06][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:05][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:24<04:08][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<04:08][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<04:01][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:28<03:55][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<03:51][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:47][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:32<03:46][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:49][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:51][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:36<03:50][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:49][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:45][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:40<03:40][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:39][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:35][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:32][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:45<03:34][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:36][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:30][A
+                                                     [A[Verification] candidates:  32%|###1      | 7/22 [07:24<13:53, 55.58s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:05][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:58][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:22][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:34][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:53][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<04:02][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:09][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:18][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:17][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:10][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:08][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:05][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:08][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:07][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:08][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:08][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:05][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<04:00][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:55][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:55][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:56][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<03:53][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:48][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:45][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:46][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:42][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:38][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:41][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:40][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:41][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:37][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:34][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:34][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:44<03:34][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:36][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:34][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:48<03:39][A
+  [Relax] BFGS:  20%|#9        | 39/200 [00:50<03:36][A
+  [Relax] BFGS:  20%|##        | 40/200 [00:51<03:33][A
+  [Relax] BFGS:  20%|##        | 41/200 [00:52<03:29][A
+  [Relax] BFGS:  21%|##1       | 42/200 [00:54<03:25][A
+  [Relax] BFGS:  22%|##1       | 43/200 [00:55<03:23][A
+  [Relax] BFGS:  22%|##2       | 44/200 [00:56<03:20][A
+  [Relax] BFGS:  22%|##2       | 45/200 [00:57<03:20][A
+  [Relax] BFGS:  23%|##3       | 46/200 [00:59<03:21][A
+  [Relax] BFGS:  24%|##3       | 47/200 [01:00<03:23][A
+  [Relax] BFGS:  24%|##4       | 48/200 [01:01<03:24][A
+  [Relax] BFGS:  24%|##4       | 49/200 [01:03<03:19][A
+  [Relax] BFGS:  25%|##5       | 50/200 [01:04<03:19][A
+  [Relax] BFGS:  26%|##5       | 51/200 [01:05<03:16][A
+  [Relax] BFGS:  26%|##6       | 52/200 [01:07<03:13][A
+  [Relax] BFGS:  26%|##6       | 53/200 [01:08<03:16][A
+  [Relax] BFGS:  27%|##7       | 54/200 [01:09<03:15][A
+  [Relax] BFGS:  28%|##7       | 55/200 [01:11<03:11][A
+  [Relax] BFGS:  28%|##8       | 56/200 [01:12<03:09][A
+  [Relax] BFGS:  28%|##8       | 57/200 [01:13<03:07][A
+  [Relax] BFGS:  29%|##9       | 58/200 [01:15<03:05][A
+  [Relax] BFGS:  30%|##9       | 59/200 [01:16<03:03][A
+  [Relax] BFGS:  30%|###       | 60/200 [01:17<03:02][A
+  [Relax] BFGS:  30%|###       | 61/200 [01:19<03:04][A
+  [Relax] BFGS:  31%|###1      | 62/200 [01:20<03:03][A
+  [Relax] BFGS:  32%|###1      | 63/200 [01:21<03:02][A
+  [Relax] BFGS:  32%|###2      | 64/200 [01:22<02:58][A
+  [Relax] BFGS:  32%|###2      | 65/200 [01:24<02:57][A
+  [Relax] BFGS:  33%|###3      | 66/200 [01:25<02:59][A
+  [Relax] BFGS:  34%|###3      | 67/200 [01:26<02:55][A
+  [Relax] BFGS:  34%|###4      | 68/200 [01:28<02:55][A
+  [Relax] BFGS:  34%|###4      | 69/200 [01:29<02:56][A
+  [Relax] BFGS:  35%|###5      | 70/200 [01:31<02:55][A
+  [Relax] BFGS:  36%|###5      | 71/200 [01:32<02:55][A
+                                                     [A[Verification] candidates:  36%|###6      | 8/22 [08:58<15:47, 67.70s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:08][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:00][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:25][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:40][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:58][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<04:05][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:04][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:04][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:04][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:03][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<03:59][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:01][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:05][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:05][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:02][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:59][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:57][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:53][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:49][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:46][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:47][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:51][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:53][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:52][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:51][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:51][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:51][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:48][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:49][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:48][A
+                                                     [A[Verification] candidates:  41%|####      | 9/22 [09:39<12:50, 59.27s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:10][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:59][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:26][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:48][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:00][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:08][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:12][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:09][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:05][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:03][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:02][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:00][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<03:57][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:56][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:01][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:01][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:57][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:53][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:53][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:56][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:59][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<04:00][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:59][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:58][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:52][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:50][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:52][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:50][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:46][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:43][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:44][A
+                                                     [A[Verification] candidates:  45%|####5     | 10/22 [10:21<10:48, 54.03s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:10][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:02][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:28][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:42][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:52][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<04:03][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:05][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:09][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:12][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:07][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:10][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:09][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:04][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:08][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:07][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:08][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:04][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:24<04:04][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<04:05][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<04:00][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:28<04:00][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<04:00][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<04:02][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:32<03:53][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:49][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:46][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:43][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:42][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:39][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:40<03:45][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:44][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:38][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:34][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:45<03:32][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:31][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:32][A
+                                                     [A[Verification] candidates:  50%|#####     | 11/22 [11:10<09:37, 52.48s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:24][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:12][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:38][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:52][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:56][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:00][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:04][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:04][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:08][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:07][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:04][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:04][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<03:59][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:57][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:57][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<03:59][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:07][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:24<04:08][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<04:09][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<04:04][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:28<03:57][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:29<03:53][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:49][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:53][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:33<03:54][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:55][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:36<03:52][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:37<03:53][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:50][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:40<03:45][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:41<03:42][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:41][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:44<03:41][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:45<03:38][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:46<03:34][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:47<03:33][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:49<03:30][A
+                                                     [A[Verification] candidates:  55%|#####4    | 12/22 [12:01<08:39, 51.91s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:21][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:19][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:42][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:50][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:53][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:55][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<03:58][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:59][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:03][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:05][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:06][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:04][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:01][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:57][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:54][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:56][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:55][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:57][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:56][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:53][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:51][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:48][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:44][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:41][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:46][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:50][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:52][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:46][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:44][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:43][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:41][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:38][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:38][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:44<03:38][A
+                                                     [A[Verification] candidates:  59%|#####9    | 13/22 [12:46<07:30, 50.07s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:13][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:06][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:27][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:41][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:46][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:52][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<03:57][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:00][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:59][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:57][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<03:58][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<03:58][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:55][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:17<03:54][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:58][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:59][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:54][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:50][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:46][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:25<03:45][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:26<03:48][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:49][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:52][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:52][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:48][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:44][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:34<03:40][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:40][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:36][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:34][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:39<03:37][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:38][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:35][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:43<03:33][A
+                                                     [A[Verification] candidates:  64%|######3   | 14/22 [13:32<06:28, 48.56s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:07][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:58][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:21][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:40][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:53][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:55][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:08<03:56][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:56][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:58][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<04:01][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:05][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:09][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<04:07][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:05][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<04:00][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:57][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:55][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:53][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:50][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:54][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:57][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:52][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:48][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:46][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:43][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:42][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:39][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:41][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:43][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:39][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:36][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:32][A
+                                                     [A[Verification] candidates:  68%|######8   | 15/22 [14:14<05:27, 46.79s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:14][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:10][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:39][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:54][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:00][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:01][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:02][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:00][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:00][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<03:59][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:03][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:05][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:03][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:58][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:55][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:54][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:53][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:51][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:54][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:55][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:52][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:50][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:49][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:51][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:49][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:52][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:52][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:53][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:47][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:44][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:40][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:42<03:36][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:43<03:33][A
+                                                     [A[Verification] candidates:  73%|#######2  | 16/22 [14:59<04:36, 46.11s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:18][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:11][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:33][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:45][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:51][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:55][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:00][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:03][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<04:04][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:04][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:03][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:05][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<04:08][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<04:03][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:59][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<04:03][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<04:02][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:58][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:54][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:51][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:47][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:48][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:45][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:45][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:48][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:48][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:42][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:37][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:33][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:32][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:40<03:31][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:34][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:34][A
+                                                     [A[Verification] candidates:  77%|#######7  | 17/22 [15:43<03:47, 45.52s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:12][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:15][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:04<03:38][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:55][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<04:02][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:08<04:08][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:11][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:12][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:12<04:10][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:13<04:08][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:05][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:16<04:00][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:17<03:59][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:59][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:59][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:21<03:57][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:22<03:54][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:51][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:25<03:48][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:26<03:49][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:46][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:48][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:30<03:48][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:31<03:48][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:50][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:34<03:48][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:35<03:46][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:41][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:38<03:41][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:39<03:43][A
+                                                     [A[Verification] candidates:  82%|########1 | 18/22 [16:24<02:56, 44.07s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:06][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:00][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:24][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:40][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:46][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:47][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:08<03:53][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:56][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:59][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:59][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:13<03:54][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<03:53][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:51][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:17<03:51][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:18<03:51][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:55][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:55][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:22<03:56][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:52][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:25<03:53][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:26<03:54][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:48][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:51][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:30<03:55][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:32<03:51][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:46][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:34<03:43][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:36<03:41][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:39][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:38][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:39<03:41][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:41<03:42][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:41][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:43<03:37][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:45<03:33][A
+                                                     [A[Verification] candidates:  86%|########6 | 19/22 [17:10<02:14, 44.80s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:11][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:02][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:30][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:46][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:57][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:59][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<04:01][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<04:00][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:58][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:56][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<03:58][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<03:55][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:55][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:55][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:53][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:50][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:45][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:22<03:44][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:43][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:25<03:45][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:26<03:45][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:44][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:44][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:30<03:42][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:31<03:38][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:33][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:34<03:31][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:35<03:36][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:36<03:36][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:33][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:39<03:36][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:40<03:37][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:31][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:43<03:28][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:44<03:26][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:45<03:28][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:47<03:28][A
+  [Relax] BFGS:  20%|#9        | 39/200 [00:48<03:26][A
+                                                     [A[Verification] candidates:  91%|######### | 20/22 [18:00<01:32, 46.26s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:04][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<02:54][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:16][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:04<03:32][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:42][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:51][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:08<03:58][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:57][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:55][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:50][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:13<03:49][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:14<03:49][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:52][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:17<03:51][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:18<03:50][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:47][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:45][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:22<03:43][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:23<03:39][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:24<03:39][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:26<03:39][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:27<03:46][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:28<03:49][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:30<03:47][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:31<03:42][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:32<03:38][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:33<03:37][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:35<03:36][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:36<03:33][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:37<03:31][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:38<03:33][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:40<03:34][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:41<03:31][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:42<03:28][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:43<03:23][A
+                                                     [A[Verification] candidates:  95%|#########5| 21/22 [18:45<00:45, 45.91s/struct]
+  [Relax] BFGS:   0%|          | 0/200 [00:00<?][A
+  [Relax] BFGS:   1%|1         | 2/200 [00:01<02:07][A
+  [Relax] BFGS:   2%|1         | 3/200 [00:02<03:01][A
+  [Relax] BFGS:   2%|2         | 4/200 [00:03<03:29][A
+  [Relax] BFGS:   2%|2         | 5/200 [00:05<03:42][A
+  [Relax] BFGS:   3%|3         | 6/200 [00:06<03:51][A
+  [Relax] BFGS:   4%|3         | 7/200 [00:07<03:59][A
+  [Relax] BFGS:   4%|4         | 8/200 [00:09<03:59][A
+  [Relax] BFGS:   4%|4         | 9/200 [00:10<03:58][A
+  [Relax] BFGS:   5%|5         | 10/200 [00:11<03:56][A
+  [Relax] BFGS:   6%|5         | 11/200 [00:12<03:58][A
+  [Relax] BFGS:   6%|6         | 12/200 [00:14<04:02][A
+  [Relax] BFGS:   6%|6         | 13/200 [00:15<04:02][A
+  [Relax] BFGS:   7%|7         | 14/200 [00:16<03:58][A
+  [Relax] BFGS:   8%|7         | 15/200 [00:18<03:56][A
+  [Relax] BFGS:   8%|8         | 16/200 [00:19<03:55][A
+  [Relax] BFGS:   8%|8         | 17/200 [00:20<03:52][A
+  [Relax] BFGS:   9%|9         | 18/200 [00:21<03:50][A
+  [Relax] BFGS:  10%|9         | 19/200 [00:23<03:49][A
+  [Relax] BFGS:  10%|#         | 20/200 [00:24<03:52][A
+  [Relax] BFGS:  10%|#         | 21/200 [00:25<03:53][A
+  [Relax] BFGS:  11%|#1        | 22/200 [00:27<03:47][A
+  [Relax] BFGS:  12%|#1        | 23/200 [00:28<03:42][A
+  [Relax] BFGS:  12%|#2        | 24/200 [00:29<03:39][A
+  [Relax] BFGS:  12%|#2        | 25/200 [00:30<03:36][A
+  [Relax] BFGS:  13%|#3        | 26/200 [00:31<03:39][A
+  [Relax] BFGS:  14%|#3        | 27/200 [00:33<03:41][A
+  [Relax] BFGS:  14%|#4        | 28/200 [00:34<03:39][A
+  [Relax] BFGS:  14%|#4        | 29/200 [00:35<03:36][A
+  [Relax] BFGS:  15%|#5        | 30/200 [00:37<03:34][A
+  [Relax] BFGS:  16%|#5        | 31/200 [00:38<03:32][A
+  [Relax] BFGS:  16%|#6        | 32/200 [00:39<03:30][A
+  [Relax] BFGS:  16%|#6        | 33/200 [00:40<03:29][A
+  [Relax] BFGS:  17%|#7        | 34/200 [00:42<03:28][A
+  [Relax] BFGS:  18%|#7        | 35/200 [00:43<03:25][A
+  [Relax] BFGS:  18%|#8        | 36/200 [00:44<03:28][A
+  [Relax] BFGS:  18%|#8        | 37/200 [00:45<03:29][A
+  [Relax] BFGS:  19%|#9        | 38/200 [00:47<03:26][A
+  [Relax] BFGS:  20%|#9        | 39/200 [00:48<03:24][A
+  [Relax] BFGS:  20%|##        | 40/200 [00:49<03:23][A
+  [Relax] BFGS:  20%|##        | 41/200 [00:50<03:20][A
+  [Relax] BFGS:  21%|##1       | 42/200 [00:52<03:18][A
+  [Relax] BFGS:  22%|##1       | 43/200 [00:53<03:16][A
+  [Relax] BFGS:  22%|##2       | 44/200 [00:54<03:13][A
+  [Relax] BFGS:  22%|##2       | 45/200 [00:55<03:16][A
+  [Relax] BFGS:  23%|##3       | 46/200 [00:57<03:16][A
+  [Relax] BFGS:  24%|##3       | 47/200 [00:58<03:12][A
+  [Relax] BFGS:  24%|##4       | 48/200 [00:59<03:08][A
+  [Relax] BFGS:  24%|##4       | 49/200 [01:00<03:08][A
+  [Relax] BFGS:  25%|##5       | 50/200 [01:02<03:08][A
+  [Relax] BFGS:  26%|##5       | 51/200 [01:03<03:11][A
+  [Relax] BFGS:  26%|##6       | 52/200 [01:04<03:08][A
+  [Relax] BFGS:  26%|##6       | 53/200 [01:06<03:09][A
+  [Relax] BFGS:  27%|##7       | 54/200 [01:07<03:08][A
+  [Relax] BFGS:  28%|##7       | 55/200 [01:08<03:05][A
+  [Relax] BFGS:  28%|##8       | 56/200 [01:09<03:03][A
+  [Relax] BFGS:  28%|##8       | 57/200 [01:11<03:00][A
+  [Relax] BFGS:  29%|##9       | 58/200 [01:12<02:59][A
+  [Relax] BFGS:  30%|##9       | 59/200 [01:13<02:56][A
+  [Relax] BFGS:  30%|###       | 60/200 [01:14<02:55][A
+  [Relax] BFGS:  30%|###       | 61/200 [01:16<02:57][A
+  [Relax] BFGS:  31%|###1      | 62/200 [01:17<02:58][A
+  [Relax] BFGS:  32%|###1      | 63/200 [01:18<02:54][A
+  [Relax] BFGS:  32%|###2      | 64/200 [01:20<02:50][A
+  [Relax] BFGS:  32%|###2      | 65/200 [01:21<02:49][A
+  [Relax] BFGS:  33%|###3      | 66/200 [01:22<02:46][A
+  [Relax] BFGS:  34%|###3      | 67/200 [01:23<02:45][A
+  [Relax] BFGS:  34%|###4      | 68/200 [01:25<02:43][A
+  [Relax] BFGS:  34%|###4      | 69/200 [01:26<02:43][A
+  [Relax] BFGS:  35%|###5      | 70/200 [01:27<02:45][A
+  [Relax] BFGS:  36%|###5      | 71/200 [01:28<02:47][A
+  [Relax] BFGS:  36%|###6      | 72/200 [01:30<02:44][A
+  [Relax] BFGS:  36%|###6      | 73/200 [01:31<02:44][A
+  [Relax] BFGS:  37%|###7      | 74/200 [01:32<02:43][A
+  [Relax] BFGS:  38%|###7      | 75/200 [01:34<02:43][A
+  [Relax] BFGS:  38%|###8      | 76/200 [01:35<02:39][A
+  [Relax] BFGS:  38%|###8      | 77/200 [01:36<02:37][A
+                                                     [A[Verification] candidates: 100%|##########| 22/22 [20:23<00:00, 61.51s/struct][Verification] candidates: 100%|##########| 22/22 [20:23<00:00, 55.60s/struct]
+2026-05-15 07:02:49 | INFO     | 
+===========================================================================================================================================
+2026-05-15 07:02:49 | INFO     |  Verification Summary (tag=3)
+2026-05-15 07:02:49 | INFO     | -------------------------------------------------------------------------------------------------------------------------------------------
+2026-05-15 07:02:49 | INFO     | ID   | Mechanism           | E_initial (eV)  | E_final (eV)    | Delta (eV) | E_ads (eV) | Note
+2026-05-15 07:02:49 | INFO     | -------------------------------------------------------------------------------------------------------------------------------------------
+2026-05-15 07:02:49 | INFO     | 0    | Physisorption (Site |      -1545.9650 |      -1546.8778 |    -0.9128 |    -0.0678 | 
+2026-05-15 07:02:49 | INFO     | 1    | Physisorption (Site |      -1545.7029 |      -1546.8679 |    -1.1650 |    -0.0579 | 
+2026-05-15 07:02:49 | INFO     | 2    | Physisorption (Site |      -1545.7218 |      -1546.8569 |    -1.1351 |    -0.0469 | 
+2026-05-15 07:02:49 | INFO     | 3    | Physisorption (Site |      -1546.0543 |      -1546.8802 |    -0.8259 |    -0.0702 | * (Best Pose)
+2026-05-15 07:02:49 | INFO     | 4    | Physisorption (Site |      -1546.2192 |      -1546.8551 |    -0.6359 |    -0.0451 | 
+2026-05-15 07:02:49 | INFO     | 5    | Physisorption (Site |      -1546.2190 |      -1546.8550 |    -0.6360 |    -0.0449 | 
+2026-05-15 07:02:49 | INFO     | 6    | Physisorption (Site |      -1546.2191 |      -1546.8557 |    -0.6366 |    -0.0457 | 
+2026-05-15 07:02:49 | INFO     | 7    | Physisorption (Site |      -1546.0204 |      -1546.8767 |    -0.8563 |    -0.0667 | + (Local Minima)
+2026-05-15 07:02:49 | INFO     | 8    | Physisorption (Site |      -1546.2727 |      -1546.8534 |    -0.5807 |    -0.0434 | 
+2026-05-15 07:02:49 | INFO     | 9    | Physisorption (Site |      -1546.2412 |      -1546.8531 |    -0.6119 |    -0.0431 | 
+2026-05-15 07:02:49 | INFO     | 10   | Physisorption (Site |      -1545.6909 |      -1546.8457 |    -1.1548 |    -0.0357 | 
+2026-05-15 07:02:49 | INFO     | 11   | Physisorption (Site |      -1546.0198 |      -1546.8428 |    -0.8230 |    -0.0327 | 
+2026-05-15 07:02:49 | INFO     | 12   | Physisorption (Site |      -1546.0183 |      -1546.8428 |    -0.8245 |    -0.0327 | 
+2026-05-15 07:02:49 | INFO     | 13   | Physisorption (Site |      -1546.0144 |      -1546.8417 |    -0.8273 |    -0.0316 | 
+2026-05-15 07:02:49 | INFO     | 14   | Physisorption (Site |      -1546.2548 |      -1546.8511 |    -0.5963 |    -0.0410 | 
+2026-05-15 07:02:49 | INFO     | 15   | Physisorption (Site |      -1546.0593 |      -1546.8422 |    -0.7828 |    -0.0321 | 
+2026-05-15 07:02:49 | INFO     | 16   | Physisorption (Site |      -1546.0825 |      -1546.8491 |    -0.7666 |    -0.0391 | 
+2026-05-15 07:02:49 | INFO     | 17   | Physisorption (Site |      -1546.2739 |      -1546.8528 |    -0.5789 |    -0.0427 | + (Local Minima)
+2026-05-15 07:02:49 | INFO     | 18   | Physisorption (Site |      -1545.1659 |      -1546.8496 |    -1.6837 |    -0.0396 | 
+2026-05-15 07:02:49 | INFO     | 19   | Physisorption (Site |      -1544.9294 |      -1546.8435 |    -1.9141 |    -0.0335 | 
+2026-05-15 07:02:49 | INFO     | 20   | Physisorption (Site |      -1545.1262 |      -1546.8491 |    -1.7229 |    -0.0391 | 
+2026-05-15 07:02:49 | INFO     | 21   | chemisorption       |      -1542.8250 |      -1546.8400 |    -4.0150 |    -0.0299 | + (Local Minima)
+2026-05-15 07:02:49 | INFO     | ===========================================================================================================================================
+
+C:\Users\user\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\ase\io\extxyz.py:318: UserWarning: Skipping unhashable information index_mapping
+  warnings.warn('Skipping unhashable information '
+2026-05-15 07:02:49 | INFO     |   [PerfTracker] verification (22 candidates)        wall=20m24s  611% CPU  1693 MB peak
+2026-05-15 07:02:49 | INFO     | TS SEARCH: Running NEB+ARTn for 1 chemisorption candidates
+2026-05-15 07:02:49 | INFO     | --- Starting Automated TS Search: results\clean_on_TiCl4\ts_search_0 ---
+2026-05-15 07:02:49 | INFO     |   [NEB] Starting NEB with 7 images
+cueq
+False
+flash
+False
+2026-05-15 07:02:51 | INFO     |   [Engine] Loaded SevenNet (model=7net-0, modal=None).
+C:\Users\user\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\ase\io\extxyz.py:318: UserWarning: Skipping unhashable information index_mapping
+  warnings.warn('Skipping unhashable information '
+      Step     Time          Energy          fmax
+FIRE:    0 07:02:59    -1543.990845        4.285457
+FIRE:    1 07:03:24    -1544.283936        2.697585
+FIRE:    2 07:03:48    -1544.571533        1.879927
+FIRE:    3 07:04:12    -1544.731689        1.640584
+FIRE:    4 07:04:37    -1544.839111        1.483200
+FIRE:    5 07:05:01    -1544.960327        1.603277
+FIRE:    6 07:05:27    -1545.114746        1.651956
+FIRE:    7 07:05:51    -1545.276001        1.606868
+FIRE:    8 07:06:16    -1545.420288        1.475260
+FIRE:    9 07:06:41    -1545.546509        1.252460
+FIRE:   10 07:07:06    -1545.641479        0.924140
+FIRE:   11 07:07:31    -1545.712891        0.899357
+FIRE:   12 07:07:56    -1545.765381        0.960449
+FIRE:   13 07:08:21    -1545.806519        0.936551
+FIRE:   14 07:08:45    -1545.848389        0.867174
+FIRE:   15 07:09:10    -1545.891479        0.920071
+FIRE:   16 07:09:35    -1545.944702        0.971458
+FIRE:   17 07:10:00    -1545.982666        0.694614
+FIRE:   18 07:10:25    -1546.010010        0.788482
+FIRE:   19 07:10:49    -1546.038086        0.566545
+FIRE:   20 07:11:14    -1546.067383        0.426904
+FIRE:   21 07:11:39    -1546.088257        0.459720
+FIRE:   22 07:12:04    -1546.116821        0.508963
+FIRE:   23 07:12:29    -1546.152588        0.418695
+FIRE:   24 07:12:54    -1546.188354        0.346667
+FIRE:   25 07:13:19    -1546.222046        0.381818
+FIRE:   26 07:13:44    -1546.255127        0.375486
+FIRE:   27 07:14:09    -1546.286621        0.279611
+FIRE:   28 07:14:34    -1546.304810        0.245557
+FIRE:   29 07:14:59    -1546.317627        0.259349
+FIRE:   30 07:15:24    -1546.319092        0.235428
+FIRE:   31 07:15:49    -1546.315430        0.293738
+FIRE:   32 07:16:14    -1546.310303        0.233001
+FIRE:   33 07:16:40    -1546.311401        0.226411
+FIRE:   34 07:17:05    -1546.315796        0.206976
+FIRE:   35 07:17:30    -1546.321655        0.187700
+FIRE:   36 07:17:54    -1546.328491        0.174658
+FIRE:   37 07:18:20    -1546.336182        0.148006
+FIRE:   38 07:18:44    -1546.343262        0.118384
+FIRE:   39 07:19:09    -1546.348755        0.104390
+FIRE:   40 07:19:34    -1546.352295        0.117082
+FIRE:   41 07:19:59    -1546.354736        0.139643
+FIRE:   42 07:20:24    -1546.355225        0.153956
+FIRE:   43 07:20:49    -1546.355347        0.171378
+FIRE:   44 07:21:14    -1546.354736        0.224800
+FIRE:   45 07:21:39    -1546.355469        0.306040
+FIRE:   46 07:22:04    -1546.357178        0.300577
+FIRE:   47 07:22:29    -1546.360962        0.475034
+FIRE:   48 07:22:54    -1546.364868        0.634189
+FIRE:   49 07:23:19    -1546.368530        0.867922
+FIRE:   50 07:23:44    -1546.371338        0.420824
+FIRE:   51 07:24:09    -1546.371582        0.300248
+FIRE:   52 07:24:34    -1546.371826        0.273931
+FIRE:   53 07:24:59    -1546.372192        0.282812
+FIRE:   54 07:25:24    -1546.372559        0.350593
+FIRE:   55 07:25:48    -1546.373291        0.300670
+FIRE:   56 07:26:14    -1546.374146        0.284267
+FIRE:   57 07:26:39    -1546.374878        0.297101
+FIRE:   58 07:27:04    -1546.375732        0.304537
+FIRE:   59 07:27:29    -1546.376831        0.304407
+FIRE:   60 07:27:54    -1546.378052        0.294288
+FIRE:   61 07:28:19    -1546.379395        0.279771
+FIRE:   62 07:28:44    -1546.380859        0.269047
+FIRE:   63 07:29:09    -1546.382568        0.259623
+FIRE:   64 07:29:34    -1546.377930        0.483660
+FIRE:   65 07:29:59    -1546.379150        0.478915
+FIRE:   66 07:30:23    -1546.381348        0.470218
+FIRE:   67 07:30:48    -1546.384399        0.459417
+FIRE:   68 07:31:13    -1546.387207        0.227042
+FIRE:   69 07:31:38    -1546.387207        0.227704
+FIRE:   70 07:32:03    -1546.387207        0.228977
+FIRE:   71 07:32:28    -1546.387207        0.230771
+FIRE:   72 07:32:53    -1546.387451        0.232943
+FIRE:   73 07:33:18    -1546.387451        0.235307
+FIRE:   74 07:33:43    -1546.387451        0.479532
+FIRE:   75 07:34:08    -1546.387451        0.237594
+FIRE:   76 07:34:33    -1546.387573        0.479384
+FIRE:   77 07:34:58    -1546.387451        0.237592
+FIRE:   78 07:35:22    -1546.387451        0.237592
+FIRE:   79 07:35:47    -1546.387451        0.237592
+FIRE:   80 07:36:13    -1546.387451        0.237593
+FIRE:   81 07:36:38    -1546.387451        0.237593
+FIRE:   82 07:37:03    -1546.387451        0.237593
+FIRE:   83 07:37:28    -1546.387451        0.237594
+FIRE:   84 07:37:53    -1546.387451        0.237595
+FIRE:   85 07:38:17    -1546.387573        0.479446
+FIRE:   86 07:38:42    -1546.387573        0.479445
+FIRE:   87 07:39:07    -1546.387451        0.237595
+FIRE:   88 07:39:32    -1546.387451        0.237594
+FIRE:   89 07:39:57    -1546.387451        0.237595
+FIRE:   90 07:40:22    -1546.387573        0.479445
+FIRE:   91 07:40:47    -1546.387451        0.237595
+FIRE:   92 07:41:12    -1546.387451        0.237595
+FIRE:   93 07:41:37    -1546.387573        0.479445
+FIRE:   94 07:42:02    -1546.387573        0.479445
+FIRE:   95 07:42:27    -1546.387451        0.237595
+FIRE:   96 07:42:51    -1546.387451        0.237595
+FIRE:   97 07:43:16    -1546.387451        0.237595
+FIRE:   98 07:43:41    -1546.387573        0.479445
+FIRE:   99 07:44:06    -1546.387451        0.237595
+FIRE:  100 07:44:31    -1546.387451        0.237595
+FIRE:  101 07:44:56    -1546.387451        0.237595
+FIRE:  102 07:45:20    -1546.387451        0.237595
+FIRE:  103 07:45:46    -1546.387451        0.479445
+FIRE:  104 07:46:11    -1546.387451        0.479445
+FIRE:  105 07:46:36    -1546.387451        0.479445
+FIRE:  106 07:47:01    -1546.387451        0.479445
+FIRE:  107 07:47:26    -1546.387451        0.479445
+FIRE:  108 07:47:52    -1546.387451        0.479445
+FIRE:  109 07:48:17    -1546.387451        0.479445
+FIRE:  110 07:48:43    -1546.387451        0.237595
+FIRE:  111 07:49:08    -1546.387451        0.237595
+FIRE:  112 07:49:34    -1546.387451        0.237595
+FIRE:  113 07:49:59    -1546.387451        0.237595
+FIRE:  114 07:50:24    -1546.387451        0.237595
+FIRE:  115 07:50:50    -1546.387451        0.479445
+FIRE:  116 07:51:14    -1546.387451        0.479445
+FIRE:  117 07:51:40    -1546.387451        0.479445
+FIRE:  118 07:52:04    -1546.387451        0.479445
+FIRE:  119 07:52:29    -1546.387451        0.479445
+FIRE:  120 07:52:54    -1546.387451        0.237595
+FIRE:  121 07:53:19    -1546.387451        0.237595
+FIRE:  122 07:53:44    -1546.387451        0.237595
+FIRE:  123 07:54:09    -1546.387451        0.479445
+FIRE:  124 07:54:34    -1546.387451        0.479445
+FIRE:  125 07:54:59    -1546.387451        0.479445
+FIRE:  126 07:55:24    -1546.387451        0.479445
+FIRE:  127 07:55:49    -1546.387451        0.479445
+FIRE:  128 07:56:14    -1546.387451        0.237595
+FIRE:  129 07:56:39    -1546.387451        0.237595
+FIRE:  130 07:57:04    -1546.387451        0.237595
+FIRE:  131 07:57:29    -1546.387451        0.237595
+FIRE:  132 07:57:54    -1546.387451        0.237595
+FIRE:  133 07:58:19    -1546.387451        0.237595
+FIRE:  134 07:58:44    -1546.387451        0.237595
+FIRE:  135 07:59:09    -1546.387451        0.237595
+FIRE:  136 07:59:34    -1546.387451        0.479445
+FIRE:  137 07:59:59    -1546.387451        0.479445
+FIRE:  138 08:00:24    -1546.387451        0.479445
+FIRE:  139 08:00:49    -1546.387451        0.479445
+FIRE:  140 08:01:14    -1546.387451        0.479445
+FIRE:  141 08:01:39    -1546.387451        0.479445
+FIRE:  142 08:02:03    -1546.387451        0.479445
+FIRE:  143 08:02:28    -1546.387451        0.237595
+FIRE:  144 08:02:53    -1546.387451        0.237595
+FIRE:  145 08:03:18    -1546.387451        0.237595
+FIRE:  146 08:03:44    -1546.387451        0.237595
+FIRE:  147 08:04:09    -1546.387451        0.237595
+FIRE:  148 08:04:34    -1546.387451        0.237595
+FIRE:  149 08:04:59    -1546.387451        0.237595
+FIRE:  150 08:05:24    -1546.387451        0.237595
+FIRE:  151 08:05:49    -1546.387451        0.237595
+FIRE:  152 08:06:14    -1546.387451        0.237595
+FIRE:  153 08:06:39    -1546.387451        0.237595
+FIRE:  154 08:07:04    -1546.387451        0.237595
+FIRE:  155 08:07:29    -1546.387451        0.237595
+FIRE:  156 08:07:53    -1546.387451        0.237595
+FIRE:  157 08:08:19    -1546.387451        0.237595
+FIRE:  158 08:08:44    -1546.387451        0.237595
+FIRE:  159 08:09:09    -1546.387451        0.237595
+FIRE:  160 08:09:34    -1546.387451        0.237595
+FIRE:  161 08:09:59    -1546.387451        0.237595
+FIRE:  162 08:10:26    -1546.387451        0.479445
+FIRE:  163 08:10:53    -1546.387451        0.479445
+FIRE:  164 08:11:20    -1546.387451        0.479445
+FIRE:  165 08:11:45    -1546.387451        0.479445
+FIRE:  166 08:12:10    -1546.387451        0.479445
+FIRE:  167 08:12:36    -1546.387451        0.479445
+FIRE:  168 08:13:01    -1546.387451        0.479445
+FIRE:  169 08:13:26    -1546.387451        0.237595
+FIRE:  170 08:13:51    -1546.387451        0.237595
+FIRE:  171 08:14:16    -1546.387451        0.237595
+FIRE:  172 08:14:41    -1546.387451        0.237595
+FIRE:  173 08:15:06    -1546.387451        0.237595
+FIRE:  174 08:15:30    -1546.387451        0.237595
+FIRE:  175 08:15:55    -1546.387451        0.237595
+FIRE:  176 08:16:20    -1546.387451        0.237595
+FIRE:  177 08:16:45    -1546.387451        0.237595
+FIRE:  178 08:17:10    -1546.387451        0.237595
+FIRE:  179 08:17:35    -1546.387451        0.237595
+FIRE:  180 08:18:00    -1546.387451        0.237595
+FIRE:  181 08:18:25    -1546.387451        0.237595
+FIRE:  182 08:18:50    -1546.387451        0.237595
+FIRE:  183 08:19:15    -1546.387451        0.237595
+FIRE:  184 08:19:40    -1546.387451        0.237595
+FIRE:  185 08:20:05    -1546.387451        0.237595
+FIRE:  186 08:20:29    -1546.387451        0.237595
+FIRE:  187 08:20:54    -1546.387451        0.237595
+FIRE:  188 08:21:19    -1546.387451        0.237595
+FIRE:  189 08:21:43    -1546.387451        0.237595
+FIRE:  190 08:22:08    -1546.387451        0.479445
+FIRE:  191 08:22:33    -1546.387451        0.479445
+FIRE:  192 08:22:57    -1546.387451        0.479445
+FIRE:  193 08:23:22    -1546.387451        0.479445
+FIRE:  194 08:23:47    -1546.387451        0.479445
+FIRE:  195 08:24:12    -1546.387451        0.479445
+FIRE:  196 08:24:37    -1546.387451        0.479445
+FIRE:  197 08:25:01    -1546.387451        0.479445
+FIRE:  198 08:25:26    -1546.387451        0.237595
+FIRE:  199 08:25:51    -1546.387451        0.237595
+FIRE:  200 08:26:15    -1546.387451        0.237595
+2026-05-15 08:26:34 | INFO     |   [TS Workflow] Starting ARTn refinement from NEB peak...
+2026-05-15 08:26:34 | INFO     |   [ARTn] Starting Activation-Relaxation search...
+2026-05-15 08:26:34 | INFO     |   [VibAnalyzer] FHVA detected constraints. Active atoms: 85/165
+2026-05-15 08:26:34 | INFO     |   [VibAnalyzer] Starting PHVA/FHVA  (active atoms: 85, cache: ase_json, save_cache: False)
+2026-05-15 08:36:45 | INFO     |   [VibAnalyzer] Analysis complete.  Total modes: 255, Imaginary: 2
+2026-05-15 08:36:45 | INFO     |   [VibAnalyzer] qpoints.yaml written in Phonopy-style (255 modes).
+2026-05-15 08:36:45 | INFO     |   [VibAnalyzer] Found 2 imaginary modes. Running diagnostic...
+      Step     Time          Energy          fmax
+FIRE:    0 08:36:48    -1546.404175        0.146685
+FIRE:    1 08:36:53    -1546.404053        0.146549
+FIRE:    2 08:36:57    -1546.403809        0.146379
+FIRE:    3 08:37:02    -1546.403564        0.146260
+FIRE:    4 08:37:07    -1546.402954        0.146082
+FIRE:    5 08:37:12    -1546.402466        0.145551
+FIRE:    6 08:37:17    -1546.401611        0.144328
+FIRE:    7 08:37:22    -1546.400635        0.142271
+FIRE:    8 08:37:26    -1546.399414        0.139218
+FIRE:    9 08:37:31    -1546.397827        0.135499
+FIRE:   10 08:37:36    -1546.395996        0.131636
+FIRE:   11 08:37:41    -1546.394043        0.129623
+FIRE:   12 08:37:46    -1546.391602        0.127773
+FIRE:   13 08:37:51    -1546.388672        0.125591
+FIRE:   14 08:37:55    -1546.385986        0.122451
+FIRE:   15 08:38:00    -1546.383545        0.120593
+FIRE:   16 08:38:05    -1546.381958        0.120655
+FIRE:   17 08:38:10    -1546.381958        0.118049
+FIRE:   18 08:38:15    -1546.384277        0.114196
+FIRE:   19 08:38:20    -1546.389282        0.105082
+FIRE:   20 08:38:25    -1546.384888        0.417399
+FIRE:   21 08:38:29    -1546.399414        0.084714
+FIRE:   22 08:38:34    -1546.399902        0.083022
+FIRE:   23 08:38:39    -1546.400146        0.079858
+FIRE:   24 08:38:44    -1546.400513        0.075634
+FIRE:   25 08:38:49    -1546.400635        0.071105
+FIRE:   26 08:38:54    -1546.401001        0.066972
+FIRE:   27 08:38:59    -1546.401611        0.063601
+FIRE:   28 08:39:04    -1546.402222        0.061187
+FIRE:   29 08:39:08    -1546.402954        0.059719
+FIRE:   30 08:39:13    -1546.403687        0.059199
+FIRE:   31 08:39:18    -1546.404785        0.059352
+FIRE:   32 08:39:23    -1546.405884        0.059245
+FIRE:   33 08:39:28    -1546.406982        0.057233
+FIRE:   34 08:39:33    -1546.408813        0.052303
+FIRE:   35 08:39:38    -1546.410522        0.051706
+FIRE:   36 08:39:43    -1546.412842        0.054734
+FIRE:   37 08:39:48    -1546.415161        0.057844
+FIRE:   38 08:39:52    -1546.417847        0.058663
+FIRE:   39 08:39:57    -1546.421021        0.059150
+FIRE:   40 08:40:02    -1546.424561        0.063722
+FIRE:   41 08:40:07    -1546.427856        0.101236
+FIRE:   42 08:40:12    -1546.425903        0.279386
+FIRE:   43 08:40:17    -1546.433472        0.065454
+FIRE:   44 08:40:22    -1546.433594        0.065365
+FIRE:   45 08:40:27    -1546.433716        0.065189
+FIRE:   46 08:40:32    -1546.433716        0.064935
+FIRE:   47 08:40:37    -1546.433838        0.064612
+FIRE:   48 08:40:42    -1546.433960        0.064231
+FIRE:   49 08:40:47    -1546.434204        0.063798
+FIRE:   50 08:40:51    -1546.434448        0.063308
+FIRE:   51 08:40:56    -1546.434692        0.062686
+FIRE:   52 08:41:01    -1546.434937        0.061889
+FIRE:   53 08:41:06    -1546.435303        0.060874
+FIRE:   54 08:41:11    -1546.435791        0.059617
+FIRE:   55 08:41:16    -1546.436157        0.058128
+FIRE:   56 08:41:21    -1546.436890        0.056439
+FIRE:   57 08:41:26    -1546.437500        0.054547
+FIRE:   58 08:41:30    -1546.438232        0.052729
+FIRE:   59 08:41:35    -1546.438843        0.055746
+FIRE:   60 08:41:40    -1546.439575        0.058668
+FIRE:   61 08:41:45    -1546.440063        0.061802
+FIRE:   62 08:41:50    -1546.440063        0.064814
+FIRE:   63 08:41:55    -1546.439087        0.068708
+FIRE:   64 08:41:59    -1546.436768        0.082325
+FIRE:   65 08:42:04    -1546.426636        0.332903
+FIRE:   66 08:42:09    -1546.434326        0.080955
+FIRE:   67 08:42:14    -1546.434692        0.080793
+FIRE:   68 08:42:19    -1546.434570        0.080458
+FIRE:   69 08:42:24    -1546.434570        0.079901
+FIRE:   70 08:42:29    -1546.434692        0.079079
+FIRE:   71 08:42:34    -1546.434570        0.077981
+FIRE:   72 08:42:39    -1546.434570        0.076624
+FIRE:   73 08:42:43    -1546.434692        0.075043
+FIRE:   74 08:42:48    -1546.434692        0.073103
+FIRE:   75 08:42:53    -1546.434692        0.070829
+FIRE:   76 08:42:58    -1546.434814        0.068180
+FIRE:   77 08:43:03    -1546.435059        0.064948
+FIRE:   78 08:43:08    -1546.435425        0.060813
+FIRE:   79 08:43:13    -1546.435913        0.055120
+FIRE:   80 08:43:18    -1546.436646        0.052342
+FIRE:   81 08:43:23    -1546.437866        0.057456
+FIRE:   82 08:43:28    -1546.440063        0.067604
+FIRE:   83 08:43:32    -1546.443481        0.086061
+FIRE:   84 08:43:37    -1546.449341        0.110824
+FIRE:   85 08:43:42    -1546.459106        0.154693
+FIRE:   86 08:43:47    -1546.475464        0.210498
+FIRE:   87 08:43:52    -1546.497070        0.343818
+FIRE:   88 08:43:57    -1546.440186        1.087339
+FIRE:   89 08:44:02    -1546.541382        0.512017
+FIRE:   90 08:44:07    -1546.549316        0.367471
+FIRE:   91 08:44:12    -1546.556641        0.250350
+FIRE:   92 08:44:16    -1546.557861        0.338859
+FIRE:   93 08:44:21    -1546.558350        0.323449
+FIRE:   94 08:44:26    -1546.559814        0.296631
+FIRE:   95 08:44:31    -1546.561157        0.266780
+FIRE:   96 08:44:36    -1546.562744        0.245864
+FIRE:   97 08:44:41    -1546.564209        0.243554
+FIRE:   98 08:44:46    -1546.565430        0.257717
+FIRE:   99 08:44:51    -1546.566895        0.276250
+FIRE:  100 08:44:55    -1546.568848        0.289109
+FIRE:  101 08:45:00    -1546.571777        0.289080
+FIRE:  102 08:45:05    -1546.575317        0.278346
+FIRE:  103 08:45:10    -1546.579956        0.272253
+FIRE:  104 08:45:15    -1546.585327        0.285936
+FIRE:  105 08:45:20    -1546.591675        0.305382
+FIRE:  106 08:45:24    -1546.599976        0.305669
+FIRE:  107 08:45:29    -1546.610596        0.298495
+FIRE:  108 08:45:34    -1546.623901        0.312930
+FIRE:  109 08:45:39    -1546.640625        0.313359
+FIRE:  110 08:45:44    -1546.662598        0.298889
+FIRE:  111 08:45:49    -1546.690918        0.309008
+FIRE:  112 08:45:54    -1546.729126        0.331602
+FIRE:  113 08:45:59    -1546.780151        0.340151
+FIRE:  114 08:46:04    -1546.847168        0.316843
+FIRE:  115 08:46:09    -1546.928955        0.265035
+FIRE:  116 08:46:13    -1547.004395        0.234887
+FIRE:  117 08:46:18    -1547.041748        0.271309
+FIRE:  118 08:46:23    -1547.045654        0.237189
+FIRE:  119 08:46:28    -1547.050781        0.216635
+FIRE:  120 08:46:33    -1547.056152        0.211235
+FIRE:  121 08:46:38    -1547.062134        0.205138
+FIRE:  122 08:46:43    -1547.068237        0.178418
+FIRE:  123 08:46:48    -1547.074341        0.135545
+FIRE:  124 08:46:53    -1547.080444        0.144650
+FIRE:  125 08:46:57    -1547.086792        0.188317
+FIRE:  126 08:47:02    -1547.093994        0.201684
+FIRE:  127 08:47:07    -1547.103394        0.166848
+FIRE:  128 08:47:12    -1547.113281        0.103899
+FIRE:  129 08:47:17    -1547.122559        0.137235
+FIRE:  130 08:47:21    -1547.130859        0.105335
+FIRE:  131 08:47:26    -1547.136719        0.117051
+FIRE:  132 08:47:31    -1547.140747        0.171550
+FIRE:  133 08:47:36    -1547.139526        0.372578
+FIRE:  134 08:47:41    -1547.144531        0.083774
+FIRE:  135 08:47:45    -1547.141846        0.330851
+FIRE:  136 08:47:50    -1547.143188        0.255089
+FIRE:  137 08:47:55    -1547.144897        0.123874
+FIRE:  138 08:48:00    -1547.145386        0.067859
+FIRE:  139 08:48:05    -1547.145386        0.067950
+FIRE:  140 08:48:09    -1547.145508        0.068126
+FIRE:  141 08:48:14    -1547.145508        0.068375
+FIRE:  142 08:48:19    -1547.145386        0.068674
+FIRE:  143 08:48:24    -1547.145630        0.068991
+FIRE:  144 08:48:29    -1547.145630        0.069285
+FIRE:  145 08:48:34    -1547.145752        0.069502
+FIRE:  146 08:48:38    -1547.145752        0.069598
+FIRE:  147 08:48:43    -1547.145752        0.069472
+FIRE:  148 08:48:48    -1547.145996        0.069005
+FIRE:  149 08:48:53    -1547.146118        0.068079
+FIRE:  150 08:48:57    -1547.146240        0.066627
+FIRE:  151 08:49:02    -1547.146362        0.064683
+FIRE:  152 08:49:07    -1547.146729        0.062442
+FIRE:  153 08:49:12    -1547.146851        0.060234
+FIRE:  154 08:49:17    -1547.147095        0.058366
+FIRE:  155 08:49:22    -1547.147339        0.056867
+FIRE:  156 08:49:26    -1547.147705        0.055178
+FIRE:  157 08:49:31    -1547.148193        0.052297
+FIRE:  158 08:49:36    -1547.148560        0.047839
+2026-05-15 08:49:38 | INFO     |   [TS Workflow] Completed. Barrier: -0.2683 eV
+2026-05-15 08:49:38 | INFO     |   [TS Workflow] Starting Vibrational Verification...
+2026-05-15 08:49:38 | INFO     |   [VibAnalyzer] Reusing frequencies from ARTn (skipping duplicate Hessian).
+2026-05-15 08:49:38 | INFO     |   [TS Workflow] VERIFICATION FAILED: 2 imaginary modes found.
+2026-05-15 08:49:38 | INFO     |   [PerfTracker] ts_search_0 (NEB+ARTn+Vib)          wall=1h46m  592% CPU  1695 MB peak
+2026-05-15 08:49:38 | INFO     | BATCH DONE:  clean_on_TiCl4  [OK]
+2026-05-15 08:49:38 | INFO     | 
+2026-05-15 08:49:38 | INFO     | ================================================================================================
+2026-05-15 08:49:38 | INFO     |  AutoFlow-SRXN :: Computation Cost Report
+2026-05-15 08:49:38 | INFO     | ------------------------------------------------------------------------------------------------
+2026-05-15 08:49:38 | INFO     |   Stage                                   Wall time  % total  CPU% (mean)    Peak RAM
+2026-05-15 08:49:38 | INFO     | ------------------------------------------------------------------------------------------------
+2026-05-15 08:49:38 | INFO     |   slab_generation                              0.0s     0.0%         N/A        N/A
+2026-05-15 08:49:38 | INFO     |   slab_relax                                  16.0s     0.2%       462.1%     1515 MB
+2026-05-15 08:49:38 | INFO     |   gas_phase_energies (1 molecules)             0.9s     0.0%         N/A        N/A
+2026-05-15 08:49:38 | INFO     |   physi_candidates (precursor/Cl4Ti)           0.7s     0.0%         N/A        N/A
+2026-05-15 08:49:38 | INFO     |   chem_candidates (precursor/Cl4Ti)            0.3s     0.0%         N/A        N/A
+2026-05-15 08:49:38 | INFO     |   verification (22 candidates)               20m24s    16.0%       611.0%     1693 MB
+2026-05-15 08:49:38 | INFO     |   ts_search_0 (NEB+ARTn+Vib)                  1h46m    83.8%       592.4%     1695 MB
+2026-05-15 08:49:38 | INFO     | ------------------------------------------------------------------------------------------------
+2026-05-15 08:49:38 | INFO     |   TOTAL                                       2h07m   100.0%
+2026-05-15 08:49:38 | INFO     | ================================================================================================
+2026-05-15 08:49:38 | INFO     | Performance report written to results\perf_report.log

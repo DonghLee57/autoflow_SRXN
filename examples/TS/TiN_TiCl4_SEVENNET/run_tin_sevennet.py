@@ -20,10 +20,10 @@ from examples.DIPAS_on_Si110.run_adsorption import run_generic_adsorption_study
 if __name__ == "__main__":
     print("--- Starting TiN(111) + TiCl4 Study (SevenNet-0) ---")
     print("Potential  : SevenNet 7net-0 on CPU")
-    print("Surface    : TiN(111) 2×2 slab")
+    print("Surface    : TiN(111) 2x2 slab")
     print("Molecule   : TiCl4")
-    print("Stages     : slab relax → physi/chem candidates → verification → NEB+ARTn TS search")
-    print("Est. time  : ~30–90 min depending on CPU (SevenNet is faster than MACE-MP on CPU)")
+    print("Stages     : slab relax -> physi/chem candidates -> verification -> NEB+ARTn TS search")
+    print("Est. time  : ~30-90 min depending on CPU (SevenNet is faster than MACE-MP on CPU)")
     print()
 
     config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"

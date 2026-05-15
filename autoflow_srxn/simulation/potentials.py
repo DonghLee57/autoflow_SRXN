@@ -268,7 +268,8 @@ class SimulationEngine:
     Supported potential.backend values
     ------------------------------------
     * ``"mace"``      - MACE-MP foundation model (mace_mp)
-    * ``"sevennet"``  - SevenNet calculator
+    * ``"sevennet"``  - SevenNet calculator (default: 7net-0)
+    * ``"omni"``      - SevenNet foundation model (matpes_r2scan)
     * ``"emt"``       - ASE built-in EMT (fast, light-element only)
 
     ZBL configuration example (config.yaml)
@@ -323,6 +324,12 @@ class SimulationEngine:
         if self.backend == "sevennet":
             return self._build_sevennet(logger)
 
+        if self.backend == "omni":
+            # Default to sevennet-omni and matpes_r2scan if not specified
+            self.model = self.model or "sevennet-omni"
+            self.modal = self.modal or "matpes_r2scan"
+            return self._build_sevennet(logger)
+
         logger.warning(f"  [Engine] Unknown backend '{self.backend}'. Falling back to EMT.")
         return EMT()
 
@@ -369,12 +376,14 @@ class SimulationEngine:
                 from sevenn.calculator import SevenNetD3Calculator
 
                 calc = SevenNetD3Calculator(**sn_kwargs)
-                logger.info(f"  [Engine] Loaded SevenNet+D3 (model={model}, modal={self.modal}).")
+                rel_model = os.path.relpath(model) if os.path.isfile(str(model)) else model
+                logger.info(f"  [Engine] Loaded SevenNet+D3 (model={rel_model}, modal={self.modal}).")
             else:
                 from sevenn.calculator import SevenNetCalculator
 
                 calc = SevenNetCalculator(**sn_kwargs)
-                logger.info(f"  [Engine] Loaded SevenNet (model={model}, modal={self.modal}).")
+                rel_model = os.path.relpath(model) if os.path.isfile(str(model)) else model
+                logger.info(f"  [Engine] Loaded SevenNet (model={rel_model}, modal={self.modal}).")
             return calc
 
         except Exception as e:
