@@ -8,6 +8,8 @@ from .logger_utils import (
 )
 from .perf_tracker import PerfTracker, get_perf_tracker, set_perf_tracker, perf_stage
 
+from .config_utils import load_yaml_config
+
 __all__ = [
     "KnowledgeBase",
     "chem_kb",
@@ -20,4 +22,5 @@ __all__ = [
     "get_perf_tracker",
     "set_perf_tracker",
     "perf_stage",
+    "load_yaml_config",
 ]

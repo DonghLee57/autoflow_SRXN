@@ -23,13 +23,21 @@ try:
         find_coincidences,
         get_slab_atom_count,
         get_surface_lattice_2d,
+        has_large_cell_warning,
+        is_candidate_polar_ok,
         iter_hnf_2d,
+        mark_recommended_candidates,
         miller_polar_inplane,
         polar_axis_for_sg,
+        resolve_millers,
+        stack_interface,
         strain_from_F,
         POLAR_SG,
     )
-    from autoflow_srxn.interface.workflow import InterfaceWorkflow
+    from autoflow_srxn.interface.workflow import (
+        InterfaceWorkflow,
+        run_interface_screening,
+    )
     from autoflow_srxn.interface.visualization import (
         save_candidates_json,
         save_candidates_html,
@@ -68,6 +76,12 @@ except ImportError as _err:
     strain_from_F = _MissingDependency  # type: ignore[assignment]
     polar_axis_for_sg = _MissingDependency  # type: ignore[assignment]
     miller_polar_inplane = _MissingDependency  # type: ignore[assignment]
+    resolve_millers = _MissingDependency  # type: ignore[assignment]
+    stack_interface = _MissingDependency  # type: ignore[assignment]
+    is_candidate_polar_ok = _MissingDependency  # type: ignore[assignment]
+    has_large_cell_warning = _MissingDependency  # type: ignore[assignment]
+    mark_recommended_candidates = _MissingDependency  # type: ignore[assignment]
+    run_interface_screening = _MissingDependency  # type: ignore[assignment]
     save_candidates_json = _MissingDependency
     save_candidates_html = _MissingDependency
     POLAR_SG = set()  # type: ignore[assignment]
@@ -83,6 +97,12 @@ __all__ = [
     "strain_from_F",
     "polar_axis_for_sg",
     "miller_polar_inplane",
+    "resolve_millers",
+    "stack_interface",
+    "is_candidate_polar_ok",
+    "has_large_cell_warning",
+    "mark_recommended_candidates",
+    "run_interface_screening",
     "save_candidates_json",
     "save_candidates_html",
     "POLAR_SG",

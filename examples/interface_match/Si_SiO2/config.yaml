@@ -6,8 +6,8 @@
 # =============================================================================
 
 # ── Input bulk crystal files ─────────────────────────────────────────────────
-sub_path:  "../../structures/Si_mp149.vasp"       # Substrate bulk crystal
-film_path: "../../structures/SiO2_mp-546794.vasp" # Film bulk crystal
+sub_path:  "../../../structures/Si_mp149.vasp"       # Substrate bulk crystal
+film_path: "../../../structures/SiO2_mp-546794.vasp" # Film bulk crystal
 
 # ── Surface orientations to search ───────────────────────────────────────────
 # Targeted search for the known low-strain orientation pair.

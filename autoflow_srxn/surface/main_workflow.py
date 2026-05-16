@@ -14,7 +14,13 @@ except ImportError:
 from .ads_workflow_mgr import AdsorptionWorkflowManager
 from .chemisorption_builder import build_chemisorption_structures
 from .site_map import generate_and_plot_site_map
-from ..utils.logger_utils import log_energy_comparison, log_results_table, log_stage_title, setup_logger
+from ..utils import (
+    log_energy_comparison,
+    log_results_table,
+    log_stage_title,
+    setup_logger,
+    load_yaml_config as load_config,
+)
 from ..utils.perf_tracker import PerfTracker, perf_stage, set_perf_tracker
 from .surface_utils import (
     create_slab_from_bulk,
@@ -27,21 +33,7 @@ from .surface_utils import (
 # Config helpers — support new unified format AND legacy split format
 # =============================================================================
 
-def load_config(config_path):
-    with open(config_path, encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-
-    # Resolve relative paths in 'paths' section
-    config_dir = os.path.dirname(os.path.abspath(config_path))
-    paths = config.get("paths", {})
-    for key in ["precursor", "inhibitor", "substrate_bulk", "input_structure"]:
-        val = paths.get(key)
-        if val and isinstance(val, str) and not os.path.isabs(val):
-            if not os.path.exists(val):
-                alt = os.path.join(config_dir, val)
-                if os.path.exists(alt):
-                    paths[key] = alt
-    return config
+# (load_config is now imported from autoflow_srxn.utils)
 
 
 def _resolve_workflow(config):

@@ -225,3 +225,164 @@ def build_symmetric_slab(
     atoms.rotate(normal, [0, 0, 1], rotate_cell=True)
     atoms.center(vacuum=vacuum_ang / 2, axis=2)
     return atoms
+
+
+def stack_interface(
+    sub_slab: "ase.Atoms",
+    film_slab: "ase.Atoms",
+    gap_ang: float = 2.5,
+    vacuum_ang: float = 15.0,
+) -> "ase.Atoms":
+    """Stack substrate and film slabs into a single interface Atoms object.
+
+    This function performs explicit in-plane alignment (v1 || X) to ensure
+    that the 2D lattice matching is physical and doesn't introduce spurious
+    shears/rotations due to basis vector misalignment.
+
+    Parameters
+    ----------
+    sub_slab:
+        The substrate slab (Atoms).
+    film_slab:
+        The film slab (Atoms).
+    gap_ang:
+        The gap between slabs in Angstroms.
+    vacuum_ang:
+        The vacuum size to add on top.
+
+    Returns
+    -------
+    ase.Atoms:
+        The combined interface structure.
+    """
+    import numpy as np
+    from ase import Atoms
+
+    sub_cell = np.array(sub_slab.cell)
+    film_cell = np.array(film_slab.cell)
+
+    sub_c_z = sub_cell[2, 2]
+    film_c_z = film_cell[2, 2]
+
+    sub_frac = sub_slab.get_scaled_positions()
+    film_frac = film_slab.get_scaled_positions()
+
+    sub_z = sub_frac[:, 2] * sub_c_z
+    film_z = film_frac[:, 2] * film_c_z
+
+    sub_z_min, sub_z_max = sub_z.min(), sub_z.max()
+    sub_thickness = sub_z_max - sub_z_min
+
+    film_z_min, film_z_max = film_z.min(), film_z.max()
+    film_thickness = film_z_max - film_z_min
+
+    sub_z_shift = -sub_z_min
+    sub_pos_new = sub_slab.get_positions().copy()
+    sub_pos_new[:, 2] += sub_z_shift
+
+    # --- Align in-plane lattice vectors before stacking ---
+    v1_sub = sub_cell[0]
+    v1_film = film_cell[0]
+    angle_sub = np.arctan2(v1_sub[1], v1_sub[0])
+    angle_film = np.arctan2(v1_film[1], v1_film[0])
+    # Rotate film to match sub's v1 direction in XY plane
+    film_slab_copy = film_slab.copy()
+    film_slab_copy.rotate(np.degrees(angle_sub - angle_film), "z", rotate_cell=True)
+
+    # Refresh film variables after rotation
+    film_cell = np.array(film_slab_copy.cell)
+    film_frac = film_slab_copy.get_scaled_positions()
+    film_z = film_frac[:, 2] * film_cell[2, 2]
+    # ------------------------------------------------------------
+
+    sub_cell_2d = sub_cell[:2, :2]
+    film_cart_xy_new = film_frac[:, :2] @ sub_cell_2d
+    film_z_shift = sub_thickness + gap_ang - film_z.min()
+    film_z_new = film_z + film_z_shift
+
+    film_pos_new = np.column_stack([film_cart_xy_new, film_z_new])
+
+    all_pos = np.vstack([sub_pos_new, film_pos_new])
+    all_symbols = list(sub_slab.get_chemical_symbols()) + list(
+        film_slab_copy.get_chemical_symbols()
+    )
+    all_tags = [0] * len(sub_slab) + [1] * len(film_slab_copy)
+
+    new_cell = sub_cell.copy()
+    new_cell[2] = [0.0, 0.0, sub_thickness + gap_ang + film_thickness + vacuum_ang]
+
+    return Atoms(
+        symbols=all_symbols,
+        positions=all_pos,
+        cell=new_cell,
+        pbc=[True, True, True],
+        tags=all_tags,
+    )
+
+
+def resolve_millers(
+    explicit: list | None,
+    max_m: int | None,
+    structure,
+    mode: str = "distinct",
+) -> tuple[list[tuple], str]:
+    """Resolve Miller indices from config, returning (miller_list, source_label)."""
+    if explicit:
+        millers = [tuple(int(x) for x in m) for m in explicit]
+        return millers, f"explicit ({len(millers)} faces)"
+
+    if max_m is not None:
+        if mode == "distinct":
+            from pymatgen.core.surface import get_symmetrically_distinct_miller_indices
+
+            millers = [
+                tuple(m)
+                for m in get_symmetrically_distinct_miller_indices(structure, max_m)
+            ]
+            return millers, f"distinct  max_miller={max_m}  ({len(millers)} faces)"
+        else:
+            from math import gcd
+
+            millers = []
+            for h in range(0, max_m + 1):
+                for k in range(0, max_m + 1):
+                    for l in range(0, max_m + 1):
+                        if h == k == l == 0:
+                            continue
+                        if gcd(gcd(h, k), l) == 1:
+                            millers.append((h, k, l))
+            return millers, f"raw  max_miller={max_m}  ({len(millers)} faces)"
+
+    default = [(0, 0, 1), (1, 1, 0), (1, 1, 1)]
+    return default, "default (3 faces)"
+
+
+def is_candidate_polar_ok(candidate: InterfaceCandidate) -> bool:
+    """Return True when neither polar-termination warning is present."""
+    return not any(
+        w in candidate.notes
+        for w in ("WARN:sub_polar_termination", "WARN:film_polar_termination")
+    )
+
+
+def has_large_cell_warning(candidate: InterfaceCandidate) -> bool:
+    """Return True if the candidate has a large supercell warning."""
+    return any(w.startswith("WARN:large_cell") for w in candidate.notes)
+
+
+def mark_recommended_candidates(candidates: list[InterfaceCandidate]) -> list[bool]:
+    """Return a list of boolean flags where True indicates a recommended candidate.
+
+    A candidate is recommended if it is the first (lowest-strain) match
+    found for a specific film orientation.
+    """
+    seen: set = set()
+    flags = []
+    for c in candidates:
+        key = c.film_miller
+        if key not in seen:
+            seen.add(key)
+            flags.append(True)
+        else:
+            flags.append(False)
+    return flags

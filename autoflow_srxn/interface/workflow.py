@@ -222,3 +222,156 @@ class InterfaceWorkflow:
                 f"{notes_str}"
             )
         return "\n".join(lines)
+
+
+def run_interface_screening(config_dict: dict) -> None:
+    """Run the complete interface screening workflow based on a configuration dictionary.
+
+    Parameters
+    ----------
+    config_dict:
+        A dictionary containing the workflow configuration.
+        Keys: sub_path, film_path, sub_name, film_name, miller_mode,
+              sub_millers, sub_max_miller, film_millers, film_max_miller,
+              max_det, strain_cutoff, max_atoms, min_slab_thickness,
+              vacuum, interface_gap, build_top_k, output_dir.
+    """
+    import os
+    import sys
+    from ase.io import write as ase_write
+    from autoflow_srxn.utils import setup_logger
+    from autoflow_srxn.interface import (
+        InterfaceWorkflow,
+        save_candidates_json,
+        save_candidates_html,
+        resolve_millers,
+        stack_interface,
+        mark_recommended_candidates,
+        POLAR_SG,
+    )
+    from pymatgen.core import Structure
+
+    cfg = config_dict
+    out_dir = cfg.get("output_dir", ".")
+    os.makedirs(out_dir, exist_ok=True)
+
+    logger = setup_logger(os.path.join(out_dir, "interface_match.log"))
+
+    sub_path, film_path = cfg.get("sub_path", ""), cfg.get("film_path", "")
+    for label, path in [("Substrate", sub_path), ("Film", film_path)]:
+        if not path or not os.path.exists(path):
+            logger.error(f"{label} bulk file not found: {path!r}")
+            sys.exit(1)
+
+    logger.info("Loading substrate bulk: %s", os.path.relpath(sub_path))
+    sub_struct = Structure.from_file(sub_path)
+    logger.info("Loading film bulk:      %s", os.path.relpath(film_path))
+    film_struct = Structure.from_file(film_path)
+
+    sub_sg_sym, sub_sg_num = sub_struct.get_space_group_info()
+    film_sg_sym, film_sg_num = film_struct.get_space_group_info()
+    sub_name = cfg.get("sub_name") or sub_struct.formula.replace(" ", "")
+    film_name = cfg.get("film_name") or film_struct.formula.replace(" ", "")
+
+    sub_polar = sub_sg_num in POLAR_SG
+    film_polar = film_sg_num in POLAR_SG
+
+    logger.info(
+        "  Substrate: %s  SG#%d %s  polar=%s", sub_name, sub_sg_num, sub_sg_sym, sub_polar
+    )
+    logger.info(
+        "  Film:      %s  SG#%d %s  polar=%s", film_name, film_sg_num, film_sg_sym, film_polar
+    )
+
+    mode = cfg.get("miller_mode", "distinct")
+    sub_millers, sub_src = resolve_millers(
+        cfg.get("sub_millers"), cfg.get("sub_max_miller"), sub_struct, mode
+    )
+    film_millers, film_src = resolve_millers(
+        cfg.get("film_millers"), cfg.get("film_max_miller"), film_struct, mode
+    )
+
+    logger.info("  Sub  Miller indices [%s]: %s", sub_src, sub_millers)
+    logger.info("  Film Miller indices [%s]: %s", film_src, film_millers)
+
+    wf = InterfaceWorkflow(
+        sub_structure=sub_struct,
+        film_structure=film_struct,
+        sub_millers=sub_millers,
+        film_millers=film_millers,
+        max_det=cfg.get("max_det", 6),
+        strain_cutoff=cfg.get("strain_cutoff", 0.05),
+        max_atoms=cfg.get("max_atoms", 400),
+        min_slab_thickness=cfg.get("min_slab_thickness", 12.0),
+        vacuum=cfg.get("vacuum", 15.0),
+    )
+
+    logger.info("Screening candidates...")
+    candidates = wf.screen()
+    if not candidates:
+        logger.warning("No candidates found.")
+        return
+
+    logger.info("Found %d candidates.", len(candidates))
+    recommended_flags = mark_recommended_candidates(candidates)
+
+    summary = wf.summary(candidates, top_n=20)
+    summary_path = os.path.join(out_dir, "interface_summary.txt")
+    with open(summary_path, "w", encoding="utf-8") as fh:
+        fh.write(summary)
+    logger.info("Summary written: %s", os.path.relpath(summary_path))
+
+    json_path = os.path.join(out_dir, "candidates.json")
+    save_candidates_json(candidates, recommended_flags, sub_name, film_name, json_path)
+    logger.info("JSON written:    %s", os.path.relpath(json_path))
+
+    html_path = os.path.join(out_dir, "candidates.html")
+    save_candidates_html(
+        candidates,
+        recommended_flags,
+        sub_name,
+        film_name,
+        f"#{sub_sg_num}",
+        f"#{film_sg_num}",
+        sub_polar,
+        film_polar,
+        html_path,
+    )
+    logger.info("HTML written:    %s", os.path.relpath(html_path))
+
+    raw_k = cfg.get("build_top_k")
+    if raw_k is None or (isinstance(raw_k, int) and raw_k < 0):
+        build_top_k = len(candidates)
+        logger.info(
+            "build_top_k is null or negative: Building ALL %d candidates.", build_top_k
+        )
+    else:
+        build_top_k = int(raw_k)
+    interface_gap = float(cfg.get("interface_gap", 2.5))
+    vacuum_ang = float(cfg.get("vacuum", 15.0))
+
+    for idx, (cand, is_rec) in enumerate(
+        zip(candidates[:build_top_k], recommended_flags[:build_top_k])
+    ):
+        logger.info(
+            "  [%d/%d] sub%s | film%s  vm=%.4f",
+            idx + 1,
+            build_top_k,
+            cand.sub_miller,
+            cand.film_miller,
+            cand.vm,
+        )
+        try:
+            sub_slab, film_slab = wf.build(cand)
+            interface = stack_interface(
+                sub_slab, film_slab, gap_ang=interface_gap, vacuum_ang=vacuum_ang
+            )
+            iface_out = os.path.join(out_dir, f"interface_{idx}.extxyz")
+            ase_write(iface_out, interface)
+            logger.info(
+                "      Saved: %s (%d atoms)", os.path.relpath(iface_out), len(interface)
+            )
+        except Exception as e:
+            logger.error("      Build failed: %s", e)
+
+    logger.info("Done. All output in: %s", os.path.relpath(out_dir))
