@@ -181,26 +181,38 @@ reaction_search:
 - [x] 흡착 에너지 순위 확인 (상위 8개 pre-screened 후보 relax, top 3 선정)
 - [ ] Inhibitor-modified surface site map 확인
 
-### Physisorption-only 결과 (SevenNet-0, relaxed)
+### Physisorption-only 결과 (SevenNet-0, relaxed) - Fibonacci 수정 후 최종
 
-계산 설정: `placement_height=3.0 Å`, `n_rot=8`, `symprec=1.5 Å`, 후보 생성 후 single-point pre-screen 상위 8개 relaxation. 흡착 에너지는 `E_ads = E(slab+inhibitor) - E(slab) - E(inhibitor_gas)` 기준.
+계산 설정: `placement_height=3.0 A`, `n_rot=8` (true Fibonacci sphere), `symprec=1.5 A`, 후보 생성 후 single-point pre-screen 상위 8개 relaxation.
+흡착 에너지: `E_ads = E(slab+inhibitor) - E(slab) - E(inhibitor_gas)`, E_gas = -113.64 eV.
 
-| 기판 | Generated | Relaxed | Rank 1 E_ads (eV) | Rank 2 | Rank 3 | 비고 |
-|---|---:|---:|---:|---:|---:|---|
-| Si(100) | 28 | 8 | +0.014 | +0.017 | +0.023 | interface covalent bond 0개. 사실상 약한/비결합 physisorption; 더 넓은 rotation sampling 권장 |
-| SiO2 O-term | 48 | 8 | -0.996 | -0.884 | -0.879 | `gravity_pull=True`는 O-H/C-O 결합으로 chemisorption-like relaxation 발생하여 제외. physisorption-only는 `gravity_pull=False` 결과 채택 |
-| SiO2 Si-term | 40 | 8 | -0.640 | -0.628 | -0.613 | interface covalent bond 0개. 안정한 physisorption |
+| 기판 | Generated | Relaxed | Rank 1 E_ads (eV) | Rank 2 | Rank 3 | CovBonds | 비고 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Si(100) | 40 | 8 | +0.009 | +0.015 | +0.015 | 0 | 여전히 physisorption 비우호적. MinDist ~2.3-2.6 A (H-Si vdW) |
+| SiO2 O-term | 64 | 8 | -1.095 | -1.084 | -1.045 | 0 | gravity_pull=False 채택. MinDist ~2.0-2.5 A (H-O, H-bond 지배) |
+| SiO2 Si-term | 56 | 8 | -0.642 | -0.078 | -0.044 | 0 | rank 1만 안정, 나머지 급격 약화 |
+
+**old (polar grid) vs new (Fibonacci) 비교:**
+
+| 기판 | Old cand | New cand | Old rank1 | New rank1 | 주요 차이 |
+|---|---:|---:|---:|---:|---|
+| Si(100) | 28 | 40 | +0.014 | +0.009 | 개선 미미; Si(100) 자체가 physisorption 비우호적 |
+| SiO2 O-term | 48 | 64 | -0.996 | -1.095 | +0.10 eV 추가 안정화; top-4 모두 -0.99 eV 이하로 향상 |
+| SiO2_Si_term | 40 | 56 | -0.640 | -0.642 | rank1 동일; old의 rank2-5 (-0.63 eV 군)은 사라짐 |
+
+**SiO2_Si_term 주목:** 구 polar grid에서는 rank1~5가 모두 -0.60~-0.64 eV로 비슷해 보였지만, 이는 동일한 2개 tilt각에서 4개 azimuthal spin이 유사한 in-plane 배향을 반복 샘플링한 artifact. 진정한 Fibonacci SO(3) 샘플링 결과 rank1(-0.642 eV) 1개만 안정하고 나머지는 -0.08 eV 이상으로 크게 다름 → 실제 안정 흡착 구조는 하나의 특정 배향뿐임을 확인.
 
 주요 산출물:
-- 전체 요약: `phase2/results/inhibitor_physisorption/physisorption_summary_all.txt`
-- Si(100) top structures: `phase2/results/inhibitor_physisorption/Si100/Si100_inhibitor_physi_rank01.vasp` 등
-- SiO2 O-term physisorption top structures: `phase2/results/inhibitor_physisorption/SiO2_O_term_nograv/rank01.vasp` 등
-- SiO2 Si-term top structures: `phase2/results/inhibitor_physisorption/SiO2_Si_term/SiO2_Si_term_inhibitor_physi_rank01.vasp` 등
+- 전체 요약: `phase2/results/inhibitor_physisorption/physisorption_summary.txt`
+- Si(100): `phase2/results/inhibitor_physisorption/Si100/Si100_inhibitor_physi_rank0{1-3}.vasp`
+- SiO2 O-term: `phase2/results/inhibitor_physisorption/SiO2_O_term_nograv/SiO2_O_term_nograv_inhibitor_physi_rank0{1-3}.vasp`
+- SiO2 Si-term: `phase2/results/inhibitor_physisorption/SiO2_Si_term/SiO2_Si_term_inhibitor_physi_rank0{1-3}.vasp`
 
 판단:
-- SiO2 두 표면은 physisorption 안정 구조가 확인됨.
-- Si(100)은 relaxed E_ads가 거의 0 또는 양수라, 현재 `n_rot=8`/site sampling에서는 강한 physisorption minimum이 확인되지 않음. Phase 3 전 최종 후보를 엄밀히 잡으려면 Si(100)에 한해 `n_rot=16~24`, 또는 `placement_height=3.5 Å`와 `gravity_pull=False` 보조 탐색을 제안.
-- O-term은 terminal O dangling bond 반응성이 커서 gravity-pulled 후보를 full relax하면 physisorption에서 chemisorption-like 구조로 쉽게 넘어감. physisorption-only branch에서는 gravity pull을 끄거나 interface-bond 필터를 유지해야 함.
+- SiO2(O-term)이 가장 강한 physisorption (-1.10 eV). H-O 거리 ~2.0-2.5 A로 H-bond 지배적.
+- SiO2(Si-term)은 하나의 특정 배향에서만 안정 (-0.64 eV), 나머지는 vdW 수준.
+- Si(100)은 2x1 buckled dimer 표면이라 inhibitor 접촉 기하가 불리; 흡착 에너지 +0.009 eV (repulsive). inhibitor가 Si(100)을 자발적으로 기피하는 경향 → selectivity 메커니즘 시사.
+- SiO2 O-term의 gravity_pull=True는 terminal O와 H-bond/O-H 결합 형성으로 chemisorption-like 구조 유도 → physisorption-only에서는 gravity_pull=False 유지.
 
 ---
 
