@@ -1,0 +1,12 @@
+Phase 1 Adsorption Site Maps
+======================================================================
+symprec = 1.50 A
+Si100            sites=  5  top= 1  bridge= 2  hollow= 2
+  png: structures\slabs\site_maps\Si100_site_map.png
+  csv: structures\slabs\site_maps\Si100_sites.csv
+SiO2_O_term      sites=  8  top= 1  bridge= 4  hollow= 3
+  png: structures\slabs\site_maps\SiO2_O_term_site_map.png
+  csv: structures\slabs\site_maps\SiO2_O_term_sites.csv
+SiO2_Si_term     sites=  7  top= 1  bridge= 3  hollow= 3
+  png: structures\slabs\site_maps\SiO2_Si_term_site_map.png
+  csv: structures\slabs\site_maps\SiO2_Si_term_sites.csv

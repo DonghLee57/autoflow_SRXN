@@ -10,11 +10,13 @@ def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     """Standardize Atoms object for VASP export:
     1. Sort by atomic number (element).
     2. Align minimum Z-coordinate to z_min_offset.
-    Returns: Sorted and translated Atoms copy.
+    3. Wrap all positions into the periodic cell (frac in [0,1)).
+    Returns: Sorted, translated, and wrapped Atoms copy.
     """
     sorted_atoms = atoms[atoms.numbers.argsort(kind='stable')]
     z_min = sorted_atoms.positions[:, 2].min()
     sorted_atoms.translate([0, 0, z_min_offset - z_min])
+    sorted_atoms.wrap()
     sorted_atoms.calc = atoms.calc
     sorted_atoms.info = atoms.info
     return sorted_atoms
@@ -37,6 +39,25 @@ def find_surface_indices(atoms, side="top", threshold=1.0, species=None):
     mask = np.abs(z_coords - z_target) < threshold
     return indices[mask]
 
+def get_pair_bond_cutoff(sym1, sym2, bond_slack=0.45, max_cutoff=3.1):
+    """Return an element-pair covalent cutoff for coordination counting."""
+    r1 = chem_kb.get_radius(sym1, "covalent")
+    r2 = chem_kb.get_radius(sym2, "covalent")
+    return min(max_cutoff, r1 + r2 + bond_slack)
+
+def filter_bonded_neighbor_vectors(atoms, idx, j_list, D_list, bond_slack=0.45, max_cutoff=3.1):
+    """Keep only chemically plausible bonded neighbors of one atom."""
+    bonded = []
+    sym = atoms.symbols[idx]
+    for j, vec in zip(j_list, D_list):
+        dist = np.linalg.norm(vec)
+        if dist <= 0.1:
+            continue
+        cutoff = get_pair_bond_cutoff(sym, atoms.symbols[j], bond_slack=bond_slack, max_cutoff=max_cutoff)
+        if dist < cutoff:
+            bonded.append((j, vec))
+    return bonded
+
 def calculate_haptic_vbs(atoms, indices):
     """Calculates the Virtual Bonding Site (centroid) for a set of atoms."""
     if not indices: return None
@@ -51,15 +72,21 @@ def calculate_haptic_normal(atoms, indices):
     normal = vh[2, :]
     return normal / np.linalg.norm(normal)
 
-def generate_vsepr_vectors(atoms, idx, neighbor_data=None, num_missing=1, cutoff=2.6):
+def generate_vsepr_vectors(atoms, idx, neighbor_data=None, num_missing=1, cutoff=3.1, bond_slack=0.45):
     """Calculate generic dangling bond vectors using VSEPR approximation."""
     from ase.neighborlist import neighbor_list
     if neighbor_data: i_list, j_list, D_list = neighbor_data
     else: i_list, j_list, D_list = neighbor_list("ijD", atoms, cutoff)
     mask = i_list == idx
-    vectors = D_list[mask]
-    dists = np.linalg.norm(vectors, axis=1)
-    vectors = vectors[(dists > 0.1) & (dists < cutoff)]
+    bonded = filter_bonded_neighbor_vectors(
+        atoms,
+        idx,
+        j_list[mask],
+        D_list[mask],
+        bond_slack=bond_slack,
+        max_cutoff=cutoff,
+    )
+    vectors = np.array([vec for _, vec in bonded])
     if len(vectors) == 0: return [np.array([0.0, 0.0, 1.0])] * num_missing
     norm_vecs = vectors / np.linalg.norm(vectors, axis=1)[:, np.newaxis]
     sum_vec = np.sum(norm_vecs, axis=0)
@@ -91,7 +118,7 @@ def generate_vsepr_vectors(atoms, idx, neighbor_data=None, num_missing=1, cutoff
         results.append(v / np.linalg.norm(v))
     return results
 
-def get_all_dangling_bonds_general(atoms, valence_map, vector_generator=None, cutoff=3.1, side="top"):
+def get_all_dangling_bonds_general(atoms, valence_map, vector_generator=None, cutoff=3.1, side="top", bond_slack=0.45):
     """Identify missing valences for surface atoms."""
     from ase.neighborlist import neighbor_list
     surface_indices = find_surface_indices(atoms, side=side, threshold=2.0)
@@ -104,12 +131,23 @@ def get_all_dangling_bonds_general(atoms, valence_map, vector_generator=None, cu
         target_val = chem_kb.get_ideal_coordination(sym, config=valence_map if isinstance(valence_map, dict) else None)
         if target_val <= 0: continue
         mask = i_list == idx
-        dists = np.linalg.norm(D_list[mask], axis=1)
-        num_n = np.sum((dists > 0.1) & (dists < 2.6))
+        bonded = filter_bonded_neighbor_vectors(
+            atoms,
+            idx,
+            j_list[mask],
+            D_list[mask],
+            bond_slack=bond_slack,
+            max_cutoff=cutoff,
+        )
+        num_n = len(bonded)
         num_missing = target_val - num_n
         if num_missing > 0:
-            try: vecs = vector_generator(atoms, idx, neighbor_data=neighbor_data, num_missing=num_missing)
-            except TypeError: vecs = vector_generator(atoms, idx, neighbor_data=neighbor_data)
+            bonded_i = np.full(len(bonded), idx, dtype=int)
+            bonded_j = np.array([j for j, _ in bonded], dtype=int)
+            bonded_D = np.array([vec for _, vec in bonded], dtype=float).reshape((-1, 3))
+            bonded_neighbor_data = (bonded_i, bonded_j, bonded_D)
+            try: vecs = vector_generator(atoms, idx, neighbor_data=bonded_neighbor_data, num_missing=num_missing)
+            except TypeError: vecs = vector_generator(atoms, idx, neighbor_data=bonded_neighbor_data)
             for v in vecs:
                 if (side == "top" and v[2] > -0.1) or (side == "bottom" and v[2] < 0.1):
                     all_bonds.append({"parent": idx, "vector": v, "parent_sym": sym})
@@ -272,22 +310,55 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
     slab.wrap()
     return standardize_vasp_atoms(slab, z_min_offset=0.5)
 
-def apply_surface_reconstruction(atoms, strategy="auto", side="top", verbose=False, **kwargs):
-    """Applies surface reconstruction."""
-    if strategy in ["auto", True]: res = auto_reconstruct_surface(atoms, side=side, verbose=verbose, **kwargs)
+def apply_surface_reconstruction(atoms, strategy="auto", side="top", verbose=False, miller=None, **kwargs):
+    """Applies surface reconstruction.
+
+    Parameters
+    ----------
+    strategy : str
+        "auto" dispatches based on crystal-system heuristics.
+        "random_noise" applies a symmetry-breaking random displacement.
+    miller : sequence of int or None
+        Miller indices of the surface.  Required for system-specific recipes
+        (e.g., Si(100) 2x1).  When None, auto falls back to random_noise for
+        group-IV surfaces instead of applying the Si(100) recipe blindly.
+    """
+    if strategy in ["auto", True]: res = auto_reconstruct_surface(atoms, side=side, verbose=verbose, miller=miller, **kwargs)
     elif strategy == "random_noise": res = apply_random_surface_noise(atoms, side=side, verbose=verbose, **kwargs)
     else: res = atoms
     return standardize_vasp_atoms(res, z_min_offset=0.5)
 
-def auto_reconstruct_surface(atoms, side="top", verbose=False, **kwargs):
-    """Intelligent Reconstruction Engine."""
+def auto_reconstruct_surface(atoms, side="top", verbose=False, miller=None, **kwargs):
+    """Crystal-system-aware reconstruction dispatcher.
+
+    Dispatch logic
+    --------------
+    * **Group-IV + miller=(1,0,0)** : Si(100) 2x1 buckled-dimer seed from
+      ``reconstruction_recipes.reconstruct_si100_2x1_buckled``.
+    * **Group-IV, other orientation** : random_noise (ML relax determines the
+      correct reconstruction from a broken-symmetry starting point).
+    * **Ionic** (|Δχ| > 1.5 eV) : electrostatic rumpling (anion up / cation down).
+    * **Metallic** (mean χ < 1.9) : surface contraction + noise.
+    * **Other** : random_noise.
+
+    The Si(100) recipe is kept in ``reconstruction_recipes.py`` and imported
+    lazily so that system-specific code does not pollute the core utility module.
+    """
     idx = find_surface_indices(atoms, side=side, threshold=1.5)
     if not len(idx): return atoms
     chi = np.array([GlobalKnowledge.get_electronegativity(atoms.symbols[i]) for i in idx])
     is_iv = all(n in [6, 14, 32] for n in atoms.numbers[idx])
     is_ionic = (np.max(chi) - np.min(chi)) > 1.5
     is_metal = np.mean(chi) < 1.9
-    if is_iv: return reconstruct_si100_2x1_buckled(atoms, side=side, verbose=verbose)
+    if is_iv:
+        miller_tuple = tuple(int(m) for m in miller) if miller is not None else None
+        if miller_tuple == (1, 0, 0):
+            from .reconstruction_recipes import reconstruct_si100_2x1_buckled
+            if verbose: print(f"  [Reconstruct] Si(100) 2x1 buckled-dimer recipe (from reconstruction_recipes).")
+            return reconstruct_si100_2x1_buckled(atoms, side=side, verbose=verbose)
+        else:
+            if verbose: print(f"  [Reconstruct] Group-IV surface, miller={miller_tuple}: random_noise -> ML relax.")
+            return apply_random_surface_noise(atoms, side=side, amplitude=0.15)
     elif is_ionic:
         res, m = atoms.copy(), np.mean(chi)
         for i, j in enumerate(idx): res.positions[j, 2] += (0.2 if chi[i] > m else -0.2) * (1 if side == "top" else -1)
@@ -303,124 +374,17 @@ def apply_random_surface_noise(atoms, side="top", amplitude=0.1, verbose=False, 
     if len(idx): res.positions[idx] += np.random.normal(0, amplitude, (len(idx), 3))
     res.wrap(); return res
 
-SI_VALENCE_MAP = {"Si": 4, "O": 2, "H": 1, "F": 1, "Cl": 1}
-
-def get_natural_pairing_vector(atoms, idx, neighbor_data=None):
-    """Determine the lateral pairing axis."""
-    vecs = generate_vsepr_vectors(atoms, idx, neighbor_data=neighbor_data, num_missing=2)
-    if len(vecs) == 2:
-        d = vecs[0] - vecs[1]; d[2] = 0; mag = np.linalg.norm(d)
-        if mag > 1e-3: return d / mag
-    return None
-
-def reconstruct_si100_2x1_buckled(atoms, side="top", buckle=0.7, bond_length=2.30, pattern="checkerboard", verbose=False):
-    """Advanced Vector-Agnostic 2x1 reconstruction."""
-    idx_list = find_surface_indices(atoms, side)
-    if not len(idx_list): return atoms
-    paired, dimers = set(), []
-    from ase.neighborlist import neighbor_list
-    i_list, _ = neighbor_list("ij", atoms, 2.6)
-    for i1 in idx_list:
-        if i1 in paired or np.sum(i_list == i1) >= 4: continue
-        pv = get_natural_pairing_vector(atoms, i1)
-        if pv is None: continue
-        pot = [i for i in idx_list if i != i1 and i not in paired]
-        if not pot: continue
-        D, d = get_distances(atoms.positions[i1], atoms.positions[pot], cell=atoms.cell, pbc=atoms.pbc)
-        for sub, i2 in enumerate(pot):
-            if 2.0 < d[0][sub] < 4.2 and abs(np.dot(D[0][sub]/d[0][sub], pv)) > 0.8:
-                dimers.append({"ids": (i1, i2), "vec": D[0][sub], "mid": (atoms.positions[i1] + atoms.positions[i1] + D[0][sub])/2})
-                paired.update([i1, i2]); break
-    if not dimers: return atoms
-    inv = np.linalg.inv(atoms.cell[:2, :2])
-    rows = sorted(list(set(round((d["mid"][:2] @ inv)[1] * 8, 1) for d in dimers)))
-    cols = sorted(list(set(round((d["mid"][:2] @ inv)[0] * 8, 1) for d in dimers)))
-    for d in dimers:
-        r, c = rows.index(round((d["mid"][:2] @ inv)[1] * 8, 1)), cols.index(round((d["mid"][:2] @ inv)[0] * 8, 1))
-        S = (-1)**(r+c) if pattern=="checkerboard" else ((-1)**c if pattern=="stripe" else 1)
-        i1, i2 = d["ids"]; v = d["vec"] if (d["vec"][0] > 1e-4 or (abs(d["vec"][0]) < 1e-4 and d["vec"][1] > 1e-4)) else -d["vec"]
-        if v[0] < 0: i1, i2 = i2, i1
-        mid, u = atoms.positions[i1] + v/2, v/np.linalg.norm(v)
-        dxy = np.sqrt(max(0, bond_length**2 - buckle**2))
-        atoms.positions[i1] = mid + u*(dxy/2) + [0, 0, S*buckle/2]
-        atoms.positions[i2] = mid - u*(dxy/2) - [0, 0, S*buckle/2]
-    atoms.wrap(); return atoms
-
-def identify_surface_bonds(atoms, cutoff=2.6):
-    """Categorize bonds."""
-    l1 = find_surface_indices(atoms, "top", threshold=0.8, species="Si"); zt = np.max(atoms.positions[l1, 2])
-    l2 = np.where((atoms.symbols == "Si") & (atoms.positions[:,2] < zt-0.5) & (atoms.positions[:,2] > zt-2.5))[0]
-    nl_i, nl_j, _ = neighbor_list("ijD", atoms, cutoff); dims, bbs, seen = [], [], set()
-    for i1 in l1:
-        for ni in nl_j[nl_i == i1]:
-            if ni == i1 or atoms.symbols[ni] != "Si": continue
-            b = tuple(sorted((i1, ni)))
-            if b in seen: continue
-            if ni in l1: dims.append(b)
-            elif ni in l2: bbs.append(b)
-            seen.add(b)
-    return dims, bbs
-
-def oxidize_si_surface(slab, dimer_coverage=0.0, backbond_coverage=0.0, verbose=False):
-    """Oxidize."""
-    dims, bbs = identify_surface_bonds(slab); nd, nb = int(round(len(dims)*dimer_coverage)), int(round(len(bbs)*backbond_coverage))
-    res, oc = slab.copy(), {i: 0 for i in range(len(slab))}
-    def greedy(at, cands, n):
-        curr, s = at.copy(), 0
-        avail = list(cands)
-        while s < n and avail:
-            opos = curr.positions[curr.symbols == "O"]; bb, bs, bi = None, -1.0, -1
-            for ib, (b1, b2) in enumerate(avail):
-                if oc[b1] >= 2 or oc[b2] >= 2: continue
-                mid = (curr.positions[b1] + curr.positions[b2])/2.0
-                score = 100.0 - np.linalg.norm(mid[:2] - np.sum(curr.cell, 0)[:2]/2) if not len(opos) else np.min(get_distances(mid, opos, cell=curr.cell, pbc=curr.pbc)[1])
-                if score > bs:
-                    if np.any(np.linalg.norm(np.delete(curr.positions, [b1, b2], 0) - mid, 1) < 1.5): continue
-                    bs, bb, bi = score, (b1, b2), ib
-            if bb:
-                curr = insert_o_bridge_pure_geo(curr, bb[0], bb[1]); oc[bb[0]] += 1; oc[bb[1]] += 1; s += 1; avail.pop(bi)
-            else: break
-        return curr, s
-    res, _ = greedy(res, dims, nd); res, _ = greedy(res, bbs, nb); return res
-
-def insert_o_bridge_pure_geo(atoms, idx1, idx2, target_si_o=1.63, target_angle=144.0):
-    """Insert O."""
-    p1, p2 = atoms.positions[idx1].copy(), atoms.positions[idx2].copy()
-    if p2[2] > p1[2]: idx1, idx2, p1, p2 = idx2, idx1, p2, p1
-    v = p1 - p2; bl = np.linalg.norm(v); u = v / bl; mid = (p1 + p2)/2.0
-    dp, da = target_si_o * np.sin(np.deg2rad(target_angle/2)), target_si_o * np.cos(np.deg2rad(target_angle/2))
-    perp = np.cross(u, [0,0,1])
-    if np.linalg.norm(perp) < 1e-3: perp = np.cross(u, [0,1,0])
-    perp /= np.linalg.norm(perp)
-    atoms.positions[idx1] += u * (da - bl/2) * 0.8; atoms.positions[idx2] -= u * (da - bl/2) * 0.2
-    atoms += Atoms("O", positions=[mid + perp * dp]); return atoms
-
-def build_si100_slab(bulk_atoms, size=(4, 4), layers=8, vacuum=10.0):
-    """Standardized (100) slab generation."""
-    slab = surface(bulk_atoms, (1, 0, 0), layers=layers, vacuum=vacuum) * (size[0], size[1], 1)
-    z = slab.positions[:, 2]; zmax, zmin = z.max(), z.min()
-    for a in slab:
-        if a.position[2] > zmax - 0.5: a.tag = 1
-        elif a.position[2] < zmin + 0.5: a.tag = 4
-        else: a.tag = 0
-    return slab
-
-def generate_standard_surfaces(bulk_si, verbose=False):
-    """Generate surfaces."""
-    base = build_si100_slab(bulk_si, size=(4, 4), layers=8)
-    s1 = base.copy(); reconstruct_si100_2x1_buckled(s1, verbose=verbose); s1.info["label"] = "S1_Clean_2x1"
-    s2 = s1.copy(); s2 = passivate_surface_coverage_general(s2, 1.0, SI_VALENCE_MAP, side="top"); s2 = passivate_surface_coverage_general(s2, 1.0, SI_VALENCE_MAP, side="bottom"); s2.info["label"] = "S2_H_Passivated"
-    s3 = s1.copy(); s3 = oxidize_si_surface(s3, 0.5, 0.5); s3.info["label"] = "S3_Oxidized"
-    s4 = s3.copy(); s4 = passivate_surface_coverage_general(s4, 1.0, SI_VALENCE_MAP, side="top"); s4 = passivate_surface_coverage_general(s4, 1.0, SI_VALENCE_MAP, side="bottom"); s4.info["label"] = "S4_Oxidized_H_Passivated"
-    return [s1, s2, s3, s4]
-
-def get_surface_h_mapping(atoms, cutoff=1.8, side="top"):
-    """Map H."""
-    hi, si = np.where(atoms.symbols == "H")[0], np.where(atoms.symbols == "Si")[0]
-    if not len(hi): return {}
-    hi = [i for i in hi if (atoms.positions[i, 2] > np.max(atoms.positions[:, 2]) - 3.0 if side == "top" else atoms.positions[i, 2] < np.min(atoms.positions[:, 2]) + 3.0)]
-    m = {}
-    for h in hi:
-        _, d = get_distances(atoms.positions[h], atoms.positions[si], cell=atoms.cell, pbc=atoms.pbc)
-        if np.any(d[0] < cutoff): m[si[np.argmin(d[0])]] = h
-    return m
+# ---------------------------------------------------------------------------
+# Backward-compatibility shim: re-export Si-specific names that may be
+# imported directly from surface_utils elsewhere in the codebase.
+# New code should import from reconstruction_recipes directly.
+# ---------------------------------------------------------------------------
+from .reconstruction_recipes import (  # noqa: F401  (re-export)
+    SI_VALENCE_MAP,
+    reconstruct_si100_2x1_buckled,
+    identify_surface_bonds,
+    oxidize_si_surface,
+    build_si100_slab,
+    generate_standard_surfaces,
+    get_surface_h_mapping,
+)

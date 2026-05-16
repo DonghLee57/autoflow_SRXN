@@ -1,9 +1,14 @@
 import unittest
 
+from ase import Atoms
 from ase.build import bulk
 
 # Add src to sys.path
-from autoflow_srxn.surface.surface_utils import build_si100_slab, passivate_surface_coverage_general
+from autoflow_srxn.surface.surface_utils import (
+    build_si100_slab,
+    get_all_dangling_bonds_general,
+    passivate_surface_coverage_general,
+)
 
 
 class TestSurfaceConstruction(unittest.TestCase):
@@ -82,6 +87,25 @@ class TestSurfaceConstruction(unittest.TestCase):
         self.assertGreater(len(h_top), 0, "No top-side H atoms found.")
         self.assertGreater(len(h_bottom), 0, "No bottom-side H atoms found.")
         self.assertEqual(len(h_top) + len(h_bottom), len(h_atoms), "Found H atoms neither at top nor bottom.")
+
+    def test_terminal_oxygen_dangling_bonds_ignore_oo_contacts(self):
+        """Terminal O atoms should not treat nearby O atoms as covalent neighbors."""
+        slab = Atoms(
+            "SiOSiO",
+            positions=[
+                [0.00, 0.00, 0.00],
+                [0.00, 0.00, 1.63],
+                [2.26, 0.00, 0.00],
+                [2.26, 0.00, 1.63],
+            ],
+            cell=[8.0, 8.0, 8.0],
+            pbc=[False, False, False],
+        )
+
+        dbs = get_all_dangling_bonds_general(slab, {"O": 2, "Si": 0}, side="top")
+
+        self.assertEqual(len(dbs), 2)
+        self.assertEqual(sorted(db["parent"] for db in dbs), [1, 3])
 
 
 if __name__ == "__main__":
