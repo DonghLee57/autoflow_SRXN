@@ -133,11 +133,22 @@ class AdsorptionWorkflowManager:
         positions = sub_slab.get_scaled_positions()
         numbers = sub_slab.get_atomic_numbers()
 
-        sym = spglib.get_symmetry((lattice, positions, numbers), symprec=symprec)
+        sym = None
+        # Large symprec values are useful for merging slightly distorted site
+        # coordinates, but can make spglib fail to recover the surface symmetry
+        # operations themselves.  Detect symmetry conservatively, then use the
+        # requested symprec only for coordinate equivalence below.
+        for detect_prec in sorted({min(symprec, 0.2), 0.5, symprec}):
+            try:
+                sym = spglib.get_symmetry((lattice, positions, numbers), symprec=detect_prec)
+            except Exception:
+                sym = None
+            if sym:
+                break
         if not sym:
             return coords
 
-        rotations  = sym['rotations']
+        rotations = sym['rotations']
         translations = sym['translations']
         inv_lattice = np.linalg.inv(lattice)
 
@@ -463,20 +474,41 @@ class AdsorptionWorkflowManager:
                         sites.append(np.array([mid[0], mid[1], z_surface_ref]))
         return sites
 
-    def _sample_molecule_orientations(self, m_aligned, n_rot):
-        """Sample n_rot orientations on SO(3) via Fibonacci sphere.
+    def _get_unique_surface_coordinates_by_type(self, coords):
+        """Reduce surface site coordinates without merging top/bridge/hollow types."""
+        if not coords:
+            return []
+        from .site_map import _classify_site
+        from .surface_utils import find_surface_indices
 
-        Decomposes n_rot into n_polar × n_spin where n_polar directions are
-        distributed uniformly in solid angle (Fibonacci lattice, uniform in
-        cos θ) and n_spin azimuthal spins are applied around Z for each.
-        The rotation center stays at [0, 0, 0] throughout.
+        surf_idx = find_surface_indices(self.slab, side="top")
+        surf_xy = self.slab.positions[surf_idx, :2]
+        site_types = [_classify_site(np.asarray(c)[:2], surf_xy) for c in coords]
+
+        unique = []
+        for site_type in ("top", "bridge", "hollow"):
+            typed = [c for c, t in zip(coords, site_types) if t == site_type]
+            unique.extend(self.get_unique_coordinates(self.slab, typed, symprec=self.symprec))
+        return unique
+
+    def _sample_molecule_orientations(self, m_aligned, n_rot):
+        """Sample n_rot orientations uniformly on SO(3) via Fibonacci sphere.
+
+        Each of the n_rot samples gets its own distinct direction from the
+        Fibonacci-golden-ratio lattice (uniform in cos θ, golden-ratio in φ).
+        The aligned molecule's +Z axis is rotated to each direction.
+
+        Previous implementation decomposed n_rot into n_polar = sqrt(n_rot)
+        directions × n_spin azimuthal spins. This was incorrect because:
+          1. n_polar << n_rot meant very coarse polar coverage (2 latitudes for
+             n_rot=8) — indistinguishable from a polar-coordinate grid.
+          2. Azimuthal spins were applied around the global Z axis, not the
+             molecular axis, so the spin was geometrically wrong for tilted poses.
         """
         golden = (1.0 + 5.0 ** 0.5) / 2.0
-        n_polar = max(1, int(n_rot ** 0.5))
-        n_spin = max(1, n_rot // n_polar)
         poses = []
-        for i in range(n_polar):
-            cos_theta = 1.0 - 2.0 * (i + 0.5) / n_polar
+        for i in range(n_rot):
+            cos_theta = 1.0 - 2.0 * (i + 0.5) / n_rot
             theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
             phi = 2.0 * np.pi * i / golden
             direction = np.array([
@@ -484,13 +516,10 @@ class AdsorptionWorkflowManager:
                 np.sin(theta) * np.sin(phi),
                 np.cos(theta),
             ])
-            for j in range(n_spin):
-                m = m_aligned.copy()
-                if np.linalg.norm(direction - np.array([0.0, 0.0, 1.0])) > 1e-6:
-                    m.rotate([0, 0, 1], direction, center=[0, 0, 0])
-                if j > 0:
-                    m.rotate(360.0 * j / n_spin, [0, 0, 1], center=[0, 0, 0])
-                poses.append(m)
+            m = m_aligned.copy()
+            if np.linalg.norm(direction - np.array([0.0, 0.0, 1.0])) > 1e-6:
+                m.rotate([0, 0, 1], direction, center=[0, 0, 0])
+            poses.append(m)
         return poses
 
     def _find_contact_z(self, m_template, target_xy, z_lo, z_hi, overlap_scale, tag):
@@ -560,6 +589,7 @@ class AdsorptionWorkflowManager:
         slab_has_inhibitors = np.any(self.slab.get_tags() >= 2)
 
         raw_centers = []
+        using_cavity_sites = False
         if self.config and (_protex.get("enabled", False) or
                             (_inh_cfg.get("enabled", False) and slab_has_inhibitors)):
             sub_idx, prot_idx = identify_protectors(self.slab, self.config, verbose=self.verbose)
@@ -568,11 +598,15 @@ class AdsorptionWorkflowManager:
             raw_centers = detector.find_void_centers(top_clearance=height)
             if raw_centers:
                 raw_centers = [c + np.array([0, 0, 0.5]) for c in raw_centers]
+                using_cavity_sites = True
 
         if not raw_centers:
             raw_centers = self._generate_surface_sites(z_surface_ref)
 
-        target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
+        if using_cavity_sites:
+            target_centers = self.get_unique_coordinates(self.slab, raw_centers, symprec=self.symprec)
+        else:
+            target_centers = self._get_unique_surface_coordinates_by_type(raw_centers)
 
         self.logger.info(
             f"  [Physisorption] {len(target_centers)} unique sites "
@@ -584,9 +618,16 @@ class AdsorptionWorkflowManager:
         lattice = self.slab.get_cell()
         positions = self.slab.get_scaled_positions()
         numbers = self.slab.get_atomic_numbers()
-        sym = spglib.get_symmetry((lattice, positions, numbers), symprec=self.symprec)
-        rotations = sym['rotations']
-        translations = sym['translations']
+        sym = None
+        for detect_prec in sorted({min(self.symprec, 0.2), 0.5, self.symprec}):
+            try:
+                sym = spglib.get_symmetry((lattice, positions, numbers), symprec=detect_prec)
+            except Exception:
+                sym = None
+            if sym:
+                break
+        rotations = sym['rotations'] if sym else [np.eye(3, dtype=int)]
+        translations = sym['translations'] if sym else [np.zeros(3)]
         ops_2d = [
             (r, t) for r, t in zip(rotations, translations)
             if (abs(r[2, 0]) < 0.1 and abs(r[2, 1]) < 0.1

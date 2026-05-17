@@ -1,0 +1,5 @@
+Phase 1 Slab Summary
+======================================================================
+Si100                 atoms=112  E=-561.7800 eV  E/atom=-5.0159 eV  dangling_bonds=8
+SiO2_O_term           atoms=112  E=-818.5082 eV  E/atom=-7.3081 eV  dangling_bonds=8
+SiO2_Si_term          atoms=108  E=-799.8340 eV  E/atom=-7.4059 eV  dangling_bonds=8

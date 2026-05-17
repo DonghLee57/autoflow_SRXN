@@ -369,10 +369,16 @@ def generate_and_plot_site_map(
         except Exception:
             pass
 
+    raw_types = [_classify_site(site[:2], pos[:, :2]) for site in raw_sites]
+
     if mgr is None:
         from .ads_workflow_mgr import AdsorptionWorkflowManager
         mgr = AdsorptionWorkflowManager(sub, symprec=symprec, verbose=False)
-    sites = mgr.get_unique_coordinates(sub, raw_sites, symprec=symprec)
+
+    sites = []
+    for site_type in ("top", "bridge", "hollow"):
+        typed_sites = [site for site, raw_type in zip(raw_sites, raw_types) if raw_type == site_type]
+        sites.extend(mgr.get_unique_coordinates(sub, typed_sites, symprec=symprec))
 
     plot_adsorption_site_map(slab, sites, output_path, title=title, **plot_kwargs)
     return sites
