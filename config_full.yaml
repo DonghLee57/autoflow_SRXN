@@ -547,6 +547,8 @@ reaction_search:
                                  # 0.2 is recommended for TiN/Oxides to avoid
                                  # counting 2nd neighbors as bonds.
           max_neighbor_dist: 4.0 # Search radius for initial neighbor detection (A).
+          z_surface_threshold: 3.5 # Distance from z_sub_max to consider substrate atoms as surface (A).
+                                   # Set larger (e.g. 3.5) for buckled surfaces to avoid skipping depressed atoms.
 
         proximity_filter:
           enabled:   false      # false -> check all sites | true -> check only near inhibitors
@@ -586,6 +588,7 @@ reaction_search:
         coordination_analysis:
           bond_slack: 0.2
           max_neighbor_dist: 4.0
+          z_surface_threshold: 3.5
 
         proximity_filter:
           enabled:   true       # Recommended for inhibited surfaces

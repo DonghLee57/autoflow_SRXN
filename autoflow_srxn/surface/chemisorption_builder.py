@@ -55,6 +55,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     coord_cfg = chem_cfg.get("coordination_analysis", {})
     bond_slack = coord_cfg.get("bond_slack", 0.2)
     max_nb_dist = coord_cfg.get("max_neighbor_dist", 4.0)
+    z_surface_threshold = coord_cfg.get("z_surface_threshold", 3.5)
 
     z_max = max(surface.positions[:, 2])
     z_sub_max = max(surface.positions[sub_idx, 2]) if len(sub_idx) else z_max
@@ -70,7 +71,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
         sym = surface.symbols[idx]
         
         # Substrate filtering: Only ignore inner substrate atoms.
-        if idx in sub_idx and surface.positions[idx, 2] < z_sub_max - 2.0:
+        if idx in sub_idx and surface.positions[idx, 2] < z_sub_max - z_surface_threshold:
             continue
 
         # --- Mechanism 1: Protector Exchange ---

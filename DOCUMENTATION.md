@@ -220,8 +220,20 @@ Bond placement is purely geometric (no MLIP required):
 
 1. **Ligand discovery**: The precursor is graph-partitioned at `center` to enumerate detachable ligands and their hapticity.
 2. **Dangling-bond mapping**: VSEPR vectors are generated for under-coordinated surface atoms. Directional filter (`db_vec[2] > 0.1`) ensures only vacuum-pointing bonds are used. Symmetry-equivalent pairs are deduplicated.
+   - **Substrate Filtering & Buckling**: To avoid calling coordination analysis on deep bulk atoms, substrate atoms whose Z-coordinate is below $z_{\mathrm{sub\_max}} - \texttt{z\_surface\_threshold}$ are filtered out.
+   - On strongly buckled surfaces (e.g. Si(110) passivated with bulky inhibitors), surface atoms can relax downward or be pulled upward by over 2.0 Å. Set $\texttt{z\_surface\_threshold} = 3.5$ (default) to ensure these buckled, reactive surface atoms are not accidentally skipped.
 3. **Element-specific bond length**: The center->surface bond is placed at $r_{cov}(\text{center}) + r_{cov}(\text{surface})$ (ASE covalent radii). This replaces the previous Si-Si hardcode of 2.35 A.
 4. **Best-clearance selection**: All `rot_steps` angles × both site permutations are evaluated. The pose with the largest minimum non-bonded clearance (distance to nearest non-bonded neighbour, excluding bond-forming pairs) is kept. This maximises the geometric buffer available for the subsequent MLIP relaxation and reduces energy blow-up risk.
+
+#### Coordination Analysis Configuration
+Nested under `chemisorption`:
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `coordination_analysis.bond_slack` | Float (Å) | `0.2` | Slack added to covalent radii sum when checking coordination neighbors. |
+| `coordination_analysis.max_neighbor_dist` | Float (Å) | `4.0` | Maximum search radius for initial neighbor identification. |
+| `coordination_analysis.z_surface_threshold` | Float (Å) | `3.5` | Depth below $z_{\mathrm{sub\_max}}$ to consider substrate atoms as surface atoms. |
+
 
 ### 5.6 Candidate Filter
 
