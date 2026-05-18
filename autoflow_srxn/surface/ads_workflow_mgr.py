@@ -861,11 +861,7 @@ class AdsorptionWorkflowManager:
         return f
 
     def _form_byproduct(self, fragment, binding_idx, internal_bond_vec):
-        from ase import Atoms
-        f = fragment.copy()
-        sym = f.symbols[binding_idx]
-        b_len = 1.0 if sym in ["N", "O"] else 1.1 if sym == "C" else 1.5
-        h_pos = f.positions[binding_idx] + (internal_bond_vec / np.linalg.norm(internal_bond_vec)) * b_len
-        f += Atoms("H", positions=[h_pos])
-        return f
+        # By strictly returning the exact fragment, we ensure perfect mass conservation
+        # and prevent unphysical generation of C5H6 from C5H5.
+        return fragment.copy()
 

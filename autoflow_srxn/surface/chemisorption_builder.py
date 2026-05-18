@@ -77,6 +77,8 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
         # --- Mechanism 1: Protector Exchange ---
         if idx in prot_idx:
             _protex = config.get("reaction_search", {}).get("mechanisms", {}).get("protector_exchange", {})
+            if not _protex.get("enabled", False):
+                continue
             reactive_leaves = _protex.get("reactive_leaves", ["H"])
             if sym in reactive_leaves:
                 indices, offsets = nl.get_neighbors(idx)
@@ -228,6 +230,8 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     pair_count = 0
 
     for s1, s2 in combinations(dangling_sites, 2):
+        if s1["index"] == s2["index"]:
+            continue
         dist = np.linalg.norm(s1["pos"] - s2["pos"])
         if dist <= max_pair_dist:
             pair_count += 1
@@ -287,6 +291,7 @@ def build_chemisorption_structures(
     c_idx, ligands = analyze_molecule_ligands(molecule, center_target=center_target, verbose=verbose, config=config)
 
     candidates = []
+    failed_candidates = []
 
     if not ligands:
         if verbose:
@@ -308,7 +313,7 @@ def build_chemisorption_structures(
         if verbose:
             print(f"  -> Routing to Generic Single-Site Chemisorption on {len(sites['unique_single'])} Sites...")
         s_cands = _execute_generic_single_site(
-            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag
+            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag, failed_candidates=failed_candidates
         )
         candidates.extend(s_cands)
 
@@ -321,7 +326,7 @@ def build_chemisorption_structures(
             print(f"  -> Routing to Haptic-Ligand Site Adsorption "
                   f"({n_hap} haptic ligand(s), {len(sites['unique_single'])} site(s))...")
         h_cands = _execute_haptic_ligand_site(
-            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag
+            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag, failed_candidates=failed_candidates
         )
         candidates.extend(h_cands)
 
@@ -330,15 +335,24 @@ def build_chemisorption_structures(
     if sites.get("pairs"):
         if verbose:
             print(f"  -> Routing to Generic Dissociative Chemisorption on {len(sites['pairs'])} Pairs...")
-        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites["pairs"], rot_steps, tag=tag, verbose=chem_verbose)
+        d_cands = _execute_generic_dissociation(mgr, molecule, c_idx, ligands, sites["pairs"], rot_steps, tag=tag, verbose=chem_verbose, failed_candidates=failed_candidates)
         candidates.extend(d_cands)
 
     # Route 3: Protector exchange — reactive leaf of an inhibitor layer is replaced.
     if sites.get("exchange"):
         if verbose:
             print(f"  -> Routing to Protector Exchange Chemisorption on {len(sites['exchange'])} Sites...")
-        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag, verbose=chem_verbose)
+        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag, verbose=chem_verbose, failed_candidates=failed_candidates)
         candidates.extend(x_cands)
+
+    if failed_candidates and results_dir:
+        import os
+        from ase.io import write
+        os.makedirs(results_dir, exist_ok=True)
+        fail_path = os.path.join(results_dir, "chemisorption_failed.extxyz")
+        write(fail_path, failed_candidates)
+        if verbose:
+            print(f"  [Debug Mode] Saved {len(failed_candidates)} failed chemisorption poses to: {fail_path}")
 
     if verbose:
         print(f"--- Finished Chemisorption Builder. Total Generated: {len(candidates)} ---")
@@ -348,7 +362,7 @@ def build_chemisorption_structures(
             n_exchange      = len(sites.get("exchange", []))
             if n_unique_single == 0 and n_pairs == 0 and n_exchange == 0:
                 print(
-                    "  [Chemisorption] WARNING: 0 candidates — no active surface sites found "
+                    "  [Chemisorption] WARNING: 0 candidates - no active surface sites found "
                     "(dangling bonds, pairs, or exchange sites). Possible causes:\n"
                     "    - Surface is fully saturated (all expected bonds satisfied).\n"
                     "    - Coordination number thresholds in config may not match this surface termination.\n"
@@ -404,7 +418,7 @@ def _min_nonbonded_clearance(combined, n_slab, skip_pairs=None, skip_indices=Non
     return float(min_d)
 
 
-def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2):
+def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2, failed_candidates=None):
     """Internal subroutine to execute Generic Single Site Addition/Exchange.
 
     Tries all rot_steps angles per site and keeps the pose with the largest
@@ -413,6 +427,9 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
 
     candidates = []
     stats = {"overlap": 0, "total_tries": 0}
+
+    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    byproduct_placement = chem_cfg.get("byproduct_placement", "vacuum")
 
     for l_info in _unique_ligands(ligands):
 
@@ -451,24 +468,35 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                 )
 
                 p_b = mgr._form_byproduct(frag_b, binding_idx_b[0], -l_info["bond_vec"])
-                z_clearance = np.max(mgr.slab.positions[:, 2]) + 4.0
-                p_b.translate([si_pos[0], si_pos[1], z_clearance] - p_b.positions[0])
-                p_b.center(vacuum=5.0)
+                if byproduct_placement == "surface":
+                    sub_mask = (mgr.slab.get_tags() < 2) | (mgr.slab.get_tags() == 4)
+                    z_ref = mgr.slab.positions[sub_mask, 2].max() if np.any(sub_mask) else np.max(mgr.slab.positions[:, 2])
+                    z_clearance = z_ref + 2.5
+                    rad = np.radians(angle)
+                    xy_offset = np.array([4.0 * np.cos(rad), 4.0 * np.sin(rad), 0.0])
+                    p_b.translate([si_pos[0], si_pos[1], z_clearance] + xy_offset - p_b.positions[0])
+                else:
+                    z_clearance = np.max(mgr.slab.positions[:, 2]) + 4.0
+                    p_b.translate([si_pos[0], si_pos[1], z_clearance] - p_b.positions[0])
 
                 combined = mgr.slab.copy()
                 for a in p_a:
                     a.tag = tag
                 combined += p_a
+                
+                for a in p_b:
+                    a.tag = tag
+                combined += p_b
 
-                skip_indices = [s["index"]] + [len(mgr.slab) + i for i in range(len(p_a))]
+                skip_indices = [s["index"]] + [len(mgr.slab) + i for i in range(len(p_a) + len(p_b))]
 
-                # Build explicit skip_pairs: new bond (surface site → frag_a center)
-                # + all intra-fragment pairs.  check_internal=False avoids the
-                # global internal check that would flag TiCl3 Ti–Cl bonds as overlaps.
                 new_start = len(mgr.slab)
                 frag_a_indices_local = list(range(new_start, new_start + len(p_a)))
+                frag_b_indices_local = list(range(new_start + len(p_a), len(combined)))
+                
                 skip_pairs_local = [(s["index"], new_start + binding_idx_a)]
                 skip_pairs_local += list(combinations(frag_a_indices_local, 2))
+                skip_pairs_local += list(combinations(frag_b_indices_local, 2))
 
                 if not mgr.check_overlap(combined, skip_pairs=skip_pairs_local,
                                          verbose=False, check_internal=False):
@@ -494,6 +522,17 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                         best_pose = combined
                 else:
                     stats["overlap"] += 1
+                    if failed_candidates is not None:
+                        combined_fail = combined.copy()
+                        comp_a = "".join(frag_a.symbols)
+                        comp_b = "".join(p_b.symbols)
+                        if comp_b == "HH":
+                            comp_b = "H2"
+                        combined_fail.info["mechanism"] = (
+                            f"Single-Site Chemisorption FAIL (Overlap): {comp_a} on {s['index']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
+                        )
+                        combined_fail.info["failed_stage"] = "overlap_clash"
+                        failed_candidates.append(combined_fail)
 
             if best_pose:
                 candidates.append(best_pose)
@@ -503,7 +542,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
         _ov    = stats["overlap"]
         if _tried == 0:
             print(
-                f"  [SingleSite] WARNING: 0 candidates — no site/ligand combinations to try "
+                f"  [SingleSite] WARNING: 0 candidates - no site/ligand combinations to try "
                 f"({len(sites)} site(s), {len(list(_unique_ligands(ligands)))} unique ligand(s))."
             )
         else:
@@ -522,7 +561,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     return candidates
 
 
-def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2):
+def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2, failed_candidates=None):
     """Route 4: Intact-molecule haptic adsorption.
 
     The WHOLE molecule is placed with the haptic ligand face (eta-n) toward a surface
@@ -613,6 +652,15 @@ def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps,
                         best_pose = combined
                 else:
                     stats["overlap"] += 1
+                    if failed_candidates is not None:
+                        combined_fail = combined.copy()
+                        combined_fail.info["mechanism"] = (
+                            f"Haptic-Ligand Adsorption FAIL (Overlap): {l_info['formula']}"
+                            f"(eta{l_info['hapticity']}) on site {s['index']}, "
+                            f"rot={angle:.1f}"
+                        )
+                        combined_fail.info["failed_stage"] = "overlap_clash"
+                        failed_candidates.append(combined_fail)
 
             if best_pose:
                 candidates.append(best_pose)
@@ -638,7 +686,7 @@ def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps,
     return candidates
 
 
-def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps, tag=2, verbose=False):
+def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_steps, tag=2, verbose=False, failed_candidates=None):
     """Internal subroutine to execute Generic Dissociative Chemisorption on pairs of dangling bonds.
 
     Algorithmic improvements vs naive first-valid-angle approach:
@@ -738,6 +786,15 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                             best_pose = combined
                     else:
                         stats["overlap"] += 1
+                        if failed_candidates is not None:
+                            combined_fail = combined.copy()
+                            formula_a = frag_a.get_chemical_formula()
+                            formula_b = frag_b.get_chemical_formula()
+                            combined_fail.info["mechanism"] = (
+                                f"Chemisorption Dissociation FAIL (Overlap): {formula_a}+{formula_b} on pair {active_1['index']}-{active_2['index']}, rot={angle:.1f}"
+                            )
+                            combined_fail.info["failed_stage"] = "overlap_clash"
+                            failed_candidates.append(combined_fail)
 
             if best_pose:
                 candidates.append(best_pose)
@@ -747,7 +804,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
     if not candidates:
         if _tried == 0:
             print(
-                f"  [Dissociation] WARNING: 0 candidates — no site pair/ligand combinations to try "
+                f"  [Dissociation] WARNING: 0 candidates - no site pair/ligand combinations to try "
                 f"({len(pairs)} pair(s), {len(list(_unique_ligands(ligands)))} unique ligand(s))."
             )
         else:
@@ -768,7 +825,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
     return candidates
 
 
-def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3, verbose=False):
+def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3, verbose=False, failed_candidates=None):
     """Internal subroutine to execute Ligand Exchange with Protector leaves.
 
     Tries all rot_steps angles and keeps the pose with the largest minimum
@@ -777,6 +834,9 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
     """
     candidates = []
     stats = {"overlap": 0, "total_tries": 0}
+    
+    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    byproduct_placement = chem_cfg.get("byproduct_placement", "vacuum")
 
     for l_info in _unique_ligands(ligands):
         indices_b = l_info["indices"]
@@ -819,7 +879,6 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                     + (l_info["bond_vec"] / np.linalg.norm(l_info["bond_vec"])) * _bond_length_to_h(s["sym"])
                 )
                 byproduct += Atoms(s["sym"], positions=[bp_h_pos])
-                byproduct.center(vacuum=5.0)
 
                 combined = mgr.slab.copy()
                 del combined[s["index"]]  # remove the exchanged leaf atom
@@ -827,6 +886,22 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                 for a in p_a:
                     a.tag = tag
                 combined += p_a
+                
+                # Position byproduct based on configuration
+                if byproduct_placement == "surface":
+                    sub_mask = (combined.get_tags() < 2) | (combined.get_tags() == 4)
+                    z_ref = combined.positions[sub_mask, 2].max() if np.any(sub_mask) else np.max(combined.positions[:, 2])
+                    z_clearance = z_ref + 2.5
+                    rad = np.radians(angle)
+                    xy_offset = np.array([4.0 * np.cos(rad), 4.0 * np.sin(rad), 0.0])
+                    byproduct.translate([backbone_pos[0], backbone_pos[1], z_clearance] + xy_offset - byproduct.positions[0])
+                else:
+                    z_clearance = np.max(combined.positions[:, 2]) + 4.0
+                    byproduct.translate([backbone_pos[0], backbone_pos[1], z_clearance] - byproduct.positions[0])
+                    
+                for a in byproduct:
+                    a.tag = tag
+                combined += byproduct
 
                 # After leaf deletion, backbone index may shift by -1
                 new_backbone_idx = s["backbone_idx"]
@@ -839,9 +914,15 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                 skip_pairs = [(new_backbone_idx, n_slab_trimmed + binding_idx_a)]
                 
                 frag_a_indices = list(range(n_slab_trimmed, n_slab_trimmed + len(frag_a)))
+                frag_b_indices = list(range(n_slab_trimmed + len(frag_a), len(combined)))
+                
                 for i in range(len(frag_a_indices)):
                     for j in range(i + 1, len(frag_a_indices)):
                         skip_pairs.append((frag_a_indices[i], frag_a_indices[j]))
+                        
+                for i in range(len(frag_b_indices)):
+                    for j in range(i + 1, len(frag_b_indices)):
+                        skip_pairs.append((frag_b_indices[i], frag_b_indices[j]))
 
                 if not mgr.check_overlap(combined, skip_pairs=skip_pairs, verbose=verbose, check_internal=False):
                     clearance = _min_nonbonded_clearance(combined, n_slab_trimmed, skip_pairs=skip_pairs)
@@ -864,6 +945,15 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
                         best_pose = combined
                 else:
                     stats["overlap"] += 1
+                    if failed_candidates is not None:
+                        combined_fail = combined.copy()
+                        comp_a = "".join(frag_a.symbols)
+                        comp_b = "".join(byproduct.symbols)
+                        combined_fail.info["mechanism"] = (
+                            f"Protector Exchange FAIL (Overlap): {comp_a} on backbone {s['backbone_idx']}, byproduct={comp_b}, tag={tag}, rot={angle:.1f}"
+                        )
+                        combined_fail.info["failed_stage"] = "overlap_clash"
+                        failed_candidates.append(combined_fail)
 
             if best_pose:
                 candidates.append(best_pose)

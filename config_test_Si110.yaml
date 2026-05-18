@@ -1,0 +1,65 @@
+engine:
+  potential:
+    backend: mace
+    d3: false
+    device: cpu
+    dtype: float64
+    model: medium
+paths:
+  inhibitor: c:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\structures/inhibitor_relaxed.vasp
+  input_structure: null
+  output_prefix: results_test_Si110
+  precursor: c:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\structures/AllylCpNi_relaxed.vasp
+  substrate_bulk: c:\Users\user\Downloads\dev_w_antigravity\auto_surface_reaction\autoflow_SRXN\structures/Si_relaxed.vasp
+reaction_search:
+  candidate_filter:
+    overlap_scale: 0.65
+  mechanisms:
+    inhibitor:
+      branching_limit: 1
+      center: O
+      chemisorption:
+        enabled: false
+      enabled: true
+      physisorption:
+        enabled: true
+        height_mode: clearance
+        placement_height: 2.5
+    precursor:
+      center: Ni
+      chemisorption:
+        byproduct_placement: surface
+        coordination_analysis:
+          bond_slack: 0.2
+          max_neighbor_dist: 4.0
+          z_surface_threshold: 3.5
+        enabled: true
+        proximity_filter:
+          cutoff: 7.0
+          enabled: false
+          visualize: true
+        rot_steps: 8
+      physisorption:
+        enabled: false
+      ts_search:
+        enabled: false
+  symprec: 0.2
+relaxation:
+  fmax: 0.05
+  frozen_z_ang: 5.5
+  steps: 100
+surface_prep:
+  slab_generation:
+    enabled: true
+    miller:
+    - 1
+    - 1
+    - 0
+    thickness_ang: 12.0
+    vacuum_ang: 15.0
+    target_area_ang2: 250.0
+workflow:
+  candidate_relax: false
+  md_equilibrate: false
+  post_md_relax: false
+  slab_relax: true

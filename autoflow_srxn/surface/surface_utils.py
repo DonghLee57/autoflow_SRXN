@@ -199,14 +199,140 @@ def passivate_surface_coverage_general(atoms, coverage, valence_map, vector_gene
     return standardize_vasp_atoms(current_atoms, z_min_offset=0.5)
 
 def identify_protectors(atoms, config, verbose=False):
-    """Infers which atoms belong to the protector layer vs the base substrate."""
+    """Infers which atoms belong to the protector (inhibitor) layer vs the base substrate.
+    
+    Physics/Algorithm:
+        1. **Explicit Tags & Species (Priority)**:
+           Checks if `atoms.get_tags()` explicitly marks atoms (tag >= 1) or if the configuration
+           defines specific protector elements.
+           
+        2. **Graph Connectivity (Physisorption / vdW separation)**: 
+           Builds a topological neighbor graph using covalent radii (1.3x margin). 
+           Extracts connected components.
+           - The component containing the lowest Z-coordinate is the primary substrate.
+           - Any component that spans >80% of the periodic cell (X/Y) or contains >20% of the total atoms
+             is also classified as substrate (handles vdW materials like MoS2 or Graphite).
+             
+        3. **Z-Density Profile & Topological Island Detection (Chemisorption separation)**:
+           If an inhibitor is chemisorbed, it becomes part of the substrate's connected component.
+           To sever these chemical bonds and isolate the inhibitor:
+           - Calculates the 1D atomic density profile along the Z-axis (1.0 A bins).
+           - Identifies the "Surface Plane" as the highest Z-bin retaining >25% of the maximum bulk layer density.
+           - Atoms protruding above this plane (Surface Plane + 0.5 A) are evaluated as candidates.
+           - If these protruding atoms form localized clusters (spanning <80% of the X/Y cell), they are 
+             confirmed as chemisorbed inhibitors. If they form a continuous 2D sheet, they are kept as substrate.
+             
+    Args:
+        atoms (Atoms): The surface structure potentially containing an adsorbed inhibitor.
+        config (dict): The global configuration dictionary.
+        verbose (bool): Whether to print debug information.
+        
+    Returns:
+        tuple[np.ndarray, np.ndarray]: (substrate_indices, protector_indices)
+    """
+    import numpy as np
     tags = atoms.get_tags()
-    species = config.get("protector", {}).get("species", [])
-    sub_idx, prot_idx = [], []
-    for i, atom in enumerate(atoms):
-        if atom.symbol in species or tags[i] >= 2: prot_idx.append(i)
-        else: sub_idx.append(i)
-    return np.array(sub_idx), np.array(prot_idx)
+    explicit_species = config.get("protector", {}).get("species", [])
+    
+    # 1. Explicit Tags or Species
+    has_valid_tags = np.any(tags >= 1)
+    if has_valid_tags or explicit_species:
+        sub_idx, prot_idx = [], []
+        for i, atom in enumerate(atoms):
+            if atom.symbol in explicit_species or tags[i] >= 1:
+                prot_idx.append(i)
+            else:
+                sub_idx.append(i)
+        if verbose and not has_valid_tags:
+            print(f"  [Protector] Identified {len(prot_idx)} protector atoms based on explicit species: {explicit_species}")
+        return np.array(sub_idx), np.array(prot_idx)
+
+    # 2. Graph Connectivity (Physisorption Separation)
+    from ase.neighborlist import natural_cutoffs, neighbor_list
+    import scipy.sparse as sp
+
+    cutoffs = natural_cutoffs(atoms, mult=1.3)
+    i_idx, j_idx = neighbor_list('ij', atoms, cutoffs)
+    n_atoms = len(atoms)
+    
+    sub_mask = np.zeros(n_atoms, dtype=bool)
+    
+    if len(i_idx) > 0:
+        adj = sp.coo_matrix((np.ones(len(i_idx)), (i_idx, j_idx)), shape=(n_atoms, n_atoms))
+        _, labels = sp.csgraph.connected_components(adj, directed=False)
+        
+        z_min_idx = np.argmin(atoms.positions[:, 2])
+        main_sub_label = labels[z_min_idx]
+        
+        cell_x = atoms.cell[0, 0] if atoms.cell[0, 0] > 0 else 10.0
+        cell_y = atoms.cell[1, 1] if atoms.cell[1, 1] > 0 else 10.0
+        
+        for lab in set(labels):
+            comp_indices = np.where(labels == lab)[0]
+            if lab == main_sub_label:
+                sub_mask[comp_indices] = True
+                continue
+                
+            pts = atoms.positions[comp_indices]
+            x_span = np.ptp(pts[:, 0]) if len(pts) > 1 else 0.0
+            y_span = np.ptp(pts[:, 1]) if len(pts) > 1 else 0.0
+            
+            # Substrate heuristics: spans cell or has many atoms
+            if (x_span > 0.8 * cell_x and y_span > 0.8 * cell_y) or (len(comp_indices) > 0.2 * n_atoms):
+                sub_mask[comp_indices] = True
+    else:
+        sub_mask[:] = True
+
+    # 3. Z-Density & Island Detection (Chemisorption Separation)
+    z_coords = atoms.positions[:, 2]
+    bins = np.arange(np.min(z_coords), np.max(z_coords) + 1.01, 1.0)
+    counts, bin_edges = np.histogram(z_coords, bins=bins)
+    
+    if len(counts) > 0:
+        max_density = np.max(counts)
+        dense_bins = np.where(counts >= 0.25 * max_density)[0]
+        
+        if len(dense_bins) > 0:
+            top_dense_bin = dense_bins[-1]
+            z_surf_top = bin_edges[top_dense_bin + 1]
+            z_cutoff = z_surf_top + 0.5
+            
+            # Find atoms in the substrate mask that are protruding above the surface
+            protruding_idx = np.where((z_coords > z_cutoff) & sub_mask)[0]
+            
+            if len(protruding_idx) > 0:
+                cand_atoms = atoms[protruding_idx]
+                cand_cutoffs = natural_cutoffs(cand_atoms, mult=1.3)
+                ci, cj = neighbor_list('ij', cand_atoms, cand_cutoffs)
+                
+                if len(ci) > 0:
+                    c_adj = sp.coo_matrix((np.ones(len(ci)), (ci, cj)), shape=(len(cand_atoms), len(cand_atoms)))
+                    _, c_labels = sp.csgraph.connected_components(c_adj, directed=False)
+                else:
+                    c_labels = np.arange(len(cand_atoms))
+                    
+                cell_x = atoms.cell[0, 0] if atoms.cell[0, 0] > 0 else 10.0
+                cell_y = atoms.cell[1, 1] if atoms.cell[1, 1] > 0 else 10.0
+                
+                for c_lab in set(c_labels):
+                    local_idx = np.where(c_labels == c_lab)[0]
+                    global_idx = protruding_idx[local_idx]
+                    
+                    pts = atoms.positions[global_idx]
+                    x_span = np.ptp(pts[:, 0]) if len(pts) > 1 else 0.0
+                    y_span = np.ptp(pts[:, 1]) if len(pts) > 1 else 0.0
+                    
+                    # If it's a localized island (molecule), remove it from substrate mask
+                    if x_span < 0.8 * cell_x and y_span < 0.8 * cell_y:
+                        sub_mask[global_idx] = False
+
+    sub_idx = np.where(sub_mask)[0]
+    prot_idx = np.where(~sub_mask)[0]
+    
+    if verbose:
+        print(f"  [Protector] Auto-detected {len(prot_idx)} protector atoms via combined Graph & Z-Density analysis.")
+        
+    return sub_idx, prot_idx
 
 class CavityDetector:
     def __init__(self, slab, substrate_indices, protector_indices, grid_res=0.2, verbose=False):

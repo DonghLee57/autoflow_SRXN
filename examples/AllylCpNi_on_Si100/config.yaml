@@ -1,0 +1,90 @@
+# =============================================================================
+# Practical Config: Inhibitor (Physi) + AllylCpNi (Chemi) on Si(100)
+# =============================================================================
+
+paths:
+  substrate_bulk: "../../structures/Si_relaxed.vasp"
+  precursor:      "../../structures/AllylCpNi_relaxed.vasp"
+  inhibitor:      "../../structures/inhibitor_relaxed.vasp"
+  include_no_inhibitor: true
+  output_prefix:  "results"
+  restart: true
+
+# =============================================================================
+# Pipeline Control — what to compute (all flags in one place)
+# =============================================================================
+workflow:
+  slab_relax:       true   # Geometry-optimize bare slab + inhibitor first
+  candidate_relax:  false  # Set to false to quickly screen geometric candidates
+  md_equilibrate:   false
+  post_md_relax:    false
+
+# =============================================================================
+# Relaxation parameters — shared by all relax/MD stages
+# =============================================================================
+relaxation:
+  fmax:         0.05    # Force convergence (eV/Å)
+  steps:        100     # Max optimizer steps
+  frozen_z_ang: 5.5     # Fix atoms below z_min + this height (Å)
+
+# =============================================================================
+# Surface Preparation
+# =============================================================================
+surface_prep:
+  slab_generation:
+    enabled:           true
+    miller:            [1, 0, 0]
+    thickness_ang:     12.0
+    vacuum_ang:        15.0
+    target_area_ang2:  250.0
+
+  passivation:
+    enabled: true
+    element: "H"
+    side:    "bottom"
+
+# =============================================================================
+# Reaction Search
+# =============================================================================
+reaction_search:
+  symprec: 0.2
+  mechanisms:
+    inhibitor:
+      enabled: true
+      center:  "O"
+      physisorption:
+        enabled:          true
+        placement_height: 2.5
+        height_mode:      "clearance"
+      chemisorption:
+        enabled: false
+      branching_limit: 1
+
+    precursor:
+      center: "Ni"
+      physisorption:
+        enabled:          false
+      chemisorption:
+        enabled:  true
+        byproduct_placement: "surface"  # Options: "vacuum" or "surface"
+        rot_steps: 8
+        coordination_analysis:
+          bond_slack: 0.2
+          max_neighbor_dist: 4.0
+          z_surface_threshold: 3.5
+        proximity_filter:
+          enabled:   false
+
+  candidate_filter:
+    overlap_scale: 0.65
+
+# =============================================================================
+# Simulation Engine
+# =============================================================================
+engine:
+  potential:
+    backend: "mace"
+    model:   "medium"
+    device:  "cpu"
+    dtype:   "float64"
+    d3:      false
