@@ -261,16 +261,25 @@ Supercell 생성 (`phase3/setup_supercells.py`, `P=[[1,1,0],[-1,1,0],[0,0,1]]`):
 - Chemi: `build_chemisorption_structures(center=Ni)` → rank1 -2.170 eV, dist=1.937 A (C-Si), cov=2
   - builder를 통한 chemi 탐색에서도 C-Si 결합 확인
 
-> ⚠️ **Cp 이탈(route 1b/2b) 구조 미발견 — 방법론적 한계**
+> ⚠️ **Cp 이탈(route 1b) 구조 미발견 — 원인 분석**
 >
-> AllylCpNi의 기하: 표면에서 가까운 순서 = allyl C (z~10.2) < Ni (z~11.7) < Cp C (z~13.7).  
-> `center="Ni"` 배치 시 allyl C가 항상 Ni와 표면 사이에 존재 → relax 시 allyl C-Si 공유결합 경로로 수렴.  
-> Cp 이탈 경로 `(η3-allyl)Ni-Si + Cp(ad)` 는 유한한 활성화 에너지를 가지는 해리 반응이므로,  
-> downhill FIRE relaxation만으로는 접근 불가 (장벽 너머 탐색 불가).
+> `build_chemisorption_structures`는 리간드를 순회하며 pre-dissociated 초기 구조를 생성한다 (단순 downhill relax가 아님).  
+> 그러나 AllylCpNi의 분자 기하가 두 가지 경로를 막는다:
 >
-> **포착된 구조:** allyl C-Si 결합 2개 (cov=2), Ni는 여전히 Cp(η5) + allyl(η3)과 결합 유지. **Cp는 이탈하지 않음.**  
-> **미포착 경로:** 1a (Cp-Ni-Si, allyl 이탈), 1b (allyl-Ni-Si, Cp 이탈), 2a/2b (완전 해리 흡착)  
-> → Verification Backlog의 Cp 이탈 경로 항목 참조.
+> **경로 A: Cp 이탈, frag_a = (allyl-Ni)**  
+> Ni를 Si 댄글링 본드에 놓으면 allyl C (기하학적으로 Ni보다 z가 낮음)가 Ni와 Si 사이에 끼임.  
+> → 8개 회전 각도 전부 external-overlap 체크에서 기각. 초기 구조 자체가 생성 불가.
+>
+> **경로 B: allyl 이탈, frag_a = (Cp-Ni)**  
+> Cp가 Ni보다 z가 높으므로 배치 시 표면과 충돌 없음 → overlap 통과 → **6개 후보 생성됨**.  
+> 그러나 FIRE relaxation 결과: Ni-Si 초기 위치에서 출발해도 인접 Si 댄글링 본드가 Cp ring의 C 원자를  
+> 당기면서 C-Si 우물로 수렴. Ni-Si보다 C-Si 결합이 더 깊은 에너지 basin.
+>
+> **결론:** builder가 리간드 분리를 시도했으나 (1) Cp-이탈 경로는 기하 충돌로 초기 구조 생성 실패,  
+> (2) allyl-이탈 경로는 Ni-Si 초기 구조에서 출발해도 C-Si basin으로 수렴.  
+> **포착된 구조:** allyl C-Si 결합 2개 (cov=2), Cp(η5)+allyl(η3) 리간드 모두 Ni에 유지.  
+> **미포착:** 완전 해리 흡착(route 2a/2b) — dissociative route에서 Si 댄글링 본드 pair 감지 여부 미확인.  
+> → Verification Backlog 참조.
 
 **SiO2_Si_term - AllylCpNi:**
 - Physi: rank1 -0.957 eV, dist=3.028 A (H-O), cov=0 [PHYSI]
@@ -445,7 +454,7 @@ S_NiPF3 = [E_ads(NiPF3, Si100) - E_ads(NiPF3, SiO2_Si)]
 | **Phase 4 competitive adsorption 계산 실행** | 高 | `python phase4/run_competitive_adsorption.py` | 스크립트 완성됨, 아직 미실행 |
 | **SiO2_O_term 결과 전체** | 高 | DFT (VASP/QE) 단일점 계산 또는 더 보수적인 ML potential | SevenNet-0가 O-terminated 표면에서 H-O 과결합 경향; terminal O 반응성 과대평가 의심 |
 | **AllylCpNi Si100 chemi 구조 시각화** | 中 | VESTA로 rank01-03 VASP 파일 확인 | allyl C-Si 결합 2개의 기하 (hapticity 변화 유무) 확인 필요 |
-| **AllylCpNi Cp 이탈 경로 (route 1b/2b)** | 中 | (a) pre-dissociated 구조로 직접 배치: Cp 제거 후 (η3-allyl)Ni를 Si100에 배치하고 relax; (b) Cp-Ni 거리 constrained scan; (c) NEB (allyl-C-Si 흡착구조 → Cp-free Ni-Si 흡착구조) | 현재 방법론(intact 분자 downhill relax)으로는 Cp 이탈 활성화 장벽 극복 불가. 해리 흡착 에너지가 -2.36 eV보다 낮을 경우 ALD 메커니즘에 직접 영향 |
+| **AllylCpNi Cp 이탈 경로 (route 1b)** | 中 | (1) builder의 dissociative route가 Si100 댄글링 본드 pair를 감지했는지 로그 확인 (`sites["pairs"]` 비어있으면 route 2 미실행); (2) allyl 분자를 사전에 제거한 (Cp-Ni) fragment를 다양한 위치·방향으로 배치하고 relaxation (Cp-이탈 기하 충돌 우회); (3) `(η3-allyl)Ni` fragment를 Cp 없이 Si100에 배치 — allyl C-down 방식으로 Ni-Si 탐색 | builder는 리간드 분리를 시도했으나: Cp-이탈 경로(frag_a=allylNi)는 allyl C의 기하 충돌로 전량 overlap 기각; allyl-이탈 경로(frag_a=CpNi) 6개가 생성됐으나 C-Si basin으로 수렴. 근본 원인은 AllylCpNi 기하 (allyl C가 Ni보다 표면에 가까움) + C-Si가 Ni-Si보다 에너지 우물이 깊음 |
 | **Ni(PF3)4 Si100에서 Ni-Si 결합 가능성** | 中 | PF3 하나를 사전 해리한 상태의 구조로 계산 | 현재 intact Ni(PF3)4로는 P 그룹이 입체 장애. 해리 경로는 TS 계산 필요 |
 | **AllylCpNi imaginary mode 잔류** | 低 | mode-following relaxation max_iter 증가 (>6) | eta-ring 회전/allyl sigmatropic은 soft mode이므로 구조 영향 미미 |
 | **Inhibitor SiO2_Si_term chemi cov=0 물리성** | 低 | Si-O vs Si-C 결합 에너지 비교 (문헌 DFT) | 현재 결과는 Si-C < Si-O 해석과 일치; 정량 검증 필요 |
