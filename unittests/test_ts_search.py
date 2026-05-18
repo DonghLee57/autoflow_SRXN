@@ -47,7 +47,7 @@ class TestTSSearch(unittest.TestCase):
         direction[1, 2] = 1.0
         direction[0, 2] = -1.0
         
-        ts_structure = art_searcher.find_saddle(h2, direction=direction, fmax=1.0, steps=5, displacement_ang=0.1)
+        ts_structure, _, _ = art_searcher.find_saddle(h2, direction=direction, fmax=1.0, steps=5, displacement_ang=0.1)
         self.assertIsInstance(ts_structure, Atoms)
 
     def test_workflow_integration(self):

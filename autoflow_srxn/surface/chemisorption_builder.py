@@ -121,9 +121,10 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
 
         if actual_coord < expected:
             from .surface_utils import generate_vsepr_vectors
+            num_missing = expected - actual_coord
             # Use the pre-filtered i_list/j_list/D_list for VSEPR to maintain compatibility
             # or regenerate if needed. Here we use the original neighbor_list data for VSEPR logic.
-            vecs = generate_vsepr_vectors(surface, idx, neighbor_data=(i_list, j_list, D_list))
+            vecs = generate_vsepr_vectors(surface, idx, neighbor_data=(i_list, j_list, D_list), num_missing=num_missing)
             for db_vec in vecs:
                 db_vec = db_vec / np.linalg.norm(db_vec)
                 hit = False
@@ -144,7 +145,6 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
                         "db_vector": db_vec,
                         "missing_bonds": expected - actual_coord,
                     })
-                    break
     
     if verbose:
         print(f"  [Reactivity Analysis] Identified {len(dangling_sites)} dangling sites and {len(exchange_sites)} exchange sites.")
