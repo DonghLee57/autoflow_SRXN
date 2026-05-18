@@ -390,9 +390,73 @@ def execute_discovery_workflow(config, logger, slab, gas_energy_map=None, slab_b
 
 def run_generic_adsorption_study(config_path="config.yaml"):
     """Top-level batch driver."""
-    config = load_config(config_path)
+    if isinstance(config_path, dict):
+        config = config_path
+    else:
+        config = load_config(config_path)
     paths = config["paths"]
     
+    # Check if directory scanning batch screening is requested
+    pre_dir = paths.get("precursors_dir")
+    inh_dir = paths.get("inhibitors_dir")
+    
+    if pre_dir or inh_dir:
+        # Resolve precursors
+        precursor_files = []
+        if pre_dir and os.path.exists(pre_dir) and os.path.isdir(pre_dir):
+            for f in sorted(os.listdir(pre_dir)):
+                if f.endswith((".vasp", ".xyz", ".extxyz")):
+                    precursor_files.append(os.path.abspath(os.path.join(pre_dir, f)))
+        elif paths.get("precursor"):
+            precursor_files.append(os.path.abspath(paths.get("precursor")))
+            
+        # Resolve inhibitors
+        inhibitor_files = []
+        if inh_dir and os.path.exists(inh_dir) and os.path.isdir(inh_dir):
+            for f in sorted(os.listdir(inh_dir)):
+                if f.endswith((".vasp", ".xyz", ".extxyz")):
+                    inhibitor_files.append(os.path.abspath(os.path.join(inh_dir, f)))
+        elif paths.get("inhibitor"):
+            inhibitor_files.append(os.path.abspath(paths.get("inhibitor")))
+            
+        # Include baseline 'no inhibitor' if requested
+        if paths.get("include_no_inhibitor", False) or not inhibitor_files:
+            if None not in inhibitor_files:
+                inhibitor_files.append(None)
+                
+        if not precursor_files:
+            raise ValueError(f"No precursor files found in precursors_dir: {pre_dir} and 'precursor' path is empty.")
+            
+        output_dir = paths.get("output_dir", "results")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        master_logger = setup_logger(log_path=os.path.join(output_dir, "batch_screening.log"), mode="w")
+        master_logger.info(f"Starting batch screening: {len(precursor_files)} precursors x {len(inhibitor_files)} inhibitors")
+        
+        for prec_path in precursor_files:
+            for inh_path in inhibitor_files:
+                pre_name = os.path.splitext(os.path.basename(prec_path))[0]
+                inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "None"
+                
+                pair_prefix = os.path.join(output_dir, f"{inh_name}_on_{pre_name}")
+                master_logger.info(f"Running pair: {inh_name} on {pre_name} -> {pair_prefix}")
+                
+                # Clone the config and update for this pair
+                pair_config = copy.deepcopy(config)
+                pair_config["paths"]["precursor"] = prec_path
+                pair_config["paths"]["inhibitor"] = inh_path
+                pair_config["paths"]["output_prefix"] = pair_prefix
+                
+                # Temporarily disable batch keys to avoid infinite recursion
+                pair_config["paths"]["precursors_dir"] = None
+                pair_config["paths"]["inhibitors_dir"] = None
+                
+                try:
+                    run_generic_adsorption_study(pair_config)
+                except Exception as e:
+                    master_logger.error(f"Failed running pair {inh_name} on {pre_name}: {e}", exc_info=True)
+        return
+
     global_prefix = paths.get("output_prefix", "discovery")
     os.makedirs(global_prefix, exist_ok=True)
     master_logger = setup_logger(log_path=os.path.join(global_prefix, "master_workflow.log"), mode="w")
