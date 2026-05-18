@@ -311,6 +311,19 @@ def build_chemisorption_structures(
         )
         candidates.extend(s_cands)
 
+    # Route 4: Haptic ligand adsorbs directly at surface — whole molecule intact,
+    # the eta-n ligand face (allyl/Cp) approaches the dangling bond while the metal
+    # centre remains coordinated above.  Only activated when haptic ligands exist.
+    if sites.get("unique_single") and any(l["hapticity"] > 1 for l in ligands):
+        if verbose:
+            n_hap = sum(1 for l in ligands if l["hapticity"] > 1)
+            print(f"  -> Routing to Haptic-Ligand Site Adsorption "
+                  f"({n_hap} haptic ligand(s), {len(sites['unique_single'])} site(s))...")
+        h_cands = _execute_haptic_ligand_site(
+            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag
+        )
+        candidates.extend(h_cands)
+
     # Route 2: Dissociative adsorption on active site pairs — both the main
     # fragment and the departing ligand bind to surface dangling-bond sites.
     if sites.get("pairs"):
@@ -344,12 +357,13 @@ def build_chemisorption_structures(
                 print(
                     f"  [Chemisorption] WARNING: 0 candidates despite active sites "
                     f"(unique_single={n_unique_single}, pairs={n_pairs}, exchange={n_exchange}).\n"
-                    f"  All poses were rejected — see per-route warnings above for details.\n"
+                    f"  All poses were rejected -- see per-route warnings above for details.\n"
                     f"  Common causes:\n"
                     f"    - Molecule too large for available surface geometry.\n"
                     f"    - Internal molecular bonds flagged as overlap "
-                    f"(check_internal=True bug — verify check_internal=False is used).\n"
-                    f"    - Placement bond length too short (fragment centre placed inside surface atom)."
+                    f"(check_internal=True bug -- verify check_internal=False is used).\n"
+                    f"    - Placement bond length too short (fragment centre placed inside surface atom).\n"
+                    f"    - Haptic route (Route 4): whole-molecule steric clash prevented all poses."
                 )
         print()
 
@@ -502,6 +516,122 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                 f"(check_internal=False).\n"
                 f"    If all rejections are external, the surface sites may be too crowded "
                 f"or the placement height too low."
+            )
+
+    return candidates
+
+
+def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2):
+    """Route 4: Intact-molecule haptic adsorption.
+
+    The WHOLE molecule is placed with the haptic ligand face (eta-n) toward a surface
+    dangling bond.  No bond is broken; the metal centre and remaining ligands stay above.
+
+    Geometry
+    --------
+    anchor   = centroid of haptic binding atoms (VBS)
+    align    = -haptic_normal  (haptic_normal points VBS->metal; negating keeps metal ABOVE)
+               _place_at_dangling_bond does f.rotate(align_vec, -db_vector):
+                 -haptic_normal -> -db  =>  haptic_normal -> +db  =>  metal stays above VBS
+    bond_len = mean(cov_r of haptic C atoms) + cov_r(surface atom)
+
+    Only ligands with hapticity >= 2 are processed.
+    """
+    candidates = []
+    stats = {"overlap": 0, "total_tries": 0}
+
+    haptic_ligands = [l for l in _unique_ligands(ligands) if l["hapticity"] > 1]
+    if not haptic_ligands:
+        return candidates
+
+    for l_info in haptic_ligands:
+        binding_idx   = l_info["binding_atoms"]    # atom indices in the whole molecule
+        haptic_normal = l_info["normal_vector"]     # points VBS -> metal
+
+        binding_syms  = [molecule.symbols[i] for i in binding_idx]
+        avg_cov_r_lig = np.mean([chem_kb.get_radius(s, "covalent") for s in binding_syms])
+
+        site_iter = (
+            _tqdm(sites, desc="[Chem] haptic sites", unit="site", leave=True, dynamic_ncols=True)
+            if _tqdm else sites
+        )
+        for s in site_iter:
+            si_pos     = s["pos"]
+            h_vec_norm = s["db_vector"]
+            bond_len   = avg_cov_r_lig + chem_kb.get_radius(mgr.slab.symbols[s["index"]], "covalent")
+
+            best_pose      = None
+            best_clearance = -np.inf
+
+            for angle in np.linspace(0, 360, rot_steps, endpoint=False):
+                stats["total_tries"] += 1
+
+                # Pass -haptic_normal: after _place_at_dangling_bond rotates align_vec -> -db,
+                # haptic_normal (VBS->metal) ends up aligned with +db (upward) => metal above.
+                placed = mgr._place_at_dangling_bond(
+                    molecule,
+                    binding_idx,
+                    l_info["bond_vec"],         # fallback; not used when haptic_normal is set
+                    si_pos,
+                    h_vec_norm,
+                    bond_len,
+                    rot_angle=angle,
+                    haptic_normal=-haptic_normal,
+                )
+
+                combined = mgr.slab.copy()
+                for a in placed:
+                    a.tag = tag
+                combined += placed
+
+                new_start  = len(mgr.slab)
+                mol_global = list(range(new_start, new_start + len(molecule)))
+
+                # Skip new haptic-C/surface bonds and all intra-molecule pairs
+                skip_pairs  = [(s["index"], new_start + bi) for bi in binding_idx]
+                skip_pairs += list(combinations(mol_global, 2))
+
+                if not mgr.check_overlap(combined, skip_pairs=skip_pairs,
+                                         verbose=False, check_internal=False):
+                    clearance = _min_nonbonded_clearance(
+                        combined, len(mgr.slab), skip_pairs=skip_pairs
+                    )
+                    if clearance > best_clearance:
+                        best_clearance = clearance
+                        combined.info["mechanism"] = (
+                            f"Haptic-Ligand Adsorption: {l_info['formula']}"
+                            f"(eta{l_info['hapticity']}) on site {s['index']}, "
+                            f"rot={angle:.1f}"
+                        )
+                        combined.info["reaction_type"] = "haptic_ligand_chemisorption"
+                        combined.info["index_mapping"] = {
+                            "haptic_ligand_indices": l_info["indices"],
+                            "binding_atoms":         binding_idx,
+                            "metal_idx":             c_idx,
+                        }
+                        best_pose = combined
+                else:
+                    stats["overlap"] += 1
+
+            if best_pose:
+                candidates.append(best_pose)
+
+    _tried = stats["total_tries"]
+    _ov    = stats["overlap"]
+    if not candidates:
+        n_hap = len(haptic_ligands)
+        n_sit = len(sites)
+        if _tried == 0:
+            print(
+                f"  [HapticSite] WARNING: 0 candidates -- no haptic-ligand/site combinations "
+                f"({n_sit} site(s), {n_hap} haptic ligand(s))."
+            )
+        else:
+            print(
+                f"  [HapticSite] WARNING: 0 candidates from {_tried} poses "
+                f"({n_sit} site(s), {n_hap} haptic ligand(s)).\n"
+                f"    Rejection: external overlap={_ov}, passed-but-no-pose={_tried - _ov}.\n"
+                f"    Common cause: molecule too bulky to land haptic face without steric clash."
             )
 
     return candidates

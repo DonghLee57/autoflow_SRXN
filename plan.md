@@ -454,7 +454,7 @@ S_NiPF3 = [E_ads(NiPF3, Si100) - E_ads(NiPF3, SiO2_Si)]
 | **Phase 4 competitive adsorption 계산 실행** | 高 | `python phase4/run_competitive_adsorption.py` | 스크립트 완성됨, 아직 미실행 |
 | **SiO2_O_term 결과 전체** | 高 | DFT (VASP/QE) 단일점 계산 또는 더 보수적인 ML potential | SevenNet-0가 O-terminated 표면에서 H-O 과결합 경향; terminal O 반응성 과대평가 의심 |
 | **AllylCpNi Si100 chemi 구조 시각화** | 中 | VESTA로 rank01-03 VASP 파일 확인 | allyl C-Si 결합 2개의 기하 (hapticity 변화 유무) 확인 필요 |
-| **AllylCpNi haptic ligand adsorption route (builder Route 4)** | 高 | `chemisorption_builder.py`에 haptic 리간드 경로 추가: anchor = haptic centroid (allyl centroid), align_vec = haptic_normal, bond_length = cov_r(C)+cov_r(Si). `_execute_haptic_ligand_site`로 구현; `center_target` 외에 `haptic_ligand_target` 파라미터 추가 | **Builder 아키텍처 공백**: 현재 Route 1-3은 모두 금속 중심(Ni)이 표면에 결합한다고 가정. allyl C-Si처럼 η-리간드 C가 직접 표면과 결합하는 경로 미지원. `_place_at_dangling_bond`의 내적=-1 정렬과 축회전은 이미 올바르게 구현되어 있으나, **앵커가 Ni가 아니라 haptic centroid여야 함**. `run_allylcpni_sio2_fix.py`의 수동 방식이 이 경로를 올바르게 구현함 |
+| **AllylCpNi haptic ligand adsorption route (builder Route 4)** | ✅ DONE | `_execute_haptic_ligand_site` 구현 완료 (`chemisorption_builder.py`) | anchor=haptic centroid, align_vec=-haptic_normal 정렬로 금속이 위에 유지되며 haptic C face가 dangling bond를 향하는 초기 구조 생성. Si100 AllylCpNi 재계산 권장 |
 | **Ni(PF3)4 Si100에서 Ni-Si 결합 가능성** | 中 | PF3 하나를 사전 해리한 상태의 구조로 계산 | 현재 intact Ni(PF3)4로는 P 그룹이 입체 장애. 해리 경로는 TS 계산 필요 |
 | **AllylCpNi imaginary mode 잔류** | 低 | mode-following relaxation max_iter 증가 (>6) | eta-ring 회전/allyl sigmatropic은 soft mode이므로 구조 영향 미미 |
 | **Inhibitor SiO2_Si_term chemi cov=0 물리성** | 低 | Si-O vs Si-C 결합 에너지 비교 (문헌 DFT) | 현재 결과는 Si-C < Si-O 해석과 일치; 정량 검증 필요 |
@@ -476,6 +476,25 @@ S_NiPF3 = [E_ads(NiPF3, Si100) - E_ads(NiPF3, SiO2_Si)]
 - `reconstruction_recipes.py`: Si-specific 함수들 + 향후 다른 시스템별 recipe 추가 공간
 - `auto_reconstruct_surface(miller=None)`: miller 파라미터로 Si(100) recipe 명시적 선택
 - Miller 미지정 또는 Si(100) 이외: random_noise → ML relax에 위임
+
+### Route 4: Haptic-Ligand Surface Adsorption 추가
+
+**배경:** Routes 1-3은 모두 금속 중심(Ni)이 surface dangling bond에 직접 결합하는 pre-dissociated 초기 구조를 생성한다. AllylCpNi의 실험적 C-Si 결합 경로(η3-allyl C → Si)는 분자 해리 없이 리간드 C가 직접 결합하는 Route 4에 해당하며, 기존 builder 아키텍처에서 미지원이었다.
+
+**구현 (`_execute_haptic_ligand_site`):**
+- Fragment: 분자 전체 (해리 없음)
+- Anchor: haptic 리간드의 VBS (binding atom centroid)
+- Align_vec: `-haptic_normal` (haptic_normal = VBS→metal 방향; 부호 반전으로 metal이 VBS 위에 유지)
+  - `_place_at_dangling_bond`의 `f.rotate(align_vec, -db_vector)`:
+    `-haptic_normal → -db` 로 회전하면 `haptic_normal → +db` (upward) → metal이 VBS 위에 위치 ✓
+- Bond_length: `mean(cov_r(haptic C atoms)) + cov_r(surface atom)`
+- Azimuthal sweep: `rot_steps` angles
+- Overlap skip: haptic-C/surface 본드 쌍 + 분자 내부 모든 쌍 (`combinations(mol_global, 2)`)
+- `reaction_type = "haptic_ligand_chemisorption"`, byproduct 없음
+
+**호출 위치:** `build_chemisorption_structures`의 Route 1 이후, Route 2 이전. `hapticity > 1` 리간드가 존재할 때만 활성화.
+
+**핵심 판단:** `_place_at_dangling_bond`의 내적=-1 정렬 로직과 azimuthal sweep은 이미 올바르게 구현돼 있었음. 핵심 변경은 (1) anchor를 Ni에서 haptic centroid로, (2) align_vec을 `-haptic_normal`로 변경한 것뿐.
 
 ---
 
@@ -501,3 +520,4 @@ S_NiPF3 = [E_ads(NiPF3, Si100) - E_ads(NiPF3, SiO2_Si)]
 | 3 | AllylCpNi SiO2 chemi 전부 cov=0 | Ni-down 배치 시 allyl C가 오히려 위로 올라감 → `ALLYL_C_IDX=15`로 reactive atom 변경 | closed |
 | 3 | Inhibitor Si100 chemi (supercell, site-map): ML 발산 | site-map이 댄글링 본드 위치 미포착 → 원자 겹침. Phase 2 builder 결과(-1.80 eV) 유효 | **open** |
 | 3 | SiO2_O_term: 전 분자에서 H-O covalent 결합 형성 | ML potential의 terminal O 과반응 경향. 결과 신뢰 불가 | **open (DFT 필요)** |
+| 4 | AllylCpNi C-Si 결합이 builder chemi에서 포착 안 됨 | `_execute_haptic_ligand_site` (Route 4) 구현: haptic C face → surface 초기 구조 생성 가능 | **resolved** |
