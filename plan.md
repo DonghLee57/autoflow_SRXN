@@ -261,6 +261,17 @@ Supercell 생성 (`phase3/setup_supercells.py`, `P=[[1,1,0],[-1,1,0],[0,0,1]]`):
 - Chemi: `build_chemisorption_structures(center=Ni)` → rank1 -2.170 eV, dist=1.937 A (C-Si), cov=2
   - builder를 통한 chemi 탐색에서도 C-Si 결합 확인
 
+> ⚠️ **Cp 이탈(route 1b/2b) 구조 미발견 — 방법론적 한계**
+>
+> AllylCpNi의 기하: 표면에서 가까운 순서 = allyl C (z~10.2) < Ni (z~11.7) < Cp C (z~13.7).  
+> `center="Ni"` 배치 시 allyl C가 항상 Ni와 표면 사이에 존재 → relax 시 allyl C-Si 공유결합 경로로 수렴.  
+> Cp 이탈 경로 `(η3-allyl)Ni-Si + Cp(ad)` 는 유한한 활성화 에너지를 가지는 해리 반응이므로,  
+> downhill FIRE relaxation만으로는 접근 불가 (장벽 너머 탐색 불가).
+>
+> **포착된 구조:** allyl C-Si 결합 2개 (cov=2), Ni는 여전히 Cp(η5) + allyl(η3)과 결합 유지. **Cp는 이탈하지 않음.**  
+> **미포착 경로:** 1a (Cp-Ni-Si, allyl 이탈), 1b (allyl-Ni-Si, Cp 이탈), 2a/2b (완전 해리 흡착)  
+> → Verification Backlog의 Cp 이탈 경로 항목 참조.
+
 **SiO2_Si_term - AllylCpNi:**
 - Physi: rank1 -0.957 eV, dist=3.028 A (H-O), cov=0 [PHYSI]
 - Chemi (Ni-down, site-map): rank1 -0.934 eV, dist=2.864 A (H-Si), cov=0 [PHYSI]
@@ -434,6 +445,7 @@ S_NiPF3 = [E_ads(NiPF3, Si100) - E_ads(NiPF3, SiO2_Si)]
 | **Phase 4 competitive adsorption 계산 실행** | 高 | `python phase4/run_competitive_adsorption.py` | 스크립트 완성됨, 아직 미실행 |
 | **SiO2_O_term 결과 전체** | 高 | DFT (VASP/QE) 단일점 계산 또는 더 보수적인 ML potential | SevenNet-0가 O-terminated 표면에서 H-O 과결합 경향; terminal O 반응성 과대평가 의심 |
 | **AllylCpNi Si100 chemi 구조 시각화** | 中 | VESTA로 rank01-03 VASP 파일 확인 | allyl C-Si 결합 2개의 기하 (hapticity 변화 유무) 확인 필요 |
+| **AllylCpNi Cp 이탈 경로 (route 1b/2b)** | 中 | (a) pre-dissociated 구조로 직접 배치: Cp 제거 후 (η3-allyl)Ni를 Si100에 배치하고 relax; (b) Cp-Ni 거리 constrained scan; (c) NEB (allyl-C-Si 흡착구조 → Cp-free Ni-Si 흡착구조) | 현재 방법론(intact 분자 downhill relax)으로는 Cp 이탈 활성화 장벽 극복 불가. 해리 흡착 에너지가 -2.36 eV보다 낮을 경우 ALD 메커니즘에 직접 영향 |
 | **Ni(PF3)4 Si100에서 Ni-Si 결합 가능성** | 中 | PF3 하나를 사전 해리한 상태의 구조로 계산 | 현재 intact Ni(PF3)4로는 P 그룹이 입체 장애. 해리 경로는 TS 계산 필요 |
 | **AllylCpNi imaginary mode 잔류** | 低 | mode-following relaxation max_iter 증가 (>6) | eta-ring 회전/allyl sigmatropic은 soft mode이므로 구조 영향 미미 |
 | **Inhibitor SiO2_Si_term chemi cov=0 물리성** | 低 | Si-O vs Si-C 결합 에너지 비교 (문헌 DFT) | 현재 결과는 Si-C < Si-O 해석과 일치; 정량 검증 필요 |
