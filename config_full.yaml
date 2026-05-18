@@ -26,28 +26,24 @@ paths:
   substrate_bulk:  "structures/SiO2_mp-546794.vasp"  # Bulk crystal (VASP).
   input_structure: null                              # Pre-built slab (skips generation).
 
-  # ── Batch Discovery & Screening ──────────────────────────────────────────
+  # ── Precursor & Inhibitor (Supports Single Files & Directories) ───────────
   # AutoFlow-SRXN supports automated large-scale screening by scanning 
   # directories for molecular structures.
   #
-  # 1. Directory Scanning: If precursors_dir/inhibitors_dir are set, all 
-  #    .vasp, .xyz, and .extxyz files within them are automatically detected.
-  # 2. Cross-Product Pairing: The tool performs discovery for ALL possible 
-  #    combinations (Precursor X Inhibitor). e.g., 2 precursors and 3 
-  #    inhibitors will result in 6 independent workflow runs.
+  # 1. Unified Interface: Set 'precursor' and 'inhibitor' paths.
+  #    - If a path points to a file, it runs a single target calculation.
+  #    - If a path points to a directory, it automatically scans all .vasp, 
+  #      .xyz, and .extxyz files within it for batch screening.
+  # 2. Cross-Product Pairing: If one or both are directories, the tool 
+  #    performs discovery for ALL possible combinations (Precursor X Inhibitor).
   # 3. Directory Organization: Each pair gets its own output folder named 
   #    '{inhibitor}_on_{precursor}' inside the global output directory.
   # 4. Baseline Comparison: Set 'include_no_inhibitor: true' to automatically 
   #    include a 'Pure Surface' (no inhibitor) case for each precursor.
 
-  precursors_dir:  "inputs/precursors"  # Path to dir for automated scanning.
-  inhibitors_dir:  "inputs/inhibitors"  # Path to dir for automated scanning.
-  include_no_inhibitor: true            # Include 'None_on_Precursor' baseline.
-
-  # ── Individual File Options (Fallback/Legacy) ─────────────────────────────
-  # Used if directory scanning is not active or for single-target runs.
-  precursor:       "structures/DIPAS.vasp"
-  inhibitor:       null
+  precursor:       "structures/DIPAS.vasp"   # Single file OR directory of precursors.
+  inhibitor:       null                      # Single file, directory of inhibitors, or null.
+  include_no_inhibitor: true                 # Include 'None_on_Precursor' baseline.
 
   # ── Output Management ─────────────────────────────────────────────────────
   output_dir:      "results"            # Base folder for batch results.

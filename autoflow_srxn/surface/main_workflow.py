@@ -396,10 +396,6 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         config = load_config(config_path)
     paths = config["paths"]
     
-    # Check if directory scanning batch screening is requested
-    pre_dir = paths.get("precursors_dir")
-    inh_dir = paths.get("inhibitors_dir")
-    
     pre_path_raw = paths.get("precursor")
     inh_path_raw = paths.get("inhibitor")
     
@@ -407,24 +403,22 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     is_pre_dir = pre_path_raw and os.path.exists(pre_path_raw) and os.path.isdir(pre_path_raw)
     is_inh_dir = inh_path_raw and os.path.exists(inh_path_raw) and os.path.isdir(inh_path_raw)
     
-    if pre_dir or inh_dir or is_pre_dir or is_inh_dir:
+    if is_pre_dir or is_inh_dir:
         # Resolve precursors
         precursor_files = []
-        target_pre_dir = pre_dir or (pre_path_raw if is_pre_dir else None)
-        if target_pre_dir and os.path.exists(target_pre_dir) and os.path.isdir(target_pre_dir):
-            for f in sorted(os.listdir(target_pre_dir)):
+        if is_pre_dir:
+            for f in sorted(os.listdir(pre_path_raw)):
                 if f.endswith((".vasp", ".xyz", ".extxyz")):
-                    precursor_files.append(os.path.abspath(os.path.join(target_pre_dir, f)))
+                    precursor_files.append(os.path.abspath(os.path.join(pre_path_raw, f)))
         elif pre_path_raw:
             precursor_files.append(os.path.abspath(pre_path_raw))
             
         # Resolve inhibitors
         inhibitor_files = []
-        target_inh_dir = inh_dir or (inh_path_raw if is_inh_dir else None)
-        if target_inh_dir and os.path.exists(target_inh_dir) and os.path.isdir(target_inh_dir):
-            for f in sorted(os.listdir(target_inh_dir)):
+        if is_inh_dir:
+            for f in sorted(os.listdir(inh_path_raw)):
                 if f.endswith((".vasp", ".xyz", ".extxyz")):
-                    inhibitor_files.append(os.path.abspath(os.path.join(target_inh_dir, f)))
+                    inhibitor_files.append(os.path.abspath(os.path.join(inh_path_raw, f)))
         elif inh_path_raw:
             inhibitor_files.append(os.path.abspath(inh_path_raw))
             
@@ -434,7 +428,7 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                 inhibitor_files.append(None)
                 
         if not precursor_files:
-            raise ValueError(f"No precursor files found in precursors_dir: {pre_dir} and 'precursor' path is empty.")
+            raise ValueError(f"No precursor files found in path: {pre_path_raw}")
             
         output_dir = paths.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
@@ -455,10 +449,6 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                 pair_config["paths"]["precursor"] = prec_path
                 pair_config["paths"]["inhibitor"] = inh_path
                 pair_config["paths"]["output_prefix"] = pair_prefix
-                
-                # Temporarily disable batch keys to avoid infinite recursion
-                pair_config["paths"]["precursors_dir"] = None
-                pair_config["paths"]["inhibitors_dir"] = None
                 
                 try:
                     run_generic_adsorption_study(pair_config)

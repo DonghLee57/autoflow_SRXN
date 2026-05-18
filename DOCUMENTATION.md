@@ -18,10 +18,8 @@ Defines where to find input structures and where to manage results.
 
 | Parameter | Description |
 | :--- | :--- |
-| `precursor` | Path to a single precursor structure file (.vasp, .xyz). |
-| `precursors_dir` | Directory containing multiple precursor files for batch screening. |
-| `inhibitor` | Path to a single inhibitor structure file. |
-| `inhibitors_dir` | Directory containing multiple inhibitor files for batch screening. |
+| `precursor` | Path to a single precursor structure file (.vasp, .xyz) OR a directory containing multiple precursor files for batch screening. |
+| `inhibitor` | Path to a single inhibitor structure file OR a directory containing multiple inhibitor files for batch screening (or `null`). |
 | `substrate_bulk` | Path to the bulk crystalline structure (used if `slab_generation` is enabled). |
 | `input_structure` | Path to a pre-generated slab file. |
 | `output_prefix` | Base directory name for batch output folders (default: `results`). |
