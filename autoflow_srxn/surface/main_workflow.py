@@ -400,24 +400,33 @@ def run_generic_adsorption_study(config_path="config.yaml"):
     pre_dir = paths.get("precursors_dir")
     inh_dir = paths.get("inhibitors_dir")
     
-    if pre_dir or inh_dir:
+    pre_path_raw = paths.get("precursor")
+    inh_path_raw = paths.get("inhibitor")
+    
+    # Auto-detect if singular precursor/inhibitor points to a directory
+    is_pre_dir = pre_path_raw and os.path.exists(pre_path_raw) and os.path.isdir(pre_path_raw)
+    is_inh_dir = inh_path_raw and os.path.exists(inh_path_raw) and os.path.isdir(inh_path_raw)
+    
+    if pre_dir or inh_dir or is_pre_dir or is_inh_dir:
         # Resolve precursors
         precursor_files = []
-        if pre_dir and os.path.exists(pre_dir) and os.path.isdir(pre_dir):
-            for f in sorted(os.listdir(pre_dir)):
+        target_pre_dir = pre_dir or (pre_path_raw if is_pre_dir else None)
+        if target_pre_dir and os.path.exists(target_pre_dir) and os.path.isdir(target_pre_dir):
+            for f in sorted(os.listdir(target_pre_dir)):
                 if f.endswith((".vasp", ".xyz", ".extxyz")):
-                    precursor_files.append(os.path.abspath(os.path.join(pre_dir, f)))
-        elif paths.get("precursor"):
-            precursor_files.append(os.path.abspath(paths.get("precursor")))
+                    precursor_files.append(os.path.abspath(os.path.join(target_pre_dir, f)))
+        elif pre_path_raw:
+            precursor_files.append(os.path.abspath(pre_path_raw))
             
         # Resolve inhibitors
         inhibitor_files = []
-        if inh_dir and os.path.exists(inh_dir) and os.path.isdir(inh_dir):
-            for f in sorted(os.listdir(inh_dir)):
+        target_inh_dir = inh_dir or (inh_path_raw if is_inh_dir else None)
+        if target_inh_dir and os.path.exists(target_inh_dir) and os.path.isdir(target_inh_dir):
+            for f in sorted(os.listdir(target_inh_dir)):
                 if f.endswith((".vasp", ".xyz", ".extxyz")):
-                    inhibitor_files.append(os.path.abspath(os.path.join(inh_dir, f)))
-        elif paths.get("inhibitor"):
-            inhibitor_files.append(os.path.abspath(paths.get("inhibitor")))
+                    inhibitor_files.append(os.path.abspath(os.path.join(target_inh_dir, f)))
+        elif inh_path_raw:
+            inhibitor_files.append(os.path.abspath(inh_path_raw))
             
         # Include baseline 'no inhibitor' if requested
         if paths.get("include_no_inhibitor", False) or not inhibitor_files:
