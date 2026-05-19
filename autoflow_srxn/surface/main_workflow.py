@@ -91,6 +91,8 @@ def prepare_slab_stage(config, logger):
                 target_area=sub_gen_cfg.get("target_area_ang2"),
                 supercell_matrix=sub_gen_cfg.get("supercell_matrix"),
                 bulk_shift=sub_gen_cfg.get("bulk_shift", 0.0),
+                top_termination=sub_gen_cfg.get("top_termination"),
+                bottom_termination=sub_gen_cfg.get("bottom_termination"),
                 verbose=True,
             )
         else:
