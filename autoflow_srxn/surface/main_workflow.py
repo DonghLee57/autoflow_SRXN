@@ -74,6 +74,45 @@ def _resolve_equil_params(config):
 # Workflow Stages (Modularized)
 # =============================================================================
 
+def _resolve_valence_map(sp_cfg: dict, atoms, logger) -> dict:
+    """Build the element→valence mapping used for dangling-bond detection.
+
+    Priority:
+      1. Explicit ``surface_prep.surface_analysis.ideal_coordination`` in config.
+      2. ``chem_data.json`` defaults for each element present in *atoms*
+         (Si=4, O=2, H=1, N=3, C=4, Ti=4, …).
+      3. Elements absent from chem_data (returns 0) are silently excluded.
+
+    Users only need to set ``ideal_coordination`` for non-standard elements
+    (e.g. Hf, Zr, Ga) or to override the default coordination number.
+    """
+    from ..utils.knowledge_engine import chem_kb
+
+    explicit = sp_cfg.get("surface_analysis", {}).get("ideal_coordination", {})
+    if explicit:
+        return dict(explicit)
+
+    # Auto-detect from the elements present in the slab
+    auto = {}
+    for sym in sorted(set(atoms.get_chemical_symbols())):
+        coord = chem_kb.get_ideal_coordination(sym)   # chem_data fallback, no config
+        if coord > 0:
+            auto[sym] = coord
+    if auto:
+        logger.info(
+            f"  [surface_analysis] ideal_coordination not specified — "
+            f"using chem_data defaults: {auto}"
+        )
+    else:
+        logger.warning(
+            "  [surface_analysis] ideal_coordination not specified and no "
+            "chem_data defaults found for slab elements. "
+            "Passivation / chemisorption-site detection may be skipped. "
+            "Set surface_prep.surface_analysis.ideal_coordination explicitly."
+        )
+    return auto
+
+
 def prepare_slab_stage(config, logger):
     """Handles Stage 0: Slab generation and passivation."""
     paths = config.get("paths", {})
@@ -107,7 +146,7 @@ def prepare_slab_stage(config, logger):
         pass_cfg = sp_cfg.get("passivation", {})
         if pass_cfg.get("enabled", False):
             log_stage_title(logger, "GLOBAL STAGE 0.1", f"Passivating surface with {pass_cfg.get('element', 'H')}...")
-            valence_map = sp_cfg.get("surface_analysis", {}).get("ideal_coordination", {})
+            valence_map = _resolve_valence_map(sp_cfg, slab, logger)
             slab = passivate_surface_coverage_general(
                 slab,
                 coverage=pass_cfg.get("coverage", 1.0),

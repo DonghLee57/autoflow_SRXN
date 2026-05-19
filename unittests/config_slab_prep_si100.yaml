@@ -1,13 +1,16 @@
-# Si(100) 2x1 buckled-dimer reconstruction + bottom H passivation
-# ---------------------------------------------------------------
+# Si(100) 2x1 buckled-dimer reconstruction
+# ------------------------------------------
 # MLIP 없이 geometry 단계만 실행 (slab_relax: false, candidate_relax: false)
 # bulk_shift=0.25: Si(100) bilayer 경계를 노출해 2x1 재구성에 필요한 dimer 쌍 확보
 # bond_slack=0.45: MLIP 릴랙스 후 dimer 결합 ~2.46 A 인식에 필요
 #   (default 0.20 -> cutoff 2.42 A < 2.46 A -> dimer 불인식 -> dangling bond 2개 오류)
+#
+# ideal_coordination 미지정 시 chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1 등)
+# 원소가 chem_data 에 없거나 0 이면 surface_analysis.ideal_coordination 에 명시 필요.
 
 paths:
-  substrate_bulk: "fixtures/bulk_si.vasp"   # load_yaml_config 이 config 위치 기준으로 절대경로 변환
-  output_prefix:  "test_output/si100"       # 테스트 코드에서 tmpdir 로 덮어씀
+  substrate_bulk: "../structures/bulk_si.vasp"  # primitive Si (FCC, 2 atoms, a=5.431 A)
+  output_prefix:  "test_output/si100"            # 테스트 코드에서 tmpdir 로 덮어씀
   precursor: null
   inhibitor: null
 
@@ -40,15 +43,15 @@ surface_prep:
   passivation:
     enabled:  false
     # Si(100) bottom passivation 은 이 셀 기하에서 PBC 아티팩트로 동작하지 않음.
-    # bulk_shift=0.25 + 2x2 supercell 조합에서 최하단 Si 원자가 제2층 Si 6개와
-    # 모두 동일 거리(2.352 A)에 위치 → filter_bonded_neighbor_vectors 가 결합 6개
-    # 감지 (예상 2개) → num_missing < 0 → H 미배치.
-    # Si(100) 관련 핵심 테스트는 2x1 dimer 재구성이므로 passivation 은 비활성화.
+    # bulk_shift=0.25 + 2x2 셀에서 bottom Si 가 6개 등거리 이웃으로 과협조 감지
+    # → num_missing < 0 → H 미배치. 핵심 검증인 dimer 재구성에 집중.
     element:  "H"
     side:     "bottom"
     coverage: 1.0
 
-  surface_analysis:
-    ideal_coordination:
-      Si: 4
-      H:  1
+  # ideal_coordination 생략 → chem_data.json 기본값 자동 적용
+  # 비표준 원소 또는 비표준 배위환경일 때만 아래처럼 명시:
+  # surface_analysis:
+  #   ideal_coordination:
+  #     Si: 4
+  #     H:  1

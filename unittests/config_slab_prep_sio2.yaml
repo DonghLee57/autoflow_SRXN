@@ -5,6 +5,8 @@
 #   O-terminated slab 이 생성됨 (누락 시 Si-terminated 기본 컷 적용)
 # passivation side=bottom: bottom O-H 형성, top O dangling bonds 는
 #   chemisorption active sites 로 보존
+#
+# ideal_coordination 미지정 시 chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1)
 
 paths:
   substrate_bulk: "../troubleshoot/SiO2_slab_prep/POSCAR_SiO2.vasp"
@@ -39,8 +41,10 @@ surface_prep:
     side:     "bottom"   # bottom O-H 형성, top O dangling 유지
     coverage: 1.0
 
-  surface_analysis:
-    ideal_coordination:
-      Si: 4
-      O:  2
-      H:  1
+  # ideal_coordination 생략 → chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1)
+  # 비표준 원소 또는 비표준 배위환경일 때만 아래처럼 명시:
+  # surface_analysis:
+  #   ideal_coordination:
+  #     Si: 4
+  #     O:  2
+  #     H:  1

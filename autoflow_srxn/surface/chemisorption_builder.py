@@ -115,8 +115,9 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
             if dist < bond_cutoff:
                 actual_coord += 1
         
+        # Resolve ideal coordination: config override → chem_data default
         _ideal_coord = config.get("surface_prep", {}).get("surface_analysis", {}).get("ideal_coordination", {})
-        expected = chem_kb.get_ideal_coordination(sym, _ideal_coord)
+        expected = chem_kb.get_ideal_coordination(sym, _ideal_coord if _ideal_coord else None)
 
         if verbose:
             if surface.positions[idx, 2] > z_sub_max - 1.5:
