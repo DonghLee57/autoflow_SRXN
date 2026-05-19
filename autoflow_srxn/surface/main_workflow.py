@@ -165,7 +165,7 @@ def relax_slab_stage(slab, config, logger):
             engine.relax(
                 slab, 
                 fmax=rp["fmax"], 
-                steps=200, 
+                steps=rp["steps"], 
                 frozen_z_ang=rp["frozen_z_ang"],
                 trajectory=traj_path
             )

@@ -439,8 +439,16 @@ class SimulationEngine:
                 to_fix.update(c.index.tolist())
 
         if z_ang is not None:
-            z_min = atoms.positions[:, 2].min()
-            to_fix.update(np.where(atoms.positions[:, 2] < z_min + z_ang)[0].tolist())
+            symbols = np.array(atoms.get_chemical_symbols())
+            non_h_idx = np.where(symbols != "H")[0]
+            if len(non_h_idx) > 0:
+                z_min = atoms.positions[non_h_idx, 2].min()
+                candidates = np.where(atoms.positions[:, 2] < z_min + z_ang)[0]
+                to_fix.update([i for i in candidates if symbols[i] != "H"])
+            else:
+                z_min = atoms.positions[:, 2].min()
+                to_fix.update(np.where(atoms.positions[:, 2] < z_min + z_ang)[0].tolist())
+
 
         if idx:
             to_fix.update(idx)

@@ -93,7 +93,18 @@ def generate_vsepr_vectors(atoms, idx, neighbor_data=None, num_missing=1, cutoff
     v_target = -sum_vec
     if np.linalg.norm(v_target) < 1e-4: v_target = np.array([0.0, 0.0, 1.0])
     v_target /= np.linalg.norm(v_target)
-    if num_missing == 1: return [v_target]
+    if num_missing == 1:
+        if len(vectors) == 1:
+            # Tilt by 30 degrees to yield a bent ~150 degree angle and break collinear symmetry.
+            theta = np.deg2rad(30.0)
+            perp_vec = np.array([1.0, 0.0, 0.0])
+            if abs(np.dot(v_target, perp_vec)) > 0.9:
+                perp_vec = np.array([0.0, 1.0, 0.0])
+            axis_1 = np.cross(v_target, perp_vec)
+            axis_1 /= np.linalg.norm(axis_1)
+            v = v_target * np.cos(theta) + axis_1 * np.sin(theta)
+            return [v / np.linalg.norm(v)]
+        return [v_target]
     if num_missing == 2 and len(vectors) == 2:
         w_unit = v_target
         u = norm_vecs[0] - norm_vecs[1]
