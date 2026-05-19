@@ -538,6 +538,7 @@ reaction_search:
 
       chemisorption:
         enabled:          true
+        byproduct_placement: "vacuum"  # Options: "vacuum" (suspended far above surface), "surface" (physisorbed adjacent to reaction site)
         rot_steps:        8     # Rotation attempts for bond-alignment
         
         # ── Coordination Analysis ───────────────────────────────────────────
