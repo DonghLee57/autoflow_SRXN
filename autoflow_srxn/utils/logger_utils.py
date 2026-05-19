@@ -61,6 +61,32 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     if not summary_data:
         return
 
+    import re
+
+    # Helper to parse general mechanism type and site index
+    def _parse_group(mech_str):
+        mech_str = str(mech_str)
+        if "physisorption" in mech_str.lower():
+            gen_mech = "Physisorption"
+        elif "single-site" in mech_str.lower() or "single_site" in mech_str.lower():
+            gen_mech = "Single-Site Chemisorption"
+        elif "haptic" in mech_str.lower():
+            gen_mech = "Haptic-Ligand Chemisorption"
+        elif "dissociation" in mech_str.lower():
+            gen_mech = "Chemisorption (Dissociation)"
+        elif "protector" in mech_str.lower():
+            gen_mech = "Protector Exchange"
+        else:
+            gen_mech = "Chemisorption"
+
+        m_site = re.search(r"(?:site|on|pair)\s+([0-9\-]+)", mech_str, re.IGNORECASE)
+        if m_site:
+            val = m_site.group(1)
+            site = f"Pair {val}" if "-" in val else f"Site {val}"
+        else:
+            site = "unknown"
+        return (gen_mech, site)
+
     # 1. Find the absolute global best across all mechanisms
     global_best_row = None
     for row in summary_data:
@@ -69,17 +95,18 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
             if global_best_row is None or e_final < global_best_row.get("e_final", 1e10):
                 global_best_row = row
     
-    # 2. Find the local best for each unique mechanism/site group
-    local_best_by_mech = {}
+    # 2. Find the local best for each unique parsed mechanism/site group
+    local_best_by_group = {}
     for row in summary_data:
-        m = row.get("mech", "unknown")
+        mech = row.get("mech", "unknown")
+        g = _parse_group(mech)
         e_final = row.get("e_final")
         if e_final is not None:
-            if m not in local_best_by_mech or e_final < local_best_by_mech[m].get("e_final", 1e10):
-                local_best_by_mech[m] = row
+            if g not in local_best_by_group or e_final < local_best_by_group[g].get("e_final", 1e10):
+                local_best_by_group[g] = row
     
     global_best_id = global_best_row["id"] if global_best_row else None
-    local_best_ids = {res["id"] for res in local_best_by_mech.values()} if local_best_by_mech else set()
+    local_best_ids = {res["id"] for res in local_best_by_group.values()} if local_best_by_group else set()
 
     logger.info("\n" + "=" * 139)
     logger.info(f" {title}")
@@ -95,16 +122,20 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     header += f"{'Mechanism':<19} | "
     if has_e_init: header += f"{'E_initial (eV)':<15} | "
     if has_e_final: header += f"{'E_final (eV)':<15} | {'Delta (eV)':<10} | "
-    header += f"{'E_ads (eV)':<10} | {'Note'}"
+    header += f"{'E_ads (eV)':<10} | {'Comment'}"
 
     logger.info(header)
     logger.info("-" * 139)
 
     for row in summary_data:
-        if row.get("id") == global_best_id:
+        if row.get("comment"):
+            marker = row.get("comment")
+        elif row.get("note"):
+            marker = row.get("note")
+        elif row.get("id") == global_best_id:
             marker = "* (Best Pose)"
         elif row.get("id") in local_best_ids:
-            marker = "+ (Local Minima)"
+            marker = "+ (Local Minimum)"
         else:
             marker = ""
         e_ads = row.get("e_ads", 0.0)
@@ -116,8 +147,8 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
         if has_e_init:
             line += f"{row.get('e_initial', 0.0):15.4f} | "
         if has_e_final:
-            line += f"{row.get('e_final', 0.0):15.4f} | {row.get('delta', 0.0):10.4f} | "
-        line += f"{e_ads:10.4f} | {row.get('note', marker)}"
+            line += f"{row.get('e_final', 0.0):15.4f} | {row.get('e_final', 0.0) - row.get('e_initial', 0.0):10.4f} | "
+        line += f"{e_ads:10.4f} | {marker}"
 
         logger.info(line)
     logger.info("=" * 139 + "\n")

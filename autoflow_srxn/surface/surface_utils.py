@@ -445,7 +445,7 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
         slab.set_scaled_positions(frac)
         slab.wrap()
         if verbose:
-            print(f"  [Slab] bulk_shift={bulk_shift:.3f} applied — surface termination shifted.")
+            print(f"  [Slab] bulk_shift={bulk_shift:.3f} applied - surface termination shifted.")
 
     slab.center(vacuum=vacuum, axis=2)
     if supercell_matrix:

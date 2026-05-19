@@ -233,7 +233,6 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
     from ..simulation.potentials import SimulationEngine
     sel_idx = config.get("verification", {}).get("selected_indices", None)
     
-    # ... (Evaluation logic for selected_indices) ...
     if isinstance(sel_idx, str):
         try:
             allowed = {"range": range, "list": list, "np": np, "numpy": np, "abs": abs}
@@ -270,12 +269,103 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
             else:
                 e_init = e_final = delta = e_ads = 0.0
 
-            summary_data.append({"id": i, "mech": atoms.info.get("mechanism", "unknown"),
-                                 "e_initial": e_init, "e_final": e_final, "e_ads": e_ads})
-            atoms_proc.info.update({"e_initial": e_init, "e_final": e_final, "e_ads": e_ads})
+            # Log candidate relaxation energy immediately to the console/log file
+            logger.info(
+                f"  [Verification] Candidate {i:3d} ({atoms.info.get('mechanism', 'unknown')}) | "
+                f"E_initial: {e_init:12.4f} eV | E_final: {e_final:12.4f} eV | "
+                f"Delta: {delta:10.4f} eV | E_ads: {e_ads:10.4f} eV"
+            )
+
+            summary_data.append({
+                "id": i, 
+                "atoms": atoms_proc,
+                "mech": atoms.info.get("mechanism", "unknown"),
+                "e_initial": e_init, 
+                "e_final": e_final, 
+                "e_ads": e_ads
+            })
             processed_cands.append(atoms_proc)
         except Exception as exc:
             logger.error(f"  [Verification] Candidate {i} failed: {exc}")
+
+    # --- Grouping and identifying Best Pose / Local Minimum per site & mechanism ---
+    if summary_data:
+        import re
+        def _get_candidate_group(mech_str):
+            mech_str = str(mech_str)
+            if "physisorption" in mech_str.lower():
+                gen_mech = "Physisorption"
+            elif "single-site" in mech_str.lower() or "single_site" in mech_str.lower():
+                gen_mech = "Single-Site Chemisorption"
+            elif "haptic" in mech_str.lower():
+                gen_mech = "Haptic-Ligand Chemisorption"
+            elif "dissociation" in mech_str.lower():
+                gen_mech = "Chemisorption (Dissociation)"
+            elif "protector" in mech_str.lower():
+                gen_mech = "Protector Exchange"
+            else:
+                gen_mech = "Chemisorption"
+
+            m_site = re.search(r"(?:site|on|pair)\s+([0-9\-]+)", mech_str, re.IGNORECASE)
+            if m_site:
+                val = m_site.group(1)
+                site = f"Pair {val}" if "-" in val else f"Site {val}"
+            else:
+                site = "unknown"
+            return (gen_mech, site)
+
+        # 1. Group items
+        groups = {}
+        for item in summary_data:
+            g = _get_candidate_group(item["mech"])
+            if g not in groups:
+                groups[g] = []
+            groups[g].append(item)
+
+        # 2. Find overall best pose (lowest e_final)
+        global_best_item = None
+        for item in summary_data:
+            e_final = item["e_final"]
+            if e_final is not None:
+                if global_best_item is None or e_final < global_best_item["e_final"]:
+                    global_best_item = item
+        global_best_id = global_best_item["id"] if global_best_item else None
+
+        # 3. Find local best per group
+        local_best_ids = set()
+        for g, items in groups.items():
+            best_in_group = None
+            for item in items:
+                e_final = item["e_final"]
+                if e_final is not None:
+                    if best_in_group is None or e_final < best_in_group["e_final"]:
+                        best_in_group = item
+            if best_in_group:
+                local_best_ids.add(best_in_group["id"])
+
+        # 4. Map comment back to summary_data and atoms.info
+        for item in summary_data:
+            idx = item["id"]
+            atoms_proc = item["atoms"]
+            if idx == global_best_id:
+                comment = "* (Best Pose)"
+            elif idx in local_best_ids:
+                comment = "+ (Local Minimum)"
+            else:
+                comment = ""
+            
+            item["comment"] = comment
+            atoms_proc.info["comment"] = comment
+            atoms_proc.info["note"] = comment # fallback support
+            atoms_proc.info.update({
+                "e_initial": item["e_initial"],
+                "e_final": item["e_final"],
+                "e_ads": item["e_ads"]
+            })
+
+        # 5. Output beautiful verification results table in logs
+        stage_label = "Inhibitor" if "inhibitor" in str(out_prefix).lower() else "Precursor"
+        log_results_table(logger, summary_data, title=f"Verification Summary Table ({stage_label})")
 
     if processed_cands:
         write(f"{out_prefix}_{'relaxed' if run_relax else 'evaluated'}.extxyz", processed_cands)
