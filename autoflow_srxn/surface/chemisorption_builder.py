@@ -34,7 +34,7 @@ def _unique_ligands(ligands: list) -> list:
     return result
 
 
-def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, results_dir=None):
+def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, results_dir=None, stage_type="precursor"):
     import numpy as np
     from ase.neighborlist import neighbor_list
 
@@ -51,7 +51,7 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
     exchange_sites = []
 
     # --- Configuration for Coordination Analysis ---
-    chem_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    chem_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get(stage_type, {}).get("chemisorption", {})
     coord_cfg = chem_cfg.get("coordination_analysis", {})
     bond_slack = coord_cfg.get("bond_slack", 0.2)
     max_nb_dist = coord_cfg.get("max_neighbor_dist", 4.0)
@@ -154,8 +154,8 @@ def analyze_surface_reactivity(surface, config, prot_idx=[], verbose=False, resu
 
     # --- Proximity Filtering Logic ---
     mechs_cfg = config.get("reaction_search", {}).get("mechanisms", {})
-    pre_cfg = mechs_cfg.get("precursor", {})
-    prox_cfg = pre_cfg.get("chemisorption", {}).get("proximity_filter", {})
+    stage_cfg = mechs_cfg.get(stage_type, {})
+    prox_cfg = stage_cfg.get("chemisorption", {}).get("proximity_filter", {})
     
     if prox_cfg.get("enabled", False) and len(prot_idx) > 0:
         from ase.geometry import get_distances
@@ -268,7 +268,8 @@ def analyze_molecule_ligands(molecule, center_target="Si", verbose=True, config=
 
 
 def build_chemisorption_structures(
-    molecule, center_target="Si", surface=None, rot_steps=8, config=None, verbose=True, tag=2, results_dir=None
+    molecule, center_target="Si", surface=None, rot_steps=8, config=None,
+    verbose=True, tag=2, results_dir=None, stage_type="precursor"
 ):
     """Entry point for algorithmic chemisorption generation based on input molecule and surface.
     Identifies valid mechanisms based on available surface sites.
@@ -281,13 +282,13 @@ def build_chemisorption_structures(
     
     # Extract chemisorption verbose flag from config
     mechs_cfg = config.get("reaction_search", {}).get("mechanisms", {})
-    pre_cfg = mechs_cfg.get("precursor", {})
-    chem_verbose = pre_cfg.get("chemisorption", {}).get("verbose", False)
+    stage_cfg = mechs_cfg.get(stage_type, {})
+    chem_verbose = stage_cfg.get("chemisorption", {}).get("verbose", False)
     
     from .surface_utils import standardize_vasp_atoms
     surface = standardize_vasp_atoms(surface)
     
-    sites = analyze_surface_reactivity(surface, config, verbose=verbose, results_dir=results_dir)
+    sites = analyze_surface_reactivity(surface, config, verbose=verbose, results_dir=results_dir, stage_type=stage_type)
     c_idx, ligands = analyze_molecule_ligands(molecule, center_target=center_target, verbose=verbose, config=config)
 
     candidates = []
@@ -313,7 +314,7 @@ def build_chemisorption_structures(
         if verbose:
             print(f"  -> Routing to Generic Single-Site Chemisorption on {len(sites['unique_single'])} Sites...")
         s_cands = _execute_generic_single_site(
-            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag, failed_candidates=failed_candidates
+            mgr, molecule, c_idx, ligands, sites["unique_single"], rot_steps, tag=tag, failed_candidates=failed_candidates, stage_type=stage_type
         )
         candidates.extend(s_cands)
 
@@ -342,7 +343,7 @@ def build_chemisorption_structures(
     if sites.get("exchange"):
         if verbose:
             print(f"  -> Routing to Protector Exchange Chemisorption on {len(sites['exchange'])} Sites...")
-        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag, verbose=chem_verbose, failed_candidates=failed_candidates)
+        x_cands = _execute_protector_exchange(mgr, molecule, c_idx, ligands, sites["exchange"], rot_steps, tag=tag, verbose=chem_verbose, failed_candidates=failed_candidates, stage_type=stage_type)
         candidates.extend(x_cands)
 
     if failed_candidates and results_dir:
@@ -418,7 +419,7 @@ def _min_nonbonded_clearance(combined, n_slab, skip_pairs=None, skip_indices=Non
     return float(min_d)
 
 
-def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2, failed_candidates=None):
+def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps, tag=2, failed_candidates=None, stage_type="precursor"):
     """Internal subroutine to execute Generic Single Site Addition/Exchange.
 
     Tries all rot_steps angles per site and keeps the pose with the largest
@@ -428,7 +429,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
     candidates = []
     stats = {"overlap": 0, "total_tries": 0}
 
-    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get(stage_type, {}).get("chemisorption", {})
     byproduct_placement = chem_cfg.get("byproduct_placement", "vacuum")
 
     for l_info in _unique_ligands(ligands):
@@ -825,7 +826,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
     return candidates
 
 
-def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3, verbose=False, failed_candidates=None):
+def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, rot_steps, tag=3, verbose=False, failed_candidates=None, stage_type="precursor"):
     """Internal subroutine to execute Ligand Exchange with Protector leaves.
 
     Tries all rot_steps angles and keeps the pose with the largest minimum
@@ -835,7 +836,7 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
     candidates = []
     stats = {"overlap": 0, "total_tries": 0}
     
-    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("chemisorption", {})
+    chem_cfg = mgr.config.get("reaction_search", {}).get("mechanisms", {}).get(stage_type, {}).get("chemisorption", {})
     byproduct_placement = chem_cfg.get("byproduct_placement", "vacuum")
 
     for l_info in _unique_ligands(ligands):

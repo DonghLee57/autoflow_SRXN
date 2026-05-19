@@ -469,7 +469,8 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
             chem_cands = build_chemisorption_structures(
                 molecule=mol, center_target=actual_center, surface=slab, 
                 rot_steps=chem_cfg.get("rot_steps", 8),
-                config=config, tag=tag, results_dir=os.path.dirname(out_prefix)
+                config=config, tag=tag, results_dir=os.path.dirname(out_prefix),
+                stage_type=stage_type
             )
         for c in chem_cands: c.info["mechanism"] = "chemisorption"
         all_cands.extend(chem_cands)
