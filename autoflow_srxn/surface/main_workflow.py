@@ -545,7 +545,7 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                     precursor_files.append(os.path.abspath(os.path.join(pre_path_raw, f)))
         elif pre_path_raw:
             precursor_files.append(os.path.abspath(pre_path_raw))
-            
+
         # Resolve inhibitors
         inhibitor_files = []
         if is_inh_dir:
@@ -554,37 +554,144 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                     inhibitor_files.append(os.path.abspath(os.path.join(inh_path_raw, f)))
         elif inh_path_raw:
             inhibitor_files.append(os.path.abspath(inh_path_raw))
-            
+
         # Include baseline 'no inhibitor' if requested
         if paths.get("include_no_inhibitor", False) or not inhibitor_files:
             if None not in inhibitor_files:
                 inhibitor_files.append(None)
-                
+
         if not precursor_files:
             raise ValueError(f"No precursor files found in path: {pre_path_raw}")
-            
+
         output_dir = paths.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
-        
+
         master_logger = setup_logger(log_path=os.path.join(output_dir, "batch_screening.log"), mode="w")
-        master_logger.info(f"Starting batch screening: {len(precursor_files)} precursors x {len(inhibitor_files)} inhibitors")
-        
-        for prec_path in precursor_files:
-            for inh_path in inhibitor_files:
-                pre_name = os.path.splitext(os.path.basename(prec_path))[0]
-                inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "None"
-                
-                pair_prefix = os.path.join(output_dir, f"{inh_name}_on_{pre_name}")
-                master_logger.info(f"Running pair: {inh_name} on {pre_name} -> {pair_prefix}")
-                
-                # Clone the config and update for this pair
-                pair_config = copy.deepcopy(config)
-                pair_config["paths"]["precursor"] = prec_path
-                pair_config["paths"]["inhibitor"] = inh_path
-                pair_config["paths"]["output_prefix"] = pair_prefix
-                
+        master_logger.info(
+            f"Starting batch screening: {len(precursor_files)} precursors x {len(inhibitor_files)} inhibitors"
+        )
+
+        # ── SHARED: directory for results reused across all pairs ─────────────
+        shared_dir = os.path.join(output_dir, "_shared")
+        os.makedirs(shared_dir, exist_ok=True)
+
+        # Config used for shared stages (output_prefix points to shared_dir so
+        # slab_relaxation trajectory lands there, not in a pair-specific folder)
+        shared_config = copy.deepcopy(config)
+        shared_config["paths"]["output_prefix"] = shared_dir
+
+        # ── SHARED: slab preparation & relaxation (once for all combinations) ─
+        slab_cache_path = os.path.join(shared_dir, "prepared_slab.extxyz")
+        if os.path.exists(slab_cache_path):
+            master_logger.info(f"[Shared] Loading cached slab from {slab_cache_path}")
+            slab = read(slab_cache_path)
+            slab_base_energy = slab.info.get("e_base", 0.0)
+        else:
+            log_stage_title(master_logger, "BATCH SHARED", "Preparing slab (once for all combinations)...")
+            slab = prepare_slab_stage(shared_config, master_logger)
+            slab, slab_base_energy = relax_slab_stage(slab, shared_config, master_logger)
+            slab.info["e_base"] = slab_base_energy
+            write(slab_cache_path, slab)
+
+        # ── SHARED: gas-phase energies (once per unique molecule file) ────────
+        gas_cache_path = os.path.join(shared_dir, "gas_energy_cache.yaml")
+        if os.path.exists(gas_cache_path):
+            with open(gas_cache_path) as _f:
+                gas_energy_cache = yaml.safe_load(_f) or {}
+        else:
+            gas_energy_cache = {}
+
+        all_mol_files = set(precursor_files) | {f for f in inhibitor_files if f}
+        changed = False
+        for mol_path in sorted(all_mol_files):
+            if mol_path not in gas_energy_cache:
+                master_logger.info(f"[Gas Phase] Computing energy for {os.path.basename(mol_path)}")
+                gas_energy_cache[mol_path] = calculate_gas_energy(read(mol_path), shared_config, master_logger)
+                changed = True
+            else:
+                master_logger.info(
+                    f"[Gas Phase] Loaded cached energy for {os.path.basename(mol_path)}: "
+                    f"{gas_energy_cache[mol_path]:.4f} eV"
+                )
+        if changed:
+            with open(gas_cache_path, "w") as _f:
+                yaml.dump(gas_energy_cache, _f)
+
+        # ── SHARED: inhibitor adsorption stage (once per inhibitor) ──────────
+        inh_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get("inhibitor", {})
+        inhibitor_base_slabs_cache = {}  # inh_path (or None) -> list[Atoms]
+
+        for inh_path in inhibitor_files:
+            if inh_path is None:
+                inhibitor_base_slabs_cache[None] = [slab.copy()]
+                continue
+
+            inh_name = os.path.splitext(os.path.basename(inh_path))[0]
+            inh_shared_dir = os.path.join(shared_dir, inh_name)
+            os.makedirs(inh_shared_dir, exist_ok=True)
+            inh_out_prefix = os.path.join(inh_shared_dir, "stage1_inhibitor")
+            inh_relaxed_path = f"{inh_out_prefix}_relaxed.extxyz"
+
+            if os.path.exists(inh_relaxed_path):
+                master_logger.info(f"[Shared] Loading cached inhibitor results for {inh_name}")
+                inh_cands = list(read(inh_relaxed_path, index=":"))
+                inh_cands.sort(key=lambda x: x.info.get("e_final", 1e10))
+                base_slabs = inh_cands[:inh_cfg.get("branching_limit", 1)]
+            elif inh_cfg.get("enabled", False):
+                log_stage_title(
+                    master_logger, "BATCH SHARED",
+                    f"Inhibitor stage for {inh_name} (shared across all precursors)..."
+                )
                 try:
-                    run_generic_adsorption_study(pair_config)
+                    e_gas_inh = gas_energy_cache.get(inh_path, 0.0)
+                    inh_cands = execute_discovery_stage(
+                        slab, read(inh_path), shared_config, inh_out_prefix, master_logger,
+                        tag=2, center_target=inh_cfg.get("center", "O"),
+                        e_gas=e_gas_inh, e_base=slab_base_energy, stage_type="inhibitor",
+                    )
+                    if inh_cands:
+                        inh_cands.sort(key=lambda x: x.info.get("e_final", 1e10))
+                        base_slabs = inh_cands[:inh_cfg.get("branching_limit", 1)]
+                    else:
+                        base_slabs = [slab.copy()]
+                except Exception as e:
+                    master_logger.error(f"[Shared] Inhibitor stage failed for {inh_name}: {e}", exc_info=True)
+                    base_slabs = [slab.copy()]
+            else:
+                base_slabs = [slab.copy()]
+
+            inhibitor_base_slabs_cache[inh_path] = base_slabs
+
+        # ── PER PAIR: precursor stage only (no repeated slab/inhibitor work) ─
+        pre_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {})
+        pre_center = pre_cfg.get("center", "Si")
+
+        for prec_path in precursor_files:
+            pre_name = os.path.splitext(os.path.basename(prec_path))[0]
+            mol = read(prec_path)
+            e_gas_mol = gas_energy_cache.get(prec_path, 0.0)
+
+            for inh_path in inhibitor_files:
+                inh_name = os.path.splitext(os.path.basename(inh_path))[0] if inh_path else "None"
+                pair_prefix = os.path.join(output_dir, f"{inh_name}_on_{pre_name}")
+                os.makedirs(pair_prefix, exist_ok=True)
+
+                master_logger.info(f"Running pair: {inh_name} + {pre_name} -> {pair_prefix}")
+
+                base_slabs = inhibitor_base_slabs_cache.get(inh_path, [slab.copy()])
+                pair_config = copy.deepcopy(config)
+                pair_config["paths"]["output_prefix"] = pair_prefix
+
+                try:
+                    for i, s in enumerate(base_slabs):
+                        suffix = f"_branch{i}" if len(base_slabs) > 1 else ""
+                        execute_discovery_stage(
+                            s, mol, pair_config,
+                            os.path.join(pair_prefix, f"stage2_precursor{suffix}"),
+                            master_logger, tag=3, center_target=pre_center,
+                            e_gas=e_gas_mol, e_base=s.info.get("e_final", slab_base_energy),
+                            stage_type="precursor",
+                        )
                 except Exception as e:
                     master_logger.error(f"Failed running pair {inh_name} on {pre_name}: {e}", exc_info=True)
         return
