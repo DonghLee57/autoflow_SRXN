@@ -133,6 +133,43 @@ def _dimer_seed_positions(atoms, dimers, rows, cols, buckle, bond_length, patter
     return trial, pairset
 
 
+def _filter_to_dominant_direction(candidates):
+    """Filter dimer candidates to a single dominant lateral direction.
+
+    Si(100) has two degenerate nearest-neighbor directions (~45° and ~135°
+    relative to the cell axes).  Without this filter the matcher mixes both
+    directions, giving a disordered surface instead of a proper 2×1 domain.
+
+    Algorithm: bin candidate angles (mod 180°) into 30°-wide slots, keep
+    only the most-populated slot.  Ties are broken by the smaller bin index
+    (smaller angle) for reproducibility.
+    """
+    if not candidates:
+        return candidates
+
+    bin_width = 30.0
+    n_bins = 6  # covers [0°, 180°)
+
+    bins: list[list] = [[] for _ in range(n_bins)]
+    for cand in candidates:
+        v = cand["vec"][:2]
+        angle = np.degrees(np.arctan2(v[1], v[0])) % 180.0
+        bins[int(angle / bin_width) % n_bins].append(cand)
+
+    dominant = max(range(n_bins), key=lambda b: (len(bins[b]), -b))
+    dominant_center = (dominant + 0.5) * bin_width
+
+    filtered = []
+    for cand in candidates:
+        v = cand["vec"][:2]
+        angle = np.degrees(np.arctan2(v[1], v[0])) % 180.0
+        diff = abs(angle - dominant_center)
+        if min(diff, 180.0 - diff) <= bin_width:
+            filtered.append(cand)
+
+    return filtered if filtered else candidates
+
+
 def _score_dimer_matching(atoms, dimers, rows, cols, buckle, bond_length, pattern, side):
     """Score a matching by the closest non-dimer top-layer Si-Si distance."""
     trial, pairset = _dimer_seed_positions(
@@ -150,19 +187,7 @@ def _score_dimer_matching(atoms, dimers, rows, cols, buckle, bond_length, patter
             )
             min_nonbond = min(min_nonbond, float(dist[0][0]))
 
-    # Mildly prefer a single-domain dimer axis when nonbond spacing ties.
-    axes = []
-    for d in dimers:
-        v = _canonical_dimer_vector(d["vec"][:2])
-        norm = np.linalg.norm(v)
-        if norm > 1e-8:
-            axes.append(v / norm)
-    alignment = 0.0
-    if axes:
-        ref = axes[0]
-        alignment = float(np.mean([abs(np.dot(ref, ax)) for ax in axes]))
-
-    return min_nonbond + 0.05 * alignment
+    return min_nonbond
 
 
 def _select_stable_dimer_matching(
@@ -185,6 +210,9 @@ def _select_stable_dimer_matching(
 
     if not candidates or len(idx_list) % 2:
         return []
+
+    # Restrict to one lateral direction so all dimers are co-aligned (2×1 domain).
+    candidates = _filter_to_dominant_direction(candidates)
 
     inv = np.linalg.inv(atoms.cell[:2, :2])
     rows = sorted(set(round((d["mid"][:2] @ inv)[1] * 8, 1) for d in candidates))
@@ -266,8 +294,13 @@ def reconstruct_si100_2x1_buckled(
     if not len(idx_list):
         return atoms
 
-    i_list, _ = neighbor_list("ij", atoms, 2.6)
-    undercoord_idx = np.array([i for i in idx_list if np.sum(i_list == i) < 4])
+    # Count only Si-Si bonds so that passivating H atoms don't inflate coordination.
+    i_list, j_list = neighbor_list("ij", atoms, 2.6)
+    si_mask = np.array(atoms.get_chemical_symbols()) == "Si"
+    undercoord_idx = np.array([
+        i for i in idx_list
+        if np.sum(si_mask[j_list[i_list == i]]) < 4
+    ])
     dimers = _select_stable_dimer_matching(
         atoms,
         undercoord_idx,
@@ -284,12 +317,16 @@ def reconstruct_si100_2x1_buckled(
     if not dimers:
         return atoms
 
+    # Even dimer counts have two degenerate checkerboard phases that differ
+    # across supercells.  Force uniform buckling so the seed is reproducible.
+    effective_pattern = "uniform" if len(dimers) % 2 == 0 else pattern
+
     inv = np.linalg.inv(atoms.cell[:2, :2])
     rows = sorted(set(round((d["mid"][:2] @ inv)[1] * 8, 1) for d in dimers))
     cols = sorted(set(round((d["mid"][:2] @ inv)[0] * 8, 1) for d in dimers))
 
     trial, _ = _dimer_seed_positions(
-        atoms, dimers, rows, cols, buckle, bond_length, pattern, side
+        atoms, dimers, rows, cols, buckle, bond_length, effective_pattern, side
     )
     atoms.positions[:] = trial
 

@@ -164,6 +164,10 @@ def passivate_surface_coverage_general(atoms, coverage, valence_map, vector_gene
     success = 0
     available = list(candidates)
     r_pass = chem_kb.get_radius(element, "covalent")
+    # Passivation atoms are placed outside the slab in Z; disable Z-PBC for distance
+    # checks and wrapping to prevent them from folding to the opposite surface when the
+    # input slab was read from a VASP file (PBC=[1,1,1]).
+    pbc_xy = [current_atoms.pbc[0], current_atoms.pbc[1], False]
     while success < n_target and available:
         pass_indices = [i for i, sym in enumerate(current_atoms.symbols) if sym == element]
         ref_indices = pass_indices + [i for i, sym in enumerate(current_atoms.symbols) if sym == "O"]
@@ -180,10 +184,10 @@ def passivate_surface_coverage_general(atoms, coverage, valence_map, vector_gene
             h_pos_candidate = parent_pos + cand["vector"] * b_len
             if len(ref_pos) == 0: score = 100.0
             else:
-                dists = get_distances(h_pos_candidate, ref_pos, cell=current_atoms.cell, pbc=current_atoms.pbc)[1]
+                dists = get_distances(h_pos_candidate, ref_pos, cell=current_atoms.cell, pbc=pbc_xy)[1]
                 score = np.min(dists)
             if score > best_score:
-                _, all_dists_list = get_distances(h_pos_candidate, current_atoms.positions, cell=current_atoms.cell, pbc=current_atoms.pbc)
+                _, all_dists_list = get_distances(h_pos_candidate, current_atoms.positions, cell=current_atoms.cell, pbc=pbc_xy)
                 all_dists = all_dists_list[0]
                 mask = np.ones(len(all_dists), dtype=bool)
                 mask[cand["parent"]] = False
@@ -193,7 +197,12 @@ def passivate_surface_coverage_general(atoms, coverage, valence_map, vector_gene
             cand = available.pop(best_cand_idx)
             h_pos = current_atoms.positions[cand["parent"]] + cand["vector"] * best_b_len
             current_atoms += Atoms(element, positions=[h_pos])
+            # Wrap only in-plane (XY) — never in Z — so passivation atoms placed
+            # below/above the slab are not folded onto the opposite surface.
+            orig_pbc = current_atoms.pbc.copy()
+            current_atoms.set_pbc(pbc_xy)
             current_atoms.wrap()
+            current_atoms.set_pbc(orig_pbc)
             success += 1
         else: break
     return standardize_vasp_atoms(current_atoms, z_min_offset=0.5)
