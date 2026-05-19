@@ -1,0 +1,50 @@
+2026-05-19 14:39:20 | INFO     |   [Stage: precursor] Chemisorption search for C8H10Ni...
+
+--- Starting Algorithmic Chemisorption Routing (tag=3) ---
+  [Debug] Atom 77(Si) at z=16.43: actual=3, expected=0
+  [Debug] Atom 78(Si) at z=15.07: actual=4, expected=0
+  [Debug] Atom 79(Si) at z=16.00: actual=6, expected=0
+  [Debug] Atom 80(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 101(Si) at z=16.45: actual=3, expected=0
+  [Debug] Atom 102(Si) at z=15.07: actual=4, expected=0
+  [Debug] Atom 103(Si) at z=15.84: actual=5, expected=0
+  [Debug] Atom 104(Si) at z=15.10: actual=4, expected=0
+  [Debug] Atom 125(Si) at z=16.44: actual=3, expected=0
+  [Debug] Atom 126(Si) at z=15.09: actual=5, expected=0
+  [Debug] Atom 127(Si) at z=16.28: actual=7, expected=0
+  [Debug] Atom 128(Si) at z=15.04: actual=4, expected=0
+  [Debug] Atom 149(Si) at z=16.44: actual=3, expected=0
+  [Debug] Atom 150(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 151(Si) at z=15.90: actual=5, expected=0
+  [Debug] Atom 152(Si) at z=15.07: actual=4, expected=0
+  [Debug] Atom 173(Si) at z=16.15: actual=7, expected=0
+  [Debug] Atom 174(Si) at z=15.07: actual=4, expected=0
+  [Debug] Atom 175(Si) at z=15.86: actual=5, expected=0
+  [Debug] Atom 176(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 197(Si) at z=16.48: actual=4, expected=0
+  [Debug] Atom 198(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 199(Si) at z=15.89: actual=5, expected=0
+  [Debug] Atom 200(Si) at z=15.07: actual=4, expected=0
+  [Debug] Atom 221(Si) at z=16.41: actual=3, expected=0
+  [Debug] Atom 222(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 223(Si) at z=15.85: actual=5, expected=0
+  [Debug] Atom 224(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 245(Si) at z=16.51: actual=5, expected=0
+  [Debug] Atom 247(Si) at z=15.87: actual=5, expected=0
+  [Debug] Atom 269(Si) at z=16.18: actual=5, expected=0
+  [Debug] Atom 270(Si) at z=15.06: actual=4, expected=0
+  [Debug] Atom 271(Si) at z=15.86: actual=5, expected=0
+  [Debug] Atom 272(Si) at z=15.08: actual=4, expected=0
+  [Reactivity Analysis] Identified 0 dangling sites and 0 exchange sites.
+  [Proximity Filter] Reduced sites based on distance to inhibitor (cutoff=7.0 A):
+    - Dangling: 0 -> 0
+    - Exchange: 0 -> 0
+  [Generic Reactivity] Identified 0 potential active site pairs -> Symmetry-reduced to 0 unique reaction pairs, 0 unique single sites.
+2026-05-19 14:39:21 | INFO     | [Symmetry] Substrate analysis (symprec=1.5): Grouped 8 surface atoms into 5 symmetrically distinct adsorption sites.
+Precursor Fragmentation Analysis (Ni centered): Found 2 ligands attached to index 18.
+2026-05-19 14:39:21 | INFO     | [Symmetry] Substrate analysis (symprec=1.5): Grouped 43 surface atoms into 40 symmetrically distinct adsorption sites.
+--- Finished Chemisorption Builder. Total Generated: 0 ---
+  [Chemisorption] WARNING: 0 candidates - no active surface sites found (dangling bonds, pairs, or exchange sites). Possible causes:
+    - Surface is fully saturated (all expected bonds satisfied).
+    - Coordination number thresholds in config may not match this surface termination.
+    - Try adjusting 'coord_num_threshold' or 'symprec' in config.
