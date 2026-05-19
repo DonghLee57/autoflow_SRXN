@@ -1,0 +1,91 @@
+# =============================================================================
+# Practical Config: Ethanol (Physi) + DIPAS (Physi/Chemi) on Si(110)
+# =============================================================================
+
+paths:
+  input_structure:  "./substrate.vasp"
+  precursor:      "./precursors/"
+  inhibitor:      "./inhibitors/"
+  include_no_inhibitor: true
+  output_prefix:  "results"
+
+# Set to 'true' to force re-calculation even if results exist in the directory.
+# If 'false', the workflow skips pairs that already have 'results_final_verified.extxyz'.
+restart: true
+
+# =============================================================================
+# Pipeline Control — what to compute (all flags in one place)
+# =============================================================================
+workflow:
+  slab_relax:       false   # Geometry-optimize bare slab before candidate search
+  candidate_relax:  true  # Geometry-optimize each candidate after generation
+  md_equilibrate:   false  # NVT-MD equilibration after candidate_relax
+  post_md_relax:    false  # Re-optimize after MD (only if md_equilibrate: true)
+
+# =============================================================================
+# Relaxation parameters — shared by all relax/MD stages
+# =============================================================================
+relaxation:
+  fmax:         0.05    # Force convergence (eV/Å)
+  steps:        100     # Max optimizer steps
+  optimizer:    "LBFGS"  # "BFGS", "LBFGS", "LBFGSLineSearch", or "FIRE"
+  frozen_z_ang: 5.5     # Fix atoms below z_min + this height (Å) during all relax/MD
+
+equilibration:
+  temperature_K: 300
+  md_steps:      1000
+  timestep_fs:   1.0
+  damping:       100.0
+
+# =============================================================================
+# Reaction Search
+# =============================================================================
+reaction_search:
+  symprec: 1.5
+  mechanisms:
+    inhibitor:
+      enabled: true
+      center:  'N'
+      physisorption:
+        enabled:          true
+        n_rot:            8
+        placement_height: 2.5
+        height_mode:      "clearance"
+        gravity_pull:
+          enabled: true
+      chemisorption:
+        enabled: false
+      branching_limit: 1
+
+    precursor:
+      center: ["Ni"]
+      physisorption:
+        enabled:          true
+        placement_height: 5.0
+        height_mode:      "clearance"
+        n_rot:            8
+        gravity_pull:
+          enabled:   true
+          step_size: 0.2
+      chemisorption:
+        enabled:  true
+        rot_steps: 8
+        coordination_analysis:
+          bond_slack: 0.45
+        proximity_filter:
+          enabled:   true
+          cutoff:    7.0
+          visualize: true
+
+  candidate_filter:
+    overlap_scale:  0.6
+
+# =============================================================================
+# Simulation Engine
+# =============================================================================
+engine:
+  potential:
+    backend: "sevennet"
+    model:   "omni"
+    modal:   "matpes_pbe"
+    device:  "cpu"
