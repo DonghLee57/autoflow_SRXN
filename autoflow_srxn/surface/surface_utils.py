@@ -441,6 +441,18 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
 
     # --- Apply bulk_shift to select the correct surface termination ---
     if bulk_shift and abs(bulk_shift) > 1e-6:
+        # ASE surface(vacuum=0) sets cell_c = z_max of atoms, so the topmost layer
+        # sits at fractional z ≈ 1.0 ≡ 0.0 in PBC.  Applying a fractional shift
+        # then maps both z=0 and z=cell_c atoms to the SAME position, producing a
+        # spurious double-density layer (e.g. 16 atoms instead of 8 at z=1.86 Å
+        # for Si(100) 2-layer slab).
+        # Fix: reset cell_c = num_layers * d_hkl (the true periodic repeat) so
+        # all atoms have fractional z < 1.0 before the shift is applied.
+        proper_cell_c = num_layers * d_hkl
+        if slab.cell[2, 2] < proper_cell_c - 0.01:
+            adj_cell = slab.cell.copy()
+            adj_cell[2, 2] = proper_cell_c
+            slab.set_cell(adj_cell, scale_atoms=False)
         frac = slab.get_scaled_positions()
         frac[:, 2] = (frac[:, 2] + bulk_shift) % 1.0
         slab.set_scaled_positions(frac)

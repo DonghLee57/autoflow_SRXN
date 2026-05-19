@@ -1,15 +1,13 @@
-# Si(100) 2x1 buckled-dimer reconstruction
-# ------------------------------------------
+# Si(100) 2x1 buckled-dimer reconstruction + bottom H passivation
+# ----------------------------------------------------------------
 # MLIP 없이 geometry 단계만 실행 (slab_relax: false, candidate_relax: false)
-# bulk_shift=0.25: Si(100) bilayer 경계를 노출해 2x1 재구성에 필요한 dimer 쌍 확보
 #
-# bond_slack 사용 가이드
-# ----------------------
-# Si-Si 커트오프 = 1.11 + 1.11 + bond_slack
-# - bond_slack=0.20 → 2.42 A: MLIP 릴랙스 후 dimer 결합(~2.46 A) 불인식 → 버그
-# - bond_slack=0.45 → 2.67 A: MLIP 릴랙스 dimer 결합 인식, but Si_mp149 재구성 시
-#   up-dimer 백본드(2.705 A) 불인식 → up-dimer dangling 3개 오류
-# - bond_slack=0.50 → 2.72 A: 위 두 경우 모두 커버 (테스트 기준값)
+# bulk_shift=0.25 주의사항 (surface_utils.py 수정됨)
+# ---------------------------------------------------
+# ASE surface(vacuum=0) 는 cell_c = z_max 로 설정해 최상단 원자가 분수 좌표 1.0 == 0.0
+# (PBC). bulk_shift=0.25 적용 시 z=0 과 z=cell_c 원자가 합쳐져 16-원자 이중층이 생겼음.
+# create_slab_from_bulk 에서 적용 전 cell_c = num_layers * d_hkl 로 보정 (수정됨).
+# 수정 후: bottom Si coord=2 (dangling 2개) → H passivation 정상 동작.
 #
 # ideal_coordination 미지정 → chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1 등)
 
@@ -46,9 +44,7 @@ surface_prep:
     buckling_dist: 0.4
 
   passivation:
-    enabled:  false
-    # Si(100) bottom passivation: bulk_shift=0.25 + 2x2 supercell PBC 아티팩트
-    # (bottom Si 가 6개 등거리 이웃으로 과협조 감지 → H 미배치)
+    enabled:  true
     element:  "H"
     side:     "bottom"
     coverage: 1.0

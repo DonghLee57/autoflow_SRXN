@@ -29,12 +29,24 @@ Config 파일
   config_slab_prep_si100.yaml  — structures/Si_mp149.vasp 사용
   config_slab_prep_sio2.yaml   — structures/SiO2_mp-546794.vasp 사용
 
-Si(100) bond_slack 이슈
-------------------------
+Si(100) bulk_shift PBC 버그 수정 (surface_utils.py)
+----------------------------------------------------
+ASE surface(vacuum=0) 는 cell_c = z_max (원자 범위)로 설정하므로
+최상단 원자가 분수 좌표 1.0 == 0.0 (PBC). bulk_shift=0.25 적용 시
+z=0 원자와 z=cell_c 원자가 동일 위치로 합쳐져 16-원자 이중층 생성 (버그).
+수정: bulk_shift 적용 전 cell_c = num_layers * d_hkl 로 재설정.
+
+Si(100) bottom H passivation
+------------------------------
+bulk_shift 버그 수정 후 bottom Si 는 coord=2 (위로 2개 결합, 아래로 dangling 2개).
+passivation.enabled=true → 각 bottom Si 에 H 2개 배치 (Si-H 1.48 A).
+총 8 Si × 2 H = 16 H 원자.
+
+bond_slack 가이드 (get_all_dangling_bonds_general)
+---------------------------------------------------
 bond_slack=0.20 → cutoff 2.42 A : MLIP 릴랙스 후 dimer 결합(~2.46 A) 불인식 (원래 버그)
-bond_slack=0.45 → cutoff 2.67 A : dimer 결합 인식, but Si_mp149 재구성 시
-                                   up-dimer 백본드(2.705 A) 불인식 → dangling 3개 오류
-bond_slack=0.50 → cutoff 2.72 A : 위 두 경우 모두 커버 → 테스트 기준값
+bond_slack=0.45 → cutoff 2.67 A : 구 slab 에서 up-dimer 백본드(2.705 A) 불인식
+bond_slack=0.50 → cutoff 2.72 A : 모든 케이스 커버 -- 테스트 기준값
 
 SiO2 termination 이슈
 ----------------------
@@ -109,8 +121,15 @@ def _sio2_vasp_exists() -> bool:
 class TestSi100SlabPrep(unittest.TestCase):
     """
     config_slab_prep_si100.yaml (structures/Si_mp149.vasp) 을 사용해
-    prepare_slab_stage() 로 생성한 Si(100) slab 의 2×1 buckled-dimer 재구성을 검증.
-    결과 slab 은 output_slab_prep/si100_unit_prepared_slab.extxyz 에 저장.
+    prepare_slab_stage() 로 생성한 Si(100) slab 을 검증.
+
+    검증 항목:
+      - 원소: Si + H (bottom H passivation)
+      - Bottom: 각 Si 에 H 2개 (Si-H 1.4-1.6 A), bottom Si coord=4
+      - Top:  2x1 buckled-dimer 재구성 (dimer 결합 2.10-2.65 A, dimer Si dangling=1)
+      - 층 구조: 모든 내부 layer n=8 (bulk_shift PBC 버그 수정 후 double-layer 없음)
+
+    결과 slab: output_slab_prep/si100_unit_prepared_slab.extxyz
     """
 
     @classmethod
@@ -128,19 +147,75 @@ class TestSi100SlabPrep(unittest.TestCase):
 
     # ── 원소 구성 ─────────────────────────────────────────────────────────────
 
-    def test_contains_only_si(self):
-        """Passivation 비활성 상태에서 slab 은 Si 만 포함해야 한다."""
+    def test_contains_si_and_h_only(self):
+        """bottom H passivation 으로 Si + H 만 존재해야 한다."""
         sym_set = set(self.syms.tolist())
-        self.assertIn("Si", sym_set)
-        self.assertFalse(sym_set - {"Si"},
-                         f"예상 외 원소: {sym_set - {'Si'}}")
+        self.assertIn("Si", sym_set, "Si 없음")
+        self.assertIn("H",  sym_set, "H 없음 — bottom passivation 실패")
+        self.assertFalse(sym_set - {"Si", "H"},
+                         f"예상 외 원소: {sym_set - {'Si', 'H'}}")
 
-    # ── 2×1 Dimer 재구성 ─────────────────────────────────────────────────────
+    # ── Bottom H passivation ──────────────────────────────────────────────────
+
+    def test_bottom_h_count(self):
+        """8 bottom Si × 2 dangling bond = H 16개가 생성되어야 한다."""
+        n_h = int((self.syms == "H").sum())
+        self.assertEqual(n_h, 16,
+                         f"H 원자 수={n_h} (기대 16 = 8 Si * 2 H)")
+
+    def test_bottom_h_each_bonded_to_one_si(self):
+        """각 H 는 Si 와 1.3-1.6 A 이내 결합 정확히 1개 (Si-H bond)."""
+        i_arr, j_arr, _ = neighbor_list("ijD", self.slab, 1.6)
+        h_idx = np.where(self.syms == "H")[0]
+        self.assertGreater(len(h_idx), 0, "H 없음")
+        for h in h_idx:
+            si_nb = [j for ii, j in zip(i_arr, j_arr)
+                     if ii == h and self.syms[j] == "Si"]
+            self.assertEqual(len(si_nb), 1,
+                             f"H[{h}] Si 이웃={len(si_nb)} (기대 1)")
+
+    def test_bottom_h_atoms_below_si(self):
+        """H 원자들은 최하단 Si 아래(또는 같은 z)에 배치되어야 한다."""
+        z_min_si = self.slab.positions[self.syms == "Si", 2].min()
+        z_h      = self.slab.positions[self.syms == "H",  2]
+        self.assertGreater(len(z_h), 0, "H 없음")
+        self.assertLessEqual(z_h.max(), z_min_si + 0.1,
+                             f"H z_max={z_h.max():.3f} > Si z_min={z_min_si:.3f} "
+                             f"-- H 가 bottom 에 없음")
+
+    def test_bottom_si_fully_passivated(self):
+        """bottom H 추가 후 bottom Si 의 coordination 이 4 이어야 한다.
+
+        cutoff=2.60 A: Si-H(1.48 A) 와 Si-Si(2.36 A) 결합은 포함하되
+        인접 Si 의 H 원자 (2.78 A, 비결합) 는 제외.
+        """
+        # 2.60 A: covers Si-H (1.48) and Si-Si (2.36), excludes non-bonded H (~2.78)
+        i_arr, j_arr = neighbor_list("ij", self.slab, 2.60)
+        z_min_si = self.slab.positions[self.syms == "Si", 2].min()
+        bot_si = np.where(
+            (self.slab.positions[:, 2] < z_min_si + 0.1) & (self.syms == "Si")
+        )[0]
+        self.assertGreater(len(bot_si), 0, "Bottom Si 없음")
+        for idx in bot_si:
+            nb = [j for ii, j in zip(i_arr, j_arr) if ii == idx]
+            self.assertEqual(len(nb), 4,
+                             f"Si[{idx}] coord={len(nb)} (기대 4 = 2 Si + 2 H)")
+
+    def test_no_double_density_layer(self):
+        """bulk_shift PBC 버그 수정 후 Si 층 각각 8원자 (16-원자 double layer 없음)."""
+        si_z = np.round(self.slab.positions[self.syms == "Si", 2], 2)
+        from collections import Counter
+        layer_counts = Counter(si_z.tolist())
+        doubles = {z: n for z, n in layer_counts.items() if n > 8}
+        self.assertEqual(len(doubles), 0,
+                         f"16-원자 이중층 발견: {doubles} -- bulk_shift PBC 버그 재발")
+
+    # ── 2x1 Dimer 재구성 ─────────────────────────────────────────────────────
 
     def test_dimer_bonds_present_at_top_surface(self):
         """
-        재구성 후 표면 Si 원자들 사이에 dimer 결합(2.10–2.65 Å)이 존재해야 한다.
-        threshold=0.8: buckled dimer 상·하 원자(최대 buckle ~0.7 Å)를 모두 포함.
+        재구성 후 표면 Si 원자들 사이에 dimer 결합(2.10-2.65 A)이 존재해야 한다.
+        threshold=0.8: buckled dimer 상하 원자(최대 buckle ~0.7 A)를 모두 포함.
         """
         top_idx = find_surface_indices(self.slab, side="top", threshold=0.8, species="Si")
         self.assertGreater(len(top_idx), 0, "표면 Si 원자 없음")
@@ -153,17 +228,11 @@ class TestSi100SlabPrep(unittest.TestCase):
             and 2.10 <= np.linalg.norm(d) <= 2.65
         ]
         self.assertGreater(len(dimer_bonds), 0,
-                           "dimer 결합(2.10–2.65 Å) 없음 — 재구성 실패")
+                           "dimer 결합(2.10-2.65 A) 없음 -- 재구성 실패")
 
     def test_dimer_si_has_exactly_one_dangling_bond(self):
         """
         bond_slack=0.50 기준, 각 dimer Si 는 dangling bond 가 정확히 1개여야 한다.
-
-        bond_slack 가이드:
-          0.20 → 2.42 A cutoff : MLIP 릴랙스 후 dimer 결합(~2.46 A) 불인식 [원래 버그]
-          0.45 → 2.67 A cutoff : dimer 결합 인식, but Si_mp149 up-dimer 백본드(2.705 A)
-                                  불인식 → up-dimer dangling 3개 오류
-          0.50 → 2.72 A cutoff : 두 경우 모두 커버 ← 테스트 기준값
 
         z > z_max-0.8 로 실제 dimer 원자만 평가
         (get_all_dangling_bonds_general hardcoded threshold=2.0 은 sub-surface 포함).
@@ -177,17 +246,14 @@ class TestSi100SlabPrep(unittest.TestCase):
         dbs = get_all_dangling_bonds_general(
             self.slab, valence_map, side="top", bond_slack=0.50
         )
-        counts: dict[int, int] = {}
+        counts = {}
         for db in dbs:
             if db["parent"] in dimer_si:
                 counts[db["parent"]] = counts.get(db["parent"], 0) + 1
 
         over = {i: n for i, n in counts.items() if n > 1}
-        self.assertEqual(
-            len(over), 0,
-            f"dangling > 1 인 dimer Si: {list(over.keys())}\n"
-            f"  bond_slack < 0.50 이면 up-dimer 백본드(2.705 A)가 인식되지 않습니다."
-        )
+        self.assertEqual(len(over), 0,
+                         f"dangling > 1 인 dimer Si: {list(over.keys())}")
         missing = dimer_si - set(counts.keys())
         self.assertEqual(len(missing), 0,
                          f"dangling bond 없는 dimer Si: {missing}")
@@ -332,11 +398,12 @@ class TestSlabPrepIntegration(unittest.TestCase):
     # ── Si(100) ──────────────────────────────────────────────────────────────
 
     def test_si100_prepared_slab_written(self):
-        """Si(100): prepared_slab.extxyz 가 Si 만으로 구성되어야 한다."""
+        """Si(100): prepared_slab.extxyz 에 Si + H (bottom passivation) 가 존재해야 한다."""
         slab = self._run_and_load(_CONFIG_SI100, "si100")
         syms = set(slab.get_chemical_symbols())
         self.assertIn("Si", syms)
-        self.assertFalse(syms - {"Si"}, f"예상 외 원소: {syms - {'Si'}}")
+        self.assertIn("H",  syms, "H 없음 -- bottom passivation 실패")
+        self.assertFalse(syms - {"Si", "H"}, f"예상 외 원소: {syms - {'Si', 'H'}}")
 
     def test_si100_dimer_bonds_in_output(self):
         """Si(100): prepared_slab.extxyz 에 dimer 결합(2.10–2.65 Å)이 존재해야 한다."""
