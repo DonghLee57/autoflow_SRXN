@@ -6,16 +6,16 @@
 # passivation side=bottom: bottom O-H 형성, top O dangling bonds 는
 #   chemisorption active sites 로 보존
 #
-# ideal_coordination 미지정 시 chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1)
+# ideal_coordination 미지정 → chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1)
 
 paths:
-  substrate_bulk: "../troubleshoot/SiO2_slab_prep/POSCAR_SiO2.vasp"
-  output_prefix:  "test_output/sio2"   # 테스트 코드에서 tmpdir 로 덮어씀
+  substrate_bulk: "../structures/SiO2_mp-546794.vasp"  # tetragonal SiO2 (4Si+8O, MP ID 546794)
+  output_prefix:  "output_slab_prep/sio2"               # unittests/ 기준 상대경로
   precursor: null
   inhibitor: null
 
 workflow:
-  slab_relax:      false   # MLIP 없음 — geometry 검증만
+  slab_relax:      false
   candidate_relax: false
   md_equilibrate:  false
   post_md_relax:   false
@@ -32,17 +32,16 @@ surface_prep:
     thickness_ang:      12.0
     vacuum_ang:         15.0
     target_area_ang2:   250.0
-    top_termination:    "O"    # O-terminated 상단 (chemisorption active sites)
-    bottom_termination: "O"    # O-terminated 하단 (passivation 대상)
+    top_termination:    "O"
+    bottom_termination: "O"
 
   passivation:
     enabled:  true
     element:  "H"
-    side:     "bottom"   # bottom O-H 형성, top O dangling 유지
+    side:     "bottom"
     coverage: 1.0
 
   # ideal_coordination 생략 → chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1)
-  # 비표준 원소 또는 비표준 배위환경일 때만 아래처럼 명시:
   # surface_analysis:
   #   ideal_coordination:
   #     Si: 4

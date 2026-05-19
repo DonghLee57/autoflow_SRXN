@@ -100,7 +100,7 @@ def _resolve_valence_map(sp_cfg: dict, atoms, logger) -> dict:
             auto[sym] = coord
     if auto:
         logger.info(
-            f"  [surface_analysis] ideal_coordination not specified — "
+            f"  [surface_analysis] ideal_coordination not specified -- "
             f"using chem_data defaults: {auto}"
         )
     else:

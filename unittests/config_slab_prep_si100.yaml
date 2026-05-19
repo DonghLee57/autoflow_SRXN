@@ -2,20 +2,25 @@
 # ------------------------------------------
 # MLIP 없이 geometry 단계만 실행 (slab_relax: false, candidate_relax: false)
 # bulk_shift=0.25: Si(100) bilayer 경계를 노출해 2x1 재구성에 필요한 dimer 쌍 확보
-# bond_slack=0.45: MLIP 릴랙스 후 dimer 결합 ~2.46 A 인식에 필요
-#   (default 0.20 -> cutoff 2.42 A < 2.46 A -> dimer 불인식 -> dangling bond 2개 오류)
 #
-# ideal_coordination 미지정 시 chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1 등)
-# 원소가 chem_data 에 없거나 0 이면 surface_analysis.ideal_coordination 에 명시 필요.
+# bond_slack 사용 가이드
+# ----------------------
+# Si-Si 커트오프 = 1.11 + 1.11 + bond_slack
+# - bond_slack=0.20 → 2.42 A: MLIP 릴랙스 후 dimer 결합(~2.46 A) 불인식 → 버그
+# - bond_slack=0.45 → 2.67 A: MLIP 릴랙스 dimer 결합 인식, but Si_mp149 재구성 시
+#   up-dimer 백본드(2.705 A) 불인식 → up-dimer dangling 3개 오류
+# - bond_slack=0.50 → 2.72 A: 위 두 경우 모두 커버 (테스트 기준값)
+#
+# ideal_coordination 미지정 → chem_data.json 기본값 자동 적용 (Si=4, O=2, H=1 등)
 
 paths:
-  substrate_bulk: "../structures/bulk_si.vasp"  # primitive Si (FCC, 2 atoms, a=5.431 A)
-  output_prefix:  "test_output/si100"            # 테스트 코드에서 tmpdir 로 덮어씀
+  substrate_bulk: "../structures/Si_mp149.vasp"  # 8-atom conventional cubic Si (a=5.444 A)
+  output_prefix:  "output_slab_prep/si100"        # unittests/ 기준 상대경로
   precursor: null
   inhibitor: null
 
 workflow:
-  slab_relax:      false   # MLIP 없음 — geometry 검증만
+  slab_relax:      false
   candidate_relax: false
   md_equilibrate:  false
   post_md_relax:   false
@@ -31,27 +36,25 @@ surface_prep:
     miller:           [1, 0, 0]
     thickness_ang:    8.0
     vacuum_ang:       10.0
-    bulk_shift:       0.25        # bilayer 경계 노출 — 2x1 재구성 필수
+    bulk_shift:       0.25
     supercell_matrix: [[2, 0], [0, 2]]
 
   reconstruction:
     enabled:       true
     strategy:      "auto"         # Si + miller(1,0,0) -> reconstruct_si100_2x1_buckled
     side:          "top"
-    buckling_dist: 0.4            # 수직 버클링 진폭 (A)
+    buckling_dist: 0.4
 
   passivation:
     enabled:  false
-    # Si(100) bottom passivation 은 이 셀 기하에서 PBC 아티팩트로 동작하지 않음.
-    # bulk_shift=0.25 + 2x2 셀에서 bottom Si 가 6개 등거리 이웃으로 과협조 감지
-    # → num_missing < 0 → H 미배치. 핵심 검증인 dimer 재구성에 집중.
+    # Si(100) bottom passivation: bulk_shift=0.25 + 2x2 supercell PBC 아티팩트
+    # (bottom Si 가 6개 등거리 이웃으로 과협조 감지 → H 미배치)
     element:  "H"
     side:     "bottom"
     coverage: 1.0
 
   # ideal_coordination 생략 → chem_data.json 기본값 자동 적용
-  # 비표준 원소 또는 비표준 배위환경일 때만 아래처럼 명시:
+  # 비표준 원소나 비표준 환경에서만 명시:
   # surface_analysis:
   #   ideal_coordination:
   #     Si: 4
-  #     H:  1
