@@ -39,7 +39,7 @@ def main():
         },
         "relaxation": {
             "fmax": 0.05,
-            "steps": 100,
+            "steps": 1,
             "frozen_z_ang": 5.5,
         },
         "surface_prep": {
@@ -74,6 +74,9 @@ def main():
                     "chemisorption": {
                         "enabled": True,
                         "rot_steps": 8,
+                        "coordination_analysis": {
+                            "bond_slack": 0.45
+                        },
                         "proximity_filter": {
                             "enabled": True,
                             "cutoff": 7.0,
@@ -86,7 +89,7 @@ def main():
                 }
             },
             "candidate_filter": {
-                "overlap_scale": 0.65
+                "overlap_scale": 0.60
             }
         },
         "engine": {
