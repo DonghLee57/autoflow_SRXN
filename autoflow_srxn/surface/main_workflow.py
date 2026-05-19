@@ -26,6 +26,7 @@ from .surface_utils import (
     create_slab_from_bulk,
     passivate_surface_coverage_general,
     standardize_vasp_atoms,
+    apply_surface_reconstruction,
 )
 
 
@@ -89,6 +90,7 @@ def prepare_slab_stage(config, logger):
                 vacuum=sub_gen_cfg.get("vacuum_ang", 10.0),
                 target_area=sub_gen_cfg.get("target_area_ang2"),
                 supercell_matrix=sub_gen_cfg.get("supercell_matrix"),
+                bulk_shift=sub_gen_cfg.get("bulk_shift", 0.0),
                 verbose=True,
             )
         else:
@@ -112,6 +114,30 @@ def prepare_slab_stage(config, logger):
                 side=pass_cfg.get("side", "bottom"),
                 verbose=True,
             )
+
+        # --- GLOBAL STAGE 0.2: Reconstruction ---
+        recon_cfg = sp_cfg.get("reconstruction", {})
+        if recon_cfg.get("enabled", False):
+            strategy = recon_cfg.get("strategy", "auto")
+            side = recon_cfg.get("side", "top")
+            log_stage_title(logger, "GLOBAL STAGE 0.2", f"Applying surface reconstruction (strategy={strategy}, side={side})...")
+            
+            recon_kwargs = copy.deepcopy(recon_cfg)
+            # Map buckling_dist to buckle if present
+            if "buckling_dist" in recon_kwargs:
+                recon_kwargs["buckle"] = recon_kwargs.pop("buckling_dist")
+            # Remove strategy, side, enabled keys
+            for k in ["strategy", "side", "enabled"]:
+                recon_kwargs.pop(k, None)
+                
+            slab = apply_surface_reconstruction(
+                slab,
+                strategy=strategy,
+                side=side,
+                miller=sub_gen_cfg.get("miller", [1, 0, 0]),
+                verbose=True,
+                **recon_kwargs
+            )
     return slab
 
 
@@ -119,6 +145,8 @@ def relax_slab_stage(slab, config, logger):
     """Handles Stage 0.5: Slab relaxation. Returns (relaxed_slab, base_energy)."""
     wf = _resolve_workflow(config)
     rp = _resolve_relax_params(config)
+    paths = config.get("paths", {})
+    global_prefix = paths.get("output_prefix", "discovery")
     
     slab_base_energy = 0.0
     from ..simulation.potentials import SimulationEngine
@@ -129,7 +157,24 @@ def relax_slab_stage(slab, config, logger):
             engine = SimulationEngine(config)
             slab.calc = engine.get_calculator()
             e_init = slab.get_potential_energy()
-            engine.relax(slab, fmax=rp["fmax"], steps=200, frozen_z_ang=rp["frozen_z_ang"])
+            
+            # Save relaxation trajectory to slab_relaxation.traj, which will be converted to .extxyz automatically
+            traj_path = os.path.join(global_prefix, "slab_relaxation.traj")
+            engine.relax(
+                slab, 
+                fmax=rp["fmax"], 
+                steps=200, 
+                frozen_z_ang=rp["frozen_z_ang"],
+                trajectory=traj_path
+            )
+            # Clean up the temporary binary .traj file if the converted .extxyz file was successfully written
+            extxyz_path = traj_path.replace(".traj", ".extxyz")
+            if os.path.exists(extxyz_path) and os.path.exists(traj_path):
+                try:
+                    os.remove(traj_path)
+                except Exception:
+                    pass
+                    
             slab = standardize_vasp_atoms(slab, z_min_offset=0.5)
             slab_base_energy = slab.get_potential_energy()
         log_energy_comparison(logger, "Slab Relax", e_init, slab_base_energy)
@@ -283,23 +328,20 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
 
     # --- Intelligent Center Selection ---
     actual_center = center_target
-    if stage_type == "inhibitor":
-        actual_center = "com"
-    else:
-        mol_symbols = set(mol.get_chemical_symbols())
-        if isinstance(center_target, list):
-            found = False
-            for c in center_target:
-                if c in mol_symbols:
-                    actual_center = c
-                    found = True
-                    break
-            if not found:
-                others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
-                actual_center = others[0] if others else "com"
-        elif isinstance(center_target, str) and center_target not in mol_symbols and center_target != "com":
-             others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
-             actual_center = others[0] if others else "com"
+    mol_symbols = set(mol.get_chemical_symbols())
+    if isinstance(center_target, list):
+        found = False
+        for c in center_target:
+            if c in mol_symbols:
+                actual_center = c
+                found = True
+                break
+        if not found:
+            others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+            actual_center = others[0] if others else "com"
+    elif isinstance(center_target, str) and center_target not in mol_symbols and center_target != "com":
+         others = [s for s in mol_symbols if s not in ["H", "C", "N", "O"]]
+         actual_center = others[0] if others else "com"
 
     mgr = AdsorptionWorkflowManager(slab, config=config, symprec=symprec, verbose=True)
     all_cands = []

@@ -37,6 +37,7 @@ surface_prep:
     thickness_ang:     12.0
     vacuum_ang:        15.0
     target_area_ang2:  250.0
+    bulk_shift:        0.25  # Required for conventional Si cubic cell to expose bilayer termination (3.86 A spacing)
 
   passivation:
     enabled: true

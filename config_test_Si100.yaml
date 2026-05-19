@@ -22,7 +22,16 @@ surface_prep:
     - 0
     thickness_ang: 12.0
     vacuum_ang: 15.0
-    target_area_ang2: 250.0
+    supercell_matrix:
+    - - 4
+      - 0
+    - - 0
+      - 4
+  reconstruction:
+    enabled: true
+    strategy: auto
+    side: top
+    buckling_dist: 0.7
 reaction_search:
   symprec: 0.2
   mechanisms:
@@ -58,8 +67,8 @@ reaction_search:
     overlap_scale: 0.65
 engine:
   potential:
-    backend: mace
-    model: medium
+    backend: sevennet
+    model: 7net-0
     device: cpu
     dtype: float64
     d3: false

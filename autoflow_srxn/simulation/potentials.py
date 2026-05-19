@@ -536,6 +536,20 @@ class SimulationEngine:
             for pb in pbars:
                 pb.close()
 
+        # Convert binary .traj to .extxyz if trajectory was specified as a .traj file
+        if trajectory and os.path.exists(trajectory) and trajectory.endswith(".traj"):
+            extxyz_path = trajectory.replace(".traj", ".extxyz")
+            from ase.io import read as ase_read, write as ase_write
+            try:
+                frames = ase_read(trajectory, index=":")
+                for f in frames:
+                    f.calc = None # remove calculator to avoid storing large arrays or serialization issues
+                ase_write(extxyz_path, frames)
+                if verbose:
+                    print(f"  [Relax] Converted relaxation trajectory to '{extxyz_path}'")
+            except Exception as e:
+                logger.error(f"  [Relax] Failed to convert trajectory to extxyz: {e}")
+
         return atoms.get_potential_energy()
 
     def run_md(

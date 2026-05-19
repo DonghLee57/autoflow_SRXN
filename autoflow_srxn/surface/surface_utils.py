@@ -389,8 +389,19 @@ class CavityDetector:
             if len(filtered) >= 5: break
         return filtered
 
-def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_area=None, supercell_matrix=None, termination=None, top_termination=None, bottom_termination=None, verbose=False):
-    """Generates a substrate slab from a bulk structure."""
+def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_area=None, supercell_matrix=None, termination=None, top_termination=None, bottom_termination=None, bulk_shift=0.0, verbose=False):
+    """Generates a substrate slab from a bulk structure.
+
+    Parameters
+    ----------
+    bulk_shift : float
+        Fractional z-shift (0.0-1.0) applied to all slab atoms before centering
+        to select the bulk termination plane exposed at the surface.
+        For the conventional 8-atom Si cubic cell, bulk_shift=0.25 (or 0.75)
+        exposes the bilayer boundary with 3.86 A spacing required by the
+        Si(100) 2x1 dimer reconstruction algorithm.
+        Default: 0.0 (no shift).
+    """
     s1, s2 = surface(bulk_atoms, miller_indices, layers=1), surface(bulk_atoms, miller_indices, layers=2)
     d_hkl = max(0.1, (np.max(s2.positions[:, 2]) - np.min(s2.positions[:, 2])) - (np.max(s1.positions[:, 2]) - np.min(s1.positions[:, 2])))
     num_layers = int(math.ceil(thickness / d_hkl))
@@ -417,6 +428,16 @@ def create_slab_from_bulk(bulk_atoms, miller_indices, thickness, vacuum, target_
         if best_p: slab = test_slab[(z >= best_p[0]["z"] - 0.1) & (z <= best_p[1]["z"] + 0.1)]
         else: slab = surface(bulk_atoms, miller_indices, layers=num_layers, vacuum=0)
     else: slab = surface(bulk_atoms, miller_indices, layers=num_layers, vacuum=0)
+
+    # --- Apply bulk_shift to select the correct surface termination ---
+    if bulk_shift and abs(bulk_shift) > 1e-6:
+        frac = slab.get_scaled_positions()
+        frac[:, 2] = (frac[:, 2] + bulk_shift) % 1.0
+        slab.set_scaled_positions(frac)
+        slab.wrap()
+        if verbose:
+            print(f"  [Slab] bulk_shift={bulk_shift:.3f} applied — surface termination shifted.")
+
     slab.center(vacuum=vacuum, axis=2)
     if supercell_matrix:
         m = np.eye(3); m[0,0], m[0,1], m[1,0], m[1,1] = supercell_matrix[0][0], supercell_matrix[0][1], supercell_matrix[1][0], supercell_matrix[1][1]
