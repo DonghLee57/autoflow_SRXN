@@ -1,0 +1,79 @@
+# config.yaml
+#
+# Production configuration for the co-adsorption study of AllylCpNi (precursor) 
+# and an oxygen-centered inhibitor on a reconstructed/dimerized Si(100) surface.
+#
+# Physical Specifications:
+# - Reconstructed Si-Si dimer bond distance ~2.46 Å requires bond_slack: 0.45 to be correctly recognized as 3-coordinated.
+# - Bulky haptic Cp/Allyl ligands require overlap_scale: 0.60 to pass van der Waals steric overlap constraints.
+
+paths:
+  substrate_bulk: null
+  input_structure: "structures/slabs/Si100_slab.vasp"
+  precursor: "structures/AllylCpNi_relaxed.vasp"
+  inhibitor: "structures/inhibitor_relaxed.vasp"
+  output_prefix: "results_Si100_AllylCpNi_chemisorption"
+
+workflow:
+  slab_relax: false
+  candidate_relax: true
+  md_equilibrate: false
+  post_md_relax: false
+
+relaxation:
+  fmax: 0.05
+  steps: 100
+  frozen_z_ang: 5.5
+
+surface_prep:
+  slab_generation:
+    enabled: false
+
+reaction_search:
+  symprec: 0.2
+  mechanisms:
+    inhibitor:
+      enabled: true
+      center: "O"
+      branching_limit: 1
+      physisorption:
+        enabled: true
+        placement_height: 2.5
+        height_mode: "clearance"
+      chemisorption:
+        enabled: true
+        rot_steps: 8
+        coordination_analysis:
+          bond_slack: 0.45
+        proximity_filter:
+          enabled: true
+          cutoff: 7.0
+          visualize: true
+    precursor:
+      center: "Ni"
+      physisorption:
+        enabled: true
+        placement_height: 3.5
+        height_mode: "clearance"
+        n_rot: 8
+      chemisorption:
+        enabled: true
+        rot_steps: 8
+        coordination_analysis:
+          bond_slack: 0.45
+        proximity_filter:
+          enabled: true
+          cutoff: 7.0
+          visualize: true
+      ts_search:
+        enabled: false
+  candidate_filter:
+    overlap_scale: 0.60
+
+engine:
+  potential:
+    backend: "mace"
+    model: "medium"
+    device: "cpu"
+    dtype: "float64"
+    d3: false
