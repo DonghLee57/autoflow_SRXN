@@ -133,16 +133,17 @@ def _dimer_seed_positions(atoms, dimers, rows, cols, buckle, bond_length, patter
     return trial, pairset
 
 
-def _filter_to_dominant_direction(candidates):
-    """Filter dimer candidates to a single dominant lateral direction.
+def _filter_to_dominant_direction(candidates, back_bond_angle=None):
+    """Filter dimer candidates to a single lateral direction.
 
-    Si(100) has two degenerate nearest-neighbor directions (~45° and ~135°
-    relative to the cell axes).  Without this filter the matcher mixes both
-    directions, giving a disordered surface instead of a proper 2×1 domain.
+    Si(100) has two degenerate nearest-neighbor directions at ~45° and ~135°
+    relative to the cell axes.  The correct dimer direction is perpendicular
+    to the back-bond projection onto the surface plane; the parallel direction
+    is a saddle point that the ML relaxer will undo.
 
-    Algorithm: bin candidate angles (mod 180°) into 30°-wide slots, keep
-    only the most-populated slot.  Ties are broken by the smaller bin index
-    (smaller angle) for reproducibility.
+    When *back_bond_angle* (degrees, mod 180) is provided, the direction most
+    perpendicular to the back-bond is selected among equally-populated bins.
+    Without it, the smallest-angle bin wins the tie — use only as a fallback.
     """
     if not candidates:
         return candidates
@@ -156,7 +157,19 @@ def _filter_to_dominant_direction(candidates):
         angle = np.degrees(np.arctan2(v[1], v[0])) % 180.0
         bins[int(angle / bin_width) % n_bins].append(cand)
 
-    dominant = max(range(n_bins), key=lambda b: (len(bins[b]), -b))
+    max_count = max(len(b) for b in bins)
+    top_bins = [i for i in range(n_bins) if len(bins[i]) == max_count]
+
+    if back_bond_angle is not None and len(top_bins) > 1:
+        # Among equally-populated bins pick the one most perpendicular to back-bonds.
+        def _perp(bi):
+            center = (bi + 0.5) * bin_width
+            diff = abs(center - back_bond_angle)
+            return min(diff, 180.0 - diff)
+        dominant = max(top_bins, key=_perp)
+    else:
+        dominant = max(top_bins, key=lambda b: -b)
+
     dominant_center = (dominant + 0.5) * bin_width
 
     filtered = []
@@ -191,7 +204,8 @@ def _score_dimer_matching(atoms, dimers, rows, cols, buckle, bond_length, patter
 
 
 def _select_stable_dimer_matching(
-    atoms, idx_list, buckle, bond_length, pattern, side, verbose=False
+    atoms, idx_list, buckle, bond_length, pattern, side,
+    back_bond_angle=None, verbose=False
 ):
     """Choose Si(100) surface dimers that do not create near-collisions."""
     candidates = []
@@ -211,8 +225,36 @@ def _select_stable_dimer_matching(
     if not candidates or len(idx_list) % 2:
         return []
 
-    # Restrict to one lateral direction so all dimers are co-aligned (2×1 domain).
-    candidates = _filter_to_dominant_direction(candidates)
+    # In small cells, ASE's minimum-image convention may return the same
+    # direction for both degenerate images (e.g. (2.715,2.715) and
+    # (-2.715,-2.715) both map to 45°).  Explicitly add the perpendicular
+    # alternative image for each such pair so the filter has both axes to
+    # choose from.
+    if back_bond_angle is not None:
+        target_perp = (back_bond_angle + 90.0) % 180.0
+        extra = []
+        seen_perp = set()
+        for cand in candidates:
+            vec = cand["vec"]
+            ang = np.degrees(np.arctan2(vec[1], vec[0])) % 180.0
+            if min(abs(ang - back_bond_angle), 180.0 - abs(ang - back_bond_angle)) > 30.0:
+                continue  # already off back-bond axis, no need to augment
+            cid = tuple(sorted(cand["ids"]))
+            if cid in seen_perp:
+                continue
+            seen_perp.add(cid)
+            for rv in (np.array([vec[0], -vec[1], vec[2]]),
+                       np.array([-vec[0], vec[1], vec[2]])):
+                ang_r = np.degrees(np.arctan2(rv[1], rv[0])) % 180.0
+                if min(abs(ang_r - target_perp), 180.0 - abs(ang_r - target_perp)) <= 30.0:
+                    mid_r = atoms.positions[cand["ids"][0]] + rv / 2
+                    extra.append({"ids": cand["ids"], "vec": rv, "mid": mid_r})
+                    break
+        candidates = candidates + extra
+
+    # Restrict to one lateral direction, choosing the axis perpendicular to
+    # back-bonds so the seed geometry cannot relax straight back to ideal.
+    candidates = _filter_to_dominant_direction(candidates, back_bond_angle=back_bond_angle)
 
     inv = np.linalg.inv(atoms.cell[:2, :2])
     rows = sorted(set(round((d["mid"][:2] @ inv)[1] * 8, 1) for d in candidates))
@@ -295,12 +337,36 @@ def reconstruct_si100_2x1_buckled(
         return atoms
 
     # Count only Si-Si bonds so that passivating H atoms don't inflate coordination.
-    i_list, j_list = neighbor_list("ij", atoms, 2.6)
+    i_list, j_list, D_list = neighbor_list("ijD", atoms, 2.6)
     si_mask = np.array(atoms.get_chemical_symbols()) == "Si"
+    idx_set = set(idx_list.tolist())
     undercoord_idx = np.array([
         i for i in idx_list
         if np.sum(si_mask[j_list[i_list == i]]) < 4
     ])
+
+    # Compute average back-bond XY direction so the dimer filter can choose
+    # the perpendicular direction (the correct 2×1 axis).
+    zsign = -1.0 if side == "top" else 1.0  # back-bonds go into the bulk
+    back_vecs = []
+    for ii in undercoord_idx:
+        mask = i_list == ii
+        for jj, dv in zip(j_list[mask], D_list[mask]):
+            if si_mask[jj] and jj not in idx_set and dv[2] * zsign > 0.2:
+                v2 = dv[:2]
+                norm = np.linalg.norm(v2)
+                if norm > 1e-3:
+                    v2 = v2 / norm
+                    if v2[0] < -1e-6 or (abs(v2[0]) < 1e-6 and v2[1] < -1e-6):
+                        v2 = -v2
+                    back_vecs.append(v2)
+    back_bond_angle = None
+    if back_vecs:
+        avg = np.mean(back_vecs, axis=0)
+        n = np.linalg.norm(avg)
+        if n > 1e-6:
+            back_bond_angle = float(np.degrees(np.arctan2(avg[1], avg[0])) % 180.0)
+
     dimers = _select_stable_dimer_matching(
         atoms,
         undercoord_idx,
@@ -308,6 +374,7 @@ def reconstruct_si100_2x1_buckled(
         bond_length=bond_length,
         pattern=pattern,
         side=side,
+        back_bond_angle=back_bond_angle,
         verbose=verbose,
     )
 
