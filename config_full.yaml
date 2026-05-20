@@ -296,105 +296,11 @@ engine:
 
 
 # -----------------------------------------------------------------------------
-# Stage 0a — Heterointerface Slab Generation  (optional, requires pymatgen)
+# Stage 0a — Heterointerface Slab Generation
 # -----------------------------------------------------------------------------
-# This stage runs BEFORE the main slab generation step (surface_prep).
-# It uses the 2D ZSL (Zur-Schilling) lattice-match algorithm to find the
-# lowest-strain supercell pair between a substrate and a film bulk crystal,
-# builds separate symmetric substrate and film slabs, and optionally feeds
-# the substrate slab directly into the reaction-search stages.
+# Note: Interface generation (Stage 0a) is only supported in the 'dev' branch.
 #
-# build() returns two independent ASE Atoms objects:
-#   sub_slab   — symmetric substrate slab with vacuum
-#   film_slab  — symmetric film slab with vacuum (same in-plane cell)
-#
-# When use_as_substrate is true:
-#   surface_prep.slab_generation.enabled is internally overridden to false
-#   and the substrate slab is used as the working substrate for Stage 1/2.
-#
-# Minimal example — TiN substrate / HfO2 film:
-#   interface:
-#     enabled:            true
-#     sub_path:           "structures/TiN.cif"
-#     film_path:          "structures/HfO2.cif"
-#     sub_millers:        [[0,0,1]]
-#     film_millers:       [[0,0,1], [1,1,0]]
-#     strain_cutoff:      0.05
-#     max_atoms:          400
-#     build_top_k:        1
-#     use_as_substrate:   true
-#
-interface:
-  enabled:       false           # true -> run Stage 0a before surface_prep
 
-  # ── Input structures ────────────────────────────────────────────────────────
-  # Full paths to bulk crystal files.  Accepted formats: CIF, POSCAR/CONTCAR,
-  # or any format understood by pymatgen.core.Structure.from_file().
-  sub_path:  "structures/substrate_bulk.cif"   # Substrate bulk crystal
-  film_path: "structures/film_bulk.cif"        # Epitaxial film bulk crystal
-
-  # ── Surface orientation search space ────────────────────────────────────────
-  # Three ways to specify Miller indices (priority: explicit > *_max_miller > default):
-  #
-  #   A. Explicit list — only these faces are searched:
-  #        sub_millers:  [[0,0,1], [1,1,0], [1,0,0]]
-  #        film_millers: [[0,0,1], [1,1,0]]
-  #
-  #   B. Auto-enumerate — all faces with max(|h|,|k|,|l|) <= N (inclusive):
-  #        sub_millers: null
-  #        sub_max_miller: 2
-  #
-  #   C. Omit both — falls back to default: (0,0,1), (1,1,0), (1,1,1)
-  #
-  # miller_mode: "distinct"  pymatgen symmetry reduction (default, recommended)
-  #              "raw"       all (h,k,l) with h,k,l in [0,N] and gcd(h,k,l)=1
-
-  # Explicit lists (non-empty list takes priority over *_max_miller):
-  sub_millers:  [[0,0,1], [1,1,0], [1,0,0]]
-  film_millers: [[0,0,1], [1,1,0], [1,0,0]]
-
-  # Auto-enumerate (used only when the corresponding *_millers is null or absent):
-  sub_max_miller:  null   # e.g. 2  ->  max(|h|,|k|,|l|) <= 2
-  film_max_miller: null   # e.g. 3  ->  max(|h|,|k|,|l|) <= 3
-
-  miller_mode: "distinct"   # "distinct" | "raw"
-
-  # ── ZSL lattice-match parameters ────────────────────────────────────────────
-  # max_det:       Maximum Hermite Normal Form determinant to enumerate per
-  #                material.  Larger values find smaller-strain matches at
-  #                the cost of O(max_det^4) work.  Typical range: 4–8.
-  max_det: 6
-
-  # strain_cutoff: Discard coincidences with von Mises strain above this value.
-  #                0.05 (5 %) is a physically reasonable starting point for
-  #                pseudomorphic growth.  Relax to 0.10 if no matches appear.
-  strain_cutoff: 0.05
-
-  # max_atoms: Candidates whose estimated total atom count exceeds this value
-  #            are flagged with a WARN note (not rejected).
-  max_atoms: 400
-
-  # ── Slab construction ────────────────────────────────────────────────────────
-  # min_slab_thickness:  Minimum physical slab thickness (Angstrom).
-  min_slab_thickness: 12.0
-
-  # vacuum:  Vacuum layer thickness (Angstrom) added above each slab.
-  vacuum: 15.0
-
-  # ── Output & downstream integration ─────────────────────────────────────────
-  # build_top_k: Number of top-ranked candidates to build as ASE slab pairs.
-  #              Writes sub_slab_<N>.extxyz and film_slab_<N>.extxyz per rank.
-  #              Set to 0 to only run the screening without building slabs.
-  build_top_k: 1
-
-  # use_as_substrate: If true, the best built substrate slab (rank 0) is
-  #                   injected as the working substrate and
-  #                   surface_prep.slab_generation.enabled is set to false.
-  use_as_substrate: false
-
-  # output_dir: Where to write slab files and interface_summary.txt.
-  #             null -> uses the run's output directory (paths.output_dir).
-  output_dir: null
 
 
 # -----------------------------------------------------------------------------
@@ -598,66 +504,9 @@ reaction_search:
           visualize: true       # Generate proximity map visualization
 
       # [STAGE 2.5: TRANSITION STATE DISCOVERY]
-      # Connects physisorption and chemisorption states via NEB and ARTn refinement.
-      # Features automated PBC alignment and vibrational saddle-point verification.
-      ts_search:
-        enabled:          true
+      # Note: Transition state search (Stage 2.5) is only supported in the 'dev' branch.
+      #
 
-        # ── Advanced TS Logic ───────────────────────────────────────────────
-        # mapping_mode: "geometric" (default)
-        #   Uses a Hungarian algorithm to automatically map atom indices between
-        #   external structures if they are shuffled. Enforces element consistency.
-        #
-        # verification: true (default)
-        #   Automatically runs vibrational analysis after TS refinement to
-        #   confirm exactly one imaginary frequency (saddle point).
-        mapping_mode:     "geometric"
-        verification:     true
-
-        # ── NEB (Nudged Elastic Band) ────────────────────────────────────────
-        neb:
-          n_images:       7       # Number of movable intermediate images (endpoints excluded).
-                                  # More images → smoother path but proportionally more cost.
-                                  # Typical: 5–9. For flat/barrierless surfaces, 3–5 is enough.
-
-          fmax:           0.05    # Force convergence criterion (eV/Å).
-                                  # Applied to the NEB spring-projected forces.
-                                  # 0.05 eV/Å is standard; tighten to 0.03 for accurate barriers.
-
-          steps:          100     # Max FIRE optimizer steps.
-                                  # NEB cost ≈ steps × n_images × single-point time.
-                                  # 100 steps is usually sufficient when IDPP initialises well;
-                                  # raise to 200 for difficult paths (large barriers, many images).
-
-          interpolate:    "idpp"  # Initial path interpolation method.
-                                  # "idpp"   Image-Dependent Pair Potential — minimises
-                                  #          artificial bond stretching along the path.
-                                  #          Strongly recommended for molecular adsorbates.
-                                  # "linear" Simple Cartesian linear interpolation.
-                                  #          Fast but can pass through high-energy regions;
-                                  #          use only as a fallback.
-
-          climbing_image: false   # Climbing Image NEB (CI-NEB).
-                                  # false (default) — standard NEB; all images feel spring forces.
-                                  # true — the highest-energy image climbs toward the saddle
-                                  #        point without spring forces, giving a more accurate
-                                  #        barrier. Recommended after an initial NEB run converges
-                                  #        and you want to sharpen the TS estimate.
-                                  # Note: CI-NEB can diverge if the initial path is far from
-                                  #       the saddle; run plain NEB first.
-
-        # ── ARTn (Activation-Relaxation Technique) ───────────────────────────
-        artn:
-          fmax:           0.05    # Force convergence criterion (eV/Å) for ARTn FIRE optimizer.
-
-          steps:          200     # Max FIRE optimizer steps for ARTn saddle search.
-                                  # ARTn evaluates 1 image at a time, so each step is cheap
-                                  # (~single-point time). 200 is a safe default.
-
-          displacement_ang: 0.1   # Initial displacement magnitude (Å) along the softest mode.
-                                  # Larger values escape shallow local minima faster but may
-                                  # overshoot the saddle region.
-                                  # Typical range: 0.05 – 0.3 Å.
 
     # [SPECIAL MECHANISM: PROTECTOR EXCHANGE]
     # Simulates exchange reactions within established protector layers.

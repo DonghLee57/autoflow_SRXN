@@ -52,4 +52,6 @@ scratch/
 # Main branch exclusions
 GEMINI.md
 VALIDATION.md
+troubleshoot/
+
 
