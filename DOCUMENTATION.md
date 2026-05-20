@@ -29,81 +29,7 @@ Defines where to find input structures and where to manage results.
 
 ## 3. Heterointerface Generation (`interface`) — Stage 0a
 
-Optional pre-stage that runs **before** `surface_prep`.  Requires `pymatgen`
-(`pip install autoflow-srxn[interface]`).
-
-When `interface.enabled: true`, the engine:
-1. Loads substrate and film bulk structures.
-2. Runs the 2D ZSL lattice-match search across all requested Miller-index combinations.
-3. Builds a symmetric `sub | film | sub` sandwich slab for the best candidate(s).
-4. Optionally injects the built slab as the working substrate for the reaction search.
-
-### 3.1 Input & Labelling
-
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `enabled` | Boolean | `false` | Run Stage 0a before `surface_prep`. |
-| `sub_path` | String | — | Path to the substrate bulk structure (CIF, POSCAR, …). |
-| `film_path` | String | — | Path to the film bulk structure. |
-| `sub_name` | String | `null` | Display label for the substrate (auto-derived from file stem if `null`). |
-| `film_name` | String | `null` | Display label for the film. |
-
-### 3.2 Lattice-Match Search
-
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `sub_millers` | List[[h,k,l]] | `[[0,0,1],[1,1,0],[1,0,0]]` | Surface orientations to search for the substrate. |
-| `film_millers` | List[[h,k,l]] | `[[0,0,1],[1,1,0],[1,0,0]]` | Surface orientations to search for the film. |
-| `max_det` | Integer | `36` | Maximum HNF supercell determinant. Higher = more exhaustive but slower. |
-| `strain_cutoff` | Float | `0.10` | Discard coincidences with von Mises strain above this value. |
-| `top_k` | Integer | `10` | Candidates kept per (sub_miller, film_miller) pair. `0` = keep all. |
-| `max_atoms` | Integer | `500` | Discard candidates whose estimated atom count exceeds this. |
-
-**Von Mises strain** is computed from the deformation gradient
-`F = A_sub_super @ inv(A_film_super)` via SVD:
-
-$$\varepsilon_\mathrm{VM} = \sqrt{\tfrac{1}{2}\bigl(\varepsilon_1^2 + \varepsilon_2^2 + (\varepsilon_1-\varepsilon_2)^2\bigr)}$$
-
-Candidates are ranked by `vm + 0.001 * max(det_Na, det_Nb)` — lowest strain first,
-with a small supercell-size penalty to break ties.
-
-### 3.3 Slab Construction
-
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `sub_layers` | Integer | `6` | Substrate layers per side (symmetric slab: both bottom and top). |
-| `film_layers` | Integer | `8` | Film layers in the centre. |
-| `nu` | Float | `0.25` | Poisson's ratio for out-of-plane c-relaxation of the strained film: `eps_c = -nu/(1-nu) * (eps1+eps2)`. |
-| `build_top_k` | Integer | `1` | Number of top candidates to build as ASE slabs. `0` = search only. |
-
-**Tag convention** in built slabs:
-
-| Tag | Region |
-| :--- | :--- |
-| `0` | Substrate (bottom + top layers) |
-| `1` | Epitaxial film (centre) |
-| `2` | Inhibitor (assigned by Stage 1) |
-| `3` | Precursor (assigned by Stage 2) |
-
-### 3.4 Output & Integration
-
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `use_as_substrate` | Boolean | `false` | If `true`, the rank-0 built slab is injected as the substrate for Stages 0–2, overriding `surface_prep.slab_generation`. |
-| `plot` | Boolean | `true` | Generate `interface_candidates.html` (Plotly interactive scatter-plot). |
-| `output_dir` | String | `null` | Write `interface_*.extxyz`, `interface_candidates.html`, and `interface_summary.txt` here. Defaults to the run output directory. |
-
-**Output files written by Stage 0a:**
-
-| File | Content |
-| :--- | :--- |
-| `interface_summary.txt` | Plain-text table of all candidates |
-| `interface_candidates.html` | Interactive Plotly scatter: VM strain vs. supercell size |
-| `interface_0.extxyz` … `interface_N.extxyz` | Built slab structures (`build_top_k` files) |
-
-**Polar-axis filter**: If `spglib` is installed, surfaces that expose a polar axis
-perpendicular to the slab normal are flagged (`polar_ok = false`).  Such surfaces
-would create a macroscopic depolarisation field across the slab.
+*Note: Heterointerface Generation (Stage 0a) is only supported in the 'dev' branch.*
 
 ---
 
@@ -269,20 +195,8 @@ Selected reference radii (A):
 > **Note on `cutoff` override**: An explicit flat threshold (e.g., `cutoff=1.4 A`) can be passed directly to `check_overlap()` for cases where element-independent thresholds are needed (e.g., the chemisorption builder uses `cutoff=1.4` for newly formed bond distance checks). The flat `cutoff` takes precedence over the vdW-based calculation for that specific call.
 
 ### 5.7 Transition State Search (Stage 2.5)
-This stage connects the physisorption and chemisorption states using a hybrid NEB-ARTn pipeline.
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `n_images` | Integer | `7` | Number of intermediate images for the NEB path. |
-| `fmax` | Float | `0.05` | Force convergence for TS refinement. |
-| `mapping_mode` | String | `"geometric"` | `"geometric"` uses Hungarian algorithm for index mapping; `"identity"` assumes fixed order. |
-| `verification` | Boolean | `true` | Automatically runs vibrational analysis after TS refinement to confirm exactly one imaginary frequency. |
-
-#### Hybrid TS Search Workflow
-1.  **Alignment & Mapping**: The initial and final states are aligned using the **Minimum Image Convention (MIC)** to ensure periodic boundary consistency. This prevents artificial high-energy barriers caused by atoms crossing unit cell boundaries. If atom indices are inconsistent (e.g., from external VASP files), the **Geometric Mapping Engine** reorders them automatically.
-2.  **NEB Interpolation**: An initial reaction path is generated via linear interpolation (or IDPP if enabled).
-3.  **ARTn Refinement**: The highest energy image is used as a starting point for the Activation Relaxation Technique (ARTn) to find the exact saddle point.
-4.  **Verification**: A partial Hessian is computed at the saddle point to verify the existence of a single imaginary mode corresponding to the reaction coordinate.
+*Note: Transition State Search (Stage 2.5) is only supported in the 'dev' branch.*
 
 ---
 

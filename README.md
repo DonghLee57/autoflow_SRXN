@@ -61,11 +61,6 @@ The framework is designed for large-scale screening with maximum computational e
   - **Precursors**: Automatically detects central reactive atoms by matching against a list (e.g., `["Si", "Fe", "Ti"]`) or identifying metal/semiconductor elements (non-HCNO).
   - **Inhibitors**: Defaults to **Center of Mass (COM)** for general physisorption-based surface functionalization.
 
-### 1.9 Automated Transition State Pipeline (NEB-ARTn)
-The framework autonomously connects discovered physisorption (Initial) and chemisorption (Final) states to calculate reaction barriers.
-- **Robust MIC Alignment**: Implements per-atom Minimum Image Convention (MIC) to handle periodic boundary crossings, ensuring smooth NEB interpolation and preventing unphysical energy spikes.
-- **Hybrid Refinement**: Uses NEB for initial path generation followed by ARTn (Activation Relaxation Technique) for precise saddle-point localization.
-- **Byproduct-Aware NEB**: Correctly merges dissociated fragments (e.g., byproduct ligands in exchange reactions) back into the simulation cell to maintain constant atom counts and lattice consistency.
 
 ### 1.10 Geometric Atom Mapping Engine
 Supports importing structures from external sources (e.g., VASP, Materials Project) where atom indices may be randomized.
@@ -94,10 +89,6 @@ Optimizes initial placements using geometric and chemical heuristics:
 graph TD
     A[config.yaml] --> B(Structure Generation Interface)
     subgraph pkg [autoflow_srxn Package]
-        subgraph IFACE [interface/ sub-package]
-            B -->|interface.enabled| IC[Interface Core]
-            IC -->|tag 0/1 ASE slab| PA
-        end
         B --> P[Surface Utils]
         P -->|Asymmetric Control| PA[Standardized Substrate]
         B --> C[AdsorptionWorkflowManager]
@@ -116,7 +107,6 @@ graph TD
     end
     
     subgraph Output
-        IB --> IC[interface_candidates.html]
         SY --> G[all_relaxed_candidates.extxyz]
         TC --> Q[qpoints.yaml]
     end
@@ -198,45 +188,14 @@ autoflow_srxn/               # Main package
 │   └── mode_following.py    #   run_mode_following(config_path) — standalone PHVA → mode-following
 │                            #   → thermochemistry pipeline; entry point for per-system scripts
 │
-├── metadynamics/            # 자동 반응 탐색 — 메타다이나믹스 기반 반응 경로 탐색 (개발 중)
-│   ├── coverage.py          #   CoverageManager: 표면 피복 열역학, μ(T,P), 그랜드 퍼텐셜
-│   ├── knowledge.py         #   GlobalKnowledge (전기음성도·금속 판별), KnowledgeManager
-│   └── ts_engine.py         #   TSSearcher re-export (vibrational_analyzer의 정식 구현 참조)
-│
-└── interface/               # 계면 구조 매칭 (optional — pymatgen 필요)
-    ├── builder.py           #   HNF 격자 일치 탐색, 변형률 계산, InterfaceCandidate
-    ├── workflow.py          #   InterfaceWorkflow: 기판/막 조합 스크리닝, 슬랩 빌드
-    └── visualization.py    #   Plotly HTML 대시보드, JSON 내보내기
-```
 
-#### 3.3.1 `metadynamics/` — 자동 반응 탐색 모듈 (개발 로드맵)
-
-`metadynamics/`는 메타다이나믹스(MetaDynamics) 기반의 자동 반응 경로 탐색 기능을 집중 개발할 서브패키지입니다.
-현재는 표면 피복 열역학(`CoverageManager`)과 전이상태 탐색 유틸리티(`TSSearcher`)를 포함하며,
-향후 다음 기능이 추가될 예정입니다.
-
-| 계획 모듈 | 역할 |
-|-----------|------|
-| `metadynamics/bias_engine.py` | Collective Variable(CV) 정의 및 가우시안 편향 포텐셜 인가 |
-| `metadynamics/fes_estimator.py` | 자유 에너지 면(FES) 재구성 — Sum-of-Hills |
-| `metadynamics/reaction_finder.py` | FES에서 최소값·안장점 자동 탐색 |
-| `metadynamics/path_optimizer.py` | NEB/string method 기반 반응 경로 최적화 |
-| `metadynamics/coverage.py` *(현재)* | 그랜드 퍼텐셜 기반 표면 안정성 평가 |
-
-**기존 `core/` 디렉터리 사용자를 위한 안내:**
-`core/`는 `metadynamics/`로 이름이 바뀌었습니다. 임포트 경로를 아래와 같이 변경하세요.
-```python
-# 이전
-from autoflow_srxn.core import CoverageManager
-# 이후
-from autoflow_srxn.metadynamics import CoverageManager
+*Note: The metadynamics/ (Stage 5) and interface/ (Stage 0a) sub-packages and their examples (e.g., interface_match/, TS/) are available only in the 'dev' branch.*
 ```
 
 - `examples/`:
     - `DIPAS_on_Si110/`: Ethanol inhibitor + DIPAS precursor on Si(110) — physisorption + dissociative chemisorption discovery.
     - `physisorption_vibration/`: Physisorption vibrational analysis (PHVA / FHVA benchmarking).
     - `mode_following_relaxation/`: Multi-mode imaginary frequency refinement workflow.
-    - `interface_match/`: Heteroepitaxial interface coincidence-lattice screening.
 - `structures/`: Base crystal and precursor configurations (VASP format).
 - `unittests/`: Unit test suite for potential engines, ZBL calculator, and vibrational analysis.
 

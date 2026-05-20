@@ -48,3 +48,8 @@ structures/secret_inhibitor.vasp
 # Temporary scratch files
 scratch/
 **/scratch/
+
+# Main branch exclusions
+GEMINI.md
+VALIDATION.md
+
