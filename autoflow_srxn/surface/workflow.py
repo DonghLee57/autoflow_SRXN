@@ -584,7 +584,8 @@ def run_generic_adsorption_study(config_path="config.yaml"):
         output_dir = paths.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
 
-        master_logger = setup_logger(log_path=os.path.join(output_dir, "batch_screening.log"), mode="w")
+        master_log_path = os.path.join(output_dir, "workflow.log")
+        master_logger = setup_logger(log_path=master_log_path, mode="w")
         master_logger.info(
             f"Starting batch screening: {len(precursor_files)} precursors x {len(inhibitor_files)} inhibitors"
         )
@@ -660,10 +661,12 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                     master_logger, "BATCH SHARED",
                     f"Inhibitor stage for {inh_name} (shared across all precursors)..."
                 )
+                inh_log_path = os.path.join(inh_shared_dir, "subworkflow.log")
+                inh_logger = setup_logger(log_path=inh_log_path, mode="w")
                 try:
                     e_gas_inh = gas_energy_cache.get(inh_path, 0.0)
                     inh_cands = execute_discovery_stage(
-                        slab, read(inh_path), shared_config, inh_out_prefix, master_logger,
+                        slab, read(inh_path), shared_config, inh_out_prefix, inh_logger,
                         tag=2, center_target=inh_cfg.get("center", "O"),
                         e_gas=e_gas_inh, e_base=slab_base_energy, stage_type="inhibitor",
                     )
@@ -673,8 +676,13 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                     else:
                         base_slabs = [slab.copy()]
                 except Exception as e:
+                    # Restore master logger to log error
+                    master_logger = setup_logger(log_path=master_log_path, mode="a")
                     master_logger.error(f"[Shared] Inhibitor stage failed for {inh_name}: {e}", exc_info=True)
                     base_slabs = [slab.copy()]
+                finally:
+                    # Restore master logger
+                    master_logger = setup_logger(log_path=master_log_path, mode="a")
             else:
                 base_slabs = [slab.copy()]
 
@@ -700,23 +708,31 @@ def run_generic_adsorption_study(config_path="config.yaml"):
                 pair_config = copy.deepcopy(config)
                 pair_config["paths"]["output_prefix"] = pair_prefix
 
+                pair_log_path = os.path.join(pair_prefix, "subworkflow.log")
+                pair_logger = setup_logger(log_path=pair_log_path, mode="w")
+
                 try:
                     for i, s in enumerate(base_slabs):
                         suffix = f"_branch{i}" if len(base_slabs) > 1 else ""
                         execute_discovery_stage(
                             s, mol, pair_config,
                             os.path.join(pair_prefix, f"stage2_precursor{suffix}"),
-                            master_logger, tag=3, center_target=pre_center,
+                            pair_logger, tag=3, center_target=pre_center,
                             e_gas=e_gas_mol, e_base=s.info.get("e_final", slab_base_energy),
                             stage_type="precursor",
                         )
                 except Exception as e:
+                    # Restore master logger to log error
+                    master_logger = setup_logger(log_path=master_log_path, mode="a")
                     master_logger.error(f"Failed running pair {inh_name} on {pre_name}: {e}", exc_info=True)
+                finally:
+                    # Restore master logger
+                    master_logger = setup_logger(log_path=master_log_path, mode="a")
         return
 
     global_prefix = paths.get("output_prefix", "discovery")
     os.makedirs(global_prefix, exist_ok=True)
-    master_logger = setup_logger(log_path=os.path.join(global_prefix, "master_workflow.log"), mode="w")
+    master_logger = setup_logger(log_path=os.path.join(global_prefix, "workflow.log"), mode="w")
 
     # 1. Slab Preparation
     slab = prepare_slab_stage(config, master_logger)
