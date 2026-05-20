@@ -18,14 +18,14 @@ from .surface_utils import (
     generate_standard_surfaces,
     get_surface_h_mapping,
 )
-from .ads_workflow_mgr import AdsorptionWorkflowManager
+from .candidate_generator import AdsorptionWorkflowManager
 from .site_map import plot_adsorption_site_map, generate_and_plot_site_map
 from .chemisorption_builder import (
     analyze_surface_reactivity,
     analyze_molecule_ligands,
     build_chemisorption_structures,
 )
-from .main_workflow import (
+from .workflow import (
     run_generic_adsorption_study,
     prepare_slab_stage,
     relax_slab_stage,

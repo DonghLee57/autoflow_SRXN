@@ -11,7 +11,7 @@
 
 ## 2. 근본 원인
 
-`main_workflow.py`의 `prepare_slab_stage()` 함수에서 `create_slab_from_bulk()`를
+`workflow.py`의 `prepare_slab_stage()` 함수에서 `create_slab_from_bulk()`를
 호출할 때 `top_termination` / `bottom_termination` 파라미터를 전달하지 않았음.
 
 ```python
@@ -45,7 +45,7 @@ Si 원자의 dangling bond에 H를 배치하게 되고, 이 Si-H 결합은 MLIP
 
 ## 3. 수정 내용
 
-`autoflow_srxn/surface/main_workflow.py` — `prepare_slab_stage()`:
+`autoflow_srxn/surface/workflow.py` — `prepare_slab_stage()`:
 
 ```python
 # 수정 후 — termination 파라미터 전달

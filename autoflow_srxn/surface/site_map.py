@@ -315,7 +315,7 @@ def generate_and_plot_site_map(
     """Generate unique adsorption sites from *slab* and plot them.
 
     Reproduces exactly the site set used by
-    :class:`~autoflow_srxn.surface.ads_workflow_mgr.AdsorptionWorkflowManager`
+    :class:`~autoflow_srxn.surface.candidate_generator.AdsorptionWorkflowManager`
     during physisorption candidate generation.
 
     Parameters
@@ -354,7 +354,7 @@ def generate_and_plot_site_map(
     raw_types = [_classify_site(site[:2], pos[:, :2]) for site in raw_sites]
 
     if mgr is None:
-        from .ads_workflow_mgr import AdsorptionWorkflowManager
+        from .candidate_generator import AdsorptionWorkflowManager
         mgr = AdsorptionWorkflowManager(sub, symprec=symprec, verbose=False)
 
     sites = []

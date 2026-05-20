@@ -2,7 +2,7 @@ import unittest
 
 from ase.build import bulk
 
-from autoflow_srxn.surface.ads_workflow_mgr import AdsorptionWorkflowManager
+from autoflow_srxn.surface.candidate_generator import AdsorptionWorkflowManager
 from autoflow_srxn.surface.chemisorption_builder import (
     analyze_surface_reactivity,
     build_chemisorption_structures,

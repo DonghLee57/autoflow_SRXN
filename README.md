@@ -176,8 +176,9 @@ autoflow_srxn/               # Main package
 ├── surface/                 # 표면 반응 구조 탐색 — 흡착·반응 구조 생성
 │   ├── surface_utils.py     #   Slab building, reconstruction (Si(100) 2×1, ionic, metal),
 │   │                        #   passivation, oxidation, VSEPR dangling-bond vectors
-│   ├── ads_workflow_mgr.py  #   AdsorptionWorkflowManager: symmetry-aware site enumeration,
+│   ├── candidate_generator.py  #   AdsorptionWorkflowManager: symmetry-aware site enumeration,
 │   │                        #   gravity-pull physisorption, Hungarian deduplication
+│   ├── workflow.py          #   run_generic_adsorption_study(): End-to-end orchestration
 │   ├── site_map.py          #   plot_adsorption_site_map(), generate_and_plot_site_map() —
 │   │                        #   top-view site visualization for any surface/composition
 │   └── chemisorption_builder.py

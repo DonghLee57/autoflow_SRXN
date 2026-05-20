@@ -11,7 +11,7 @@ try:
 except ImportError:
     _tqdm = None
 
-from .ads_workflow_mgr import AdsorptionWorkflowManager
+from .candidate_generator import AdsorptionWorkflowManager
 from .chemisorption_builder import build_chemisorption_structures
 from .site_map import generate_and_plot_site_map
 from ..utils import (
