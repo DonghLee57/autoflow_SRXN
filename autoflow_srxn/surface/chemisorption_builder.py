@@ -4,7 +4,7 @@ from itertools import combinations
 import numpy as np
 from ase import Atoms
 
-from .ads_workflow_mgr import AdsorptionWorkflowManager
+from .candidate_generator import AdsorptionWorkflowManager
 from .surface_utils import place_at_dangling_bond, form_byproduct
 from ..utils.knowledge_engine import chem_kb
 

@@ -33,7 +33,7 @@ from .surface.surface_utils import (
     generate_standard_surfaces,
     get_surface_h_mapping,
 )
-from .surface.ads_workflow_mgr import AdsorptionWorkflowManager
+from .surface.candidate_generator import AdsorptionWorkflowManager
 from .surface.chemisorption_builder import (
     analyze_surface_reactivity,
     analyze_molecule_ligands,

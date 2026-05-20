@@ -62,7 +62,7 @@ import numpy as np
 from ase.io import read, write as ase_write
 from ase.neighborlist import neighbor_list
 
-from autoflow_srxn.surface.main_workflow import (
+from autoflow_srxn.surface.workflow import (
     prepare_slab_stage,
     run_generic_adsorption_study,
 )
