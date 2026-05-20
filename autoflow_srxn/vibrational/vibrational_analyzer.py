@@ -1019,11 +1019,25 @@ class _OvershotError(Exception):
 # Transition State Engines (Imported from ..transition.engine)
 # ---------------------------------------------------------------------------
 
-from ..transition.engine import (
-    GradientFlippingCalculator,
-    AdaptiveGradientFlippingCalculator,
-    TSSearcher,
-)
+try:
+    from ..transition.engine import (
+        GradientFlippingCalculator,
+        AdaptiveGradientFlippingCalculator,
+        TSSearcher,
+    )
+except ImportError:
+    class TSSearcher:
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError("TSSearcher (Stage 5) is only supported in the 'dev' branch.")
+
+    class GradientFlippingCalculator:
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError("GradientFlippingCalculator (Stage 5) is only supported in the 'dev' branch.")
+
+    class AdaptiveGradientFlippingCalculator:
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError("AdaptiveGradientFlippingCalculator (Stage 5) is only supported in the 'dev' branch.")
+
 
 def calculate_mac(eig_a: np.ndarray, eig_b: np.ndarray) -> float:
     """Computes the Modal Assurance Criterion (MAC) between two eigenvectors."""

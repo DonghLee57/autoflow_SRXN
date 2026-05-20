@@ -4,7 +4,18 @@ from ase import Atoms
 from ase.build import make_supercell, surface
 from ase.geometry import get_distances
 from ..utils.knowledge_engine import chem_kb
-from ..metadynamics.knowledge import GlobalKnowledge
+
+ELECTRONEGATIVITY = {
+    'H': 2.20, 'Li': 0.98, 'Be': 1.57, 'B': 2.04, 'C': 2.55, 'N': 3.04, 'O': 3.44, 'F': 3.98,
+    'Na': 0.93, 'Mg': 1.31, 'Al': 1.61, 'Si': 1.90, 'P': 2.19, 'S': 2.58, 'Cl': 3.16,
+    'K': 0.82, 'Ca': 1.00, 'Sc': 1.36, 'Ti': 1.54, 'V': 1.63, 'Cr': 1.66, 'Mn': 1.55, 'Fe': 1.83,
+    'Co': 1.88, 'Ni': 1.91, 'Cu': 1.90, 'Zn': 1.65, 'Ga': 1.81, 'Ge': 2.01, 'As': 2.18, 'Se': 2.55, 'Br': 2.96,
+    'Pt': 2.28, 'Au': 2.54
+}
+
+def get_electronegativity(symbol: str) -> float:
+    return ELECTRONEGATIVITY.get(symbol, 2.0)
+
 
 def standardize_vasp_atoms(atoms, z_min_offset=0.5):
     """Standardize Atoms object for VASP export:
@@ -515,7 +526,7 @@ def auto_reconstruct_surface(atoms, side="top", verbose=False, miller=None, **kw
     """
     idx = find_surface_indices(atoms, side=side, threshold=1.5)
     if not len(idx): return atoms
-    chi = np.array([GlobalKnowledge.get_electronegativity(atoms.symbols[i]) for i in idx])
+    chi = np.array([get_electronegativity(atoms.symbols[i]) for i in idx])
     is_iv = all(n in [6, 14, 32] for n in atoms.numbers[idx])
     is_ionic = (np.max(chi) - np.min(chi)) > 1.5
     is_metal = np.mean(chi) < 1.9
