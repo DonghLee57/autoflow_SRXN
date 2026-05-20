@@ -880,21 +880,48 @@ class MultiModeFollower:
 
         Args:
             atoms: ASE Atoms object.
-            modes: Optional list of modes (dicts with 'frequency' and 'eigenvector').
+            modes: Optional list of modes (dicts with 'frequency' and 'eigenvector') OR a QPointParser instance.
             **kwargs: Passed to engine.relax (e.g. fmax, steps).
         """
-        # 1. Selection — filter imaginary modes
+        threshold = self.config.get("freq_threshold_thz", -0.1)
+        max_modes = self.config.get("max_modes", 3)
+
+        # 1. Selection — filter imaginary/unstable modes
         if modes is None:
             qpath = self.vib_config.get("qpoints_file") or "qpoints.yaml"
             if not os.path.exists(qpath):
                 self.logger.error(f"  [MultiMode] qpoints file not found at '{qpath}'")
                 return atoms
             parser = QPointParser(qpath)
-            modes = [b for phon in parser.data["phonon"] for b in phon["band"]]
-
-        threshold = self.config.get("freq_threshold_thz", -0.1)
-        max_modes = self.config.get("max_modes", 3)
-        target_modes = [m for m in modes if m["frequency"] < threshold][:max_modes]
+            target_modes = parser.get_filtered_modes(freq_threshold=threshold, max_modes=max_modes)
+        elif isinstance(modes, QPointParser):
+            target_modes = modes.get_filtered_modes(freq_threshold=threshold, max_modes=max_modes)
+        elif isinstance(modes, list):
+            # Check if elements are already processed by get_filtered_modes
+            if modes and isinstance(modes[0].get("eigenvector"), np.ndarray):
+                target_modes = modes
+            elif modes and isinstance(modes[0].get("eigenvector"), list) and not isinstance(modes[0]["eigenvector"][0][0], list):
+                target_modes = modes
+            else:
+                # Raw list from qpoints data: convert manually using masses
+                target_modes = []
+                n_atoms = len(atoms)
+                masses = atoms.get_masses()
+                m_sqrt = np.sqrt(masses)
+                raw_target = [m for m in modes if m["frequency"] < threshold][:max_modes]
+                for m in raw_target:
+                    e_raw = np.array(m["eigenvector"])
+                    if e_raw.size == 2 * n_atoms * 3:
+                        e_vec = e_raw.reshape(-1, 2)[:, 0].reshape(n_atoms, 3)
+                    else:
+                        e_vec = e_raw.reshape(n_atoms, 3)
+                    u_vec = e_vec / m_sqrt[:, np.newaxis]
+                    target_modes.append({
+                        "frequency": m["frequency"],
+                        "eigenvector": u_vec
+                    })
+        else:
+            raise TypeError("modes must be None, a QPointParser instance, or a list of modes.")
 
         if not target_modes:
             self.logger.info("  [MultiMode] No imaginary modes found below threshold. Skipping.")
@@ -902,22 +929,10 @@ class MultiModeFollower:
 
         # 2. Combine displacements
         n_atoms = len(atoms)
-        masses = atoms.get_masses()
-        m_sqrt = np.sqrt(masses)
-
-        # Resultant displacement vector in Cartesian coordinates
         total_u = np.zeros((n_atoms, 3))
 
         for mode in target_modes:
-            # eigenvector is usually [real, imag] pairs.
-            e_raw = np.array(mode["eigenvector"])
-            if e_raw.size == 2 * n_atoms * 3:
-                # Handle both [[r,i],...] and [r,i,r,i,...] formats
-                e_vec = e_raw.reshape(-1, 2)[:, 0].reshape(n_atoms, 3)
-            else:
-                e_vec = e_raw.reshape(n_atoms, 3)
-            # u = e / sqrt(m)
-            u_vec = e_vec / m_sqrt[:, np.newaxis]
+            u_vec = np.array(mode["eigenvector"])
             total_u += u_vec
 
         # 3. Apply perturbation scale (alpha)

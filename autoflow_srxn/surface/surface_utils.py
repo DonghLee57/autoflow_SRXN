@@ -557,3 +557,76 @@ from .reconstruction_recipes import (  # noqa: F401  (re-export)
     generate_standard_surfaces,
     get_surface_h_mapping,
 )
+
+
+# ---------------------------------------------------------------------------
+# Refactored / Unified Surface Adsorption & Placement Utilities
+# ---------------------------------------------------------------------------
+
+def generate_delaunay_surface_sites(slab, z_surface_ref=None, side="top"):
+    """Generate top, bridge, and 3-fold hollow sites via Delaunay triangulation.
+
+    Returns a list of [x, y, z_surface_ref] arrays.
+    """
+    from scipy.spatial import Delaunay
+
+    tags = slab.get_tags()
+    sub_mask = tags < 2
+    sub = slab[sub_mask]
+
+    surf_idx = find_surface_indices(sub, side=side)
+    if not len(surf_idx):
+        return []
+
+    pos = sub.positions[surf_idx]
+    if z_surface_ref is None:
+        z_surface_ref = float(pos[:, 2].max() if side == "top" else pos[:, 2].min())
+
+    sites = [np.array([p[0], p[1], z_surface_ref]) for p in pos]  # top sites
+
+    if len(surf_idx) < 3:
+        return sites
+
+    try:
+        tri = Delaunay(pos[:, :2])
+        seen_edges = set()
+        for s in tri.simplices:
+            for a, b in [(0, 1), (1, 2), (0, 2)]:
+                key = tuple(sorted((int(s[a]), int(s[b]))))
+                if key not in seen_edges:
+                    seen_edges.add(key)
+                    mid = (pos[s[a]] + pos[s[b]]) / 2
+                    sites.append(np.array([mid[0], mid[1], z_surface_ref]))
+            centroid = pos[s].mean(axis=0)
+            sites.append(np.array([centroid[0], centroid[1], z_surface_ref]))
+    except Exception:
+        # Fallback for collinear atoms: pairwise bridges only
+        for i in range(len(pos)):
+            for j in range(i + 1, len(pos)):
+                if 1.5 < np.linalg.norm(pos[i] - pos[j]) < 5.5:
+                    mid = (pos[i] + pos[j]) / 2
+                    sites.append(np.array([mid[0], mid[1], z_surface_ref]))
+    return sites
+
+
+def place_at_dangling_bond(fragment, binding_idx, internal_bond_vec, target_site_pos, db_vector, bond_length, rot_angle=0.0, haptic_normal=None):
+    """Aligns and places a molecular fragment at a dangling bond site."""
+    f = fragment.copy()
+    if isinstance(binding_idx, (list, np.ndarray)) and len(binding_idx) > 1:
+        anchor_pos = np.mean(f.positions[binding_idx], axis=0)
+        align_vec = haptic_normal if haptic_normal is not None else internal_bond_vec
+    else:
+        b_idx = binding_idx[0] if isinstance(binding_idx, (list, np.ndarray)) else binding_idx
+        anchor_pos = f.positions[b_idx]
+        align_vec = internal_bond_vec
+    f.rotate(align_vec, -db_vector, center=anchor_pos)
+    f.rotate(rot_angle, db_vector, center=anchor_pos)
+    placement_pos = target_site_pos + (db_vector / np.linalg.norm(db_vector)) * bond_length
+    f.translate(placement_pos - anchor_pos)
+    return f
+
+
+def form_byproduct(fragment, binding_idx, internal_bond_vec):
+    """Forms a byproduct molecule from a departing ligand fragment."""
+    return fragment.copy()
+

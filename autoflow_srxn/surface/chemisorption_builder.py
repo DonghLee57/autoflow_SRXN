@@ -5,6 +5,7 @@ import numpy as np
 from ase import Atoms
 
 from .ads_workflow_mgr import AdsorptionWorkflowManager
+from .surface_utils import place_at_dangling_bond, form_byproduct
 from ..utils.knowledge_engine import chem_kb
 
 try:
@@ -459,7 +460,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
 
             for angle in np.linspace(0, 360, rot_steps, endpoint=False):
                 stats["total_tries"] += 1
-                p_a = mgr._place_at_dangling_bond(
+                p_a = place_at_dangling_bond(
                     frag_a,
                     binding_idx_a,
                     l_info["bond_vec"],
@@ -469,7 +470,7 @@ def _execute_generic_single_site(mgr, molecule, c_idx, ligands, sites, rot_steps
                     rot_angle=angle,
                 )
 
-                p_b = mgr._form_byproduct(frag_b, binding_idx_b[0], -l_info["bond_vec"])
+                p_b = form_byproduct(frag_b, binding_idx_b[0], -l_info["bond_vec"])
                 if byproduct_placement == "surface":
                     sub_mask = (mgr.slab.get_tags() < 2) | (mgr.slab.get_tags() == 4)
                     z_ref = mgr.slab.positions[sub_mask, 2].max() if np.any(sub_mask) else np.max(mgr.slab.positions[:, 2])
@@ -610,7 +611,7 @@ def _execute_haptic_ligand_site(mgr, molecule, c_idx, ligands, sites, rot_steps,
 
                 # Pass -haptic_normal: after _place_at_dangling_bond rotates align_vec -> -db,
                 # haptic_normal (VBS->metal) ends up aligned with +db (upward) => metal above.
-                placed = mgr._place_at_dangling_bond(
+                placed = place_at_dangling_bond(
                     molecule,
                     binding_idx,
                     l_info["bond_vec"],         # fallback; not used when haptic_normal is set
@@ -731,7 +732,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
 
                 for angle in np.linspace(0, 360, rot_steps, endpoint=False):
                     stats["total_tries"] += 1
-                    p_a = mgr._place_at_dangling_bond(
+                    p_a = place_at_dangling_bond(
                         frag_a,
                         binding_idx_a,
                         l_info["bond_vec"],
@@ -741,7 +742,7 @@ def _execute_generic_dissociation(mgr, molecule, c_idx, ligands, pairs, rot_step
                         rot_angle=angle,
                     )
 
-                    p_b = mgr._place_at_dangling_bond(
+                    p_b = place_at_dangling_bond(
                         frag_b,
                         binding_idx_b,
                         -l_info["bond_vec"],
@@ -865,7 +866,7 @@ def _execute_protector_exchange(mgr, molecule, c_idx, ligands, exchange_sites, r
 
             for angle in np.linspace(0, 360, rot_steps, endpoint=False):
                 stats["total_tries"] += 1
-                p_a = mgr._place_at_dangling_bond(
+                p_a = place_at_dangling_bond(
                     frag_a,
                     binding_idx_a,
                     l_info["bond_vec"],
