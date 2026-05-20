@@ -56,36 +56,36 @@ def log_energy_comparison(logger, label, e_init, e_final):
     )
 
 
+def parse_mechanism_group(mech_str):
+    """Parse general mechanism type and site index from a mechanism comment string."""
+    import re
+    mech_str = str(mech_str)
+    if "physisorption" in mech_str.lower():
+        gen_mech = "Physisorption"
+    elif "single-site" in mech_str.lower() or "single_site" in mech_str.lower():
+        gen_mech = "Single-Site Chemisorption"
+    elif "haptic" in mech_str.lower():
+        gen_mech = "Haptic-Ligand Chemisorption"
+    elif "dissociation" in mech_str.lower():
+        gen_mech = "Chemisorption (Dissociation)"
+    elif "protector" in mech_str.lower():
+        gen_mech = "Protector Exchange"
+    else:
+        gen_mech = "Chemisorption"
+
+    m_site = re.search(r"(?:site|on|pair)\s+([0-9\-]+)", mech_str, re.IGNORECASE)
+    if m_site:
+        val = m_site.group(1)
+        site = f"Pair {val}" if "-" in val else f"Site {val}"
+    else:
+        site = "unknown"
+    return (gen_mech, site)
+
+
 def log_results_table(logger, summary_data, title="Optimization Summary"):
     """Logs a formatted table of results including ID, mechanism, and energies."""
     if not summary_data:
         return
-
-    import re
-
-    # Helper to parse general mechanism type and site index
-    def _parse_group(mech_str):
-        mech_str = str(mech_str)
-        if "physisorption" in mech_str.lower():
-            gen_mech = "Physisorption"
-        elif "single-site" in mech_str.lower() or "single_site" in mech_str.lower():
-            gen_mech = "Single-Site Chemisorption"
-        elif "haptic" in mech_str.lower():
-            gen_mech = "Haptic-Ligand Chemisorption"
-        elif "dissociation" in mech_str.lower():
-            gen_mech = "Chemisorption (Dissociation)"
-        elif "protector" in mech_str.lower():
-            gen_mech = "Protector Exchange"
-        else:
-            gen_mech = "Chemisorption"
-
-        m_site = re.search(r"(?:site|on|pair)\s+([0-9\-]+)", mech_str, re.IGNORECASE)
-        if m_site:
-            val = m_site.group(1)
-            site = f"Pair {val}" if "-" in val else f"Site {val}"
-        else:
-            site = "unknown"
-        return (gen_mech, site)
 
     # 1. Find the absolute global best across all mechanisms
     global_best_row = None
@@ -99,7 +99,7 @@ def log_results_table(logger, summary_data, title="Optimization Summary"):
     local_best_by_group = {}
     for row in summary_data:
         mech = row.get("mech", "unknown")
-        g = _parse_group(mech)
+        g = parse_mechanism_group(mech)
         e_final = row.get("e_final")
         if e_final is not None:
             if g not in local_best_by_group or e_final < local_best_by_group[g].get("e_final", 1e10):

@@ -440,39 +440,9 @@ class AdsorptionWorkflowManager:
         surface level; the height offset is applied per-orientation inside
         generate_physisorption_candidates (clearance vs center modes differ).
         """
-        from .surface_utils import find_surface_indices
-        from scipy.spatial import Delaunay
+        from .surface_utils import generate_delaunay_surface_sites
+        return generate_delaunay_surface_sites(self.slab, z_surface_ref=z_surface_ref, side="top")
 
-        all_surface = find_surface_indices(self.slab, side="top")
-        if not len(all_surface):
-            return []
-
-        pos = self.slab.positions[all_surface]
-        sites = [np.array([p[0], p[1], z_surface_ref]) for p in pos]  # top sites
-
-        if len(all_surface) < 3:
-            return sites
-
-        try:
-            tri = Delaunay(pos[:, :2])
-            seen_edges = set()
-            for s in tri.simplices:
-                for a, b in [(0, 1), (1, 2), (0, 2)]:
-                    key = tuple(sorted((int(s[a]), int(s[b]))))
-                    if key not in seen_edges:
-                        seen_edges.add(key)
-                        mid = (pos[s[a]] + pos[s[b]]) / 2
-                        sites.append(np.array([mid[0], mid[1], z_surface_ref]))
-                centroid = pos[s].mean(axis=0)
-                sites.append(np.array([centroid[0], centroid[1], z_surface_ref]))
-        except Exception:
-            # Fallback for collinear atoms: pairwise bridges only
-            for i in range(len(pos)):
-                for j in range(i + 1, len(pos)):
-                    if 1.5 < np.linalg.norm(pos[i] - pos[j]) < 5.5:
-                        mid = (pos[i] + pos[j]) / 2
-                        sites.append(np.array([mid[0], mid[1], z_surface_ref]))
-        return sites
 
     def _get_unique_surface_coordinates_by_type(self, coords):
         """Reduce surface site coordinates without merging top/bridge/hollow types."""
@@ -846,22 +816,10 @@ class AdsorptionWorkflowManager:
         return c_idx, ligands
 
     def _place_at_dangling_bond(self, fragment, binding_idx, internal_bond_vec, target_site_pos, db_vector, bond_length, rot_angle=0, haptic_normal=None):
-        f = fragment.copy()
-        if isinstance(binding_idx, (list, np.ndarray)) and len(binding_idx) > 1:
-            anchor_pos = np.mean(f.positions[binding_idx], axis=0)
-            align_vec = haptic_normal if haptic_normal is not None else internal_bond_vec
-        else:
-            b_idx = binding_idx[0] if isinstance(binding_idx, (list, np.ndarray)) else binding_idx
-            anchor_pos = f.positions[b_idx]
-            align_vec = internal_bond_vec
-        f.rotate(align_vec, -db_vector, center=anchor_pos)
-        f.rotate(rot_angle, db_vector, center=anchor_pos)
-        placement_pos = target_site_pos + (db_vector / np.linalg.norm(db_vector)) * bond_length
-        f.translate(placement_pos - anchor_pos)
-        return f
+        from .surface_utils import place_at_dangling_bond
+        return place_at_dangling_bond(fragment, binding_idx, internal_bond_vec, target_site_pos, db_vector, bond_length, rot_angle, haptic_normal)
 
     def _form_byproduct(self, fragment, binding_idx, internal_bond_vec):
-        # By strictly returning the exact fragment, we ensure perfect mass conservation
-        # and prevent unphysical generation of C5H6 from C5H5.
-        return fragment.copy()
+        from .surface_utils import form_byproduct
+        return form_byproduct(fragment, binding_idx, internal_bond_vec)
 

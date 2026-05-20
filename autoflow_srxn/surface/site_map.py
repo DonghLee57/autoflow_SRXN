@@ -13,9 +13,7 @@ generate_and_plot_site_map(slab, symprec, output_path, ...)
 """
 
 from __future__ import annotations
-
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Site-type classifier
@@ -41,7 +39,6 @@ def _classify_site(xy: np.ndarray, surf_xy: np.ndarray) -> str:
     if d2 < 2.5:
         return "bridge"
     return "hollow"
-
 
 # ---------------------------------------------------------------------------
 # Sublattice colouring — group surface atoms by element and Z height
@@ -84,7 +81,6 @@ def _assign_sublattice_colors(
         atom_colors.append(palette[groups[key] % len(palette)])
 
     return atom_colors, legend_labels
-
 
 # ---------------------------------------------------------------------------
 # Main plotting function
@@ -350,24 +346,10 @@ def generate_and_plot_site_map(
     # Reproduce _generate_surface_sites
     surf_idx = find_surface_indices(sub, side="top")
     pos = sub.positions[surf_idx]
-    z_ref = float(pos[:, 2].max())
+    z_ref = float(pos[:, 2].max()) if len(surf_idx) > 0 else 0.0
 
-    raw_sites = [np.array([p[0], p[1], z_ref]) for p in pos]
-    if len(surf_idx) >= 3:
-        try:
-            tri = Delaunay(pos[:, :2])
-            seen_edges: set = set()
-            for s in tri.simplices:
-                for a, b in [(0, 1), (1, 2), (0, 2)]:
-                    key = tuple(sorted((int(s[a]), int(s[b]))))
-                    if key not in seen_edges:
-                        seen_edges.add(key)
-                        mid = (pos[s[a]] + pos[s[b]]) / 2
-                        raw_sites.append(np.array([mid[0], mid[1], z_ref]))
-                centroid = pos[s].mean(axis=0)
-                raw_sites.append(np.array([centroid[0], centroid[1], z_ref]))
-        except Exception:
-            pass
+    from .surface_utils import generate_delaunay_surface_sites
+    raw_sites = generate_delaunay_surface_sites(sub, z_surface_ref=z_ref, side="top")
 
     raw_types = [_classify_site(site[:2], pos[:, :2]) for site in raw_sites]
 

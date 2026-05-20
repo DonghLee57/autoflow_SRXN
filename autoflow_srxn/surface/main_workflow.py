@@ -20,6 +20,7 @@ from ..utils import (
     log_stage_title,
     setup_logger,
     load_yaml_config as load_config,
+    parse_mechanism_group,
 )
 from ..utils.perf_tracker import PerfTracker, perf_stage, set_perf_tracker
 from .surface_utils import (
@@ -331,34 +332,10 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
 
     # --- Grouping and identifying Best Pose / Local Minimum per site & mechanism ---
     if summary_data:
-        import re
-        def _get_candidate_group(mech_str):
-            mech_str = str(mech_str)
-            if "physisorption" in mech_str.lower():
-                gen_mech = "Physisorption"
-            elif "single-site" in mech_str.lower() or "single_site" in mech_str.lower():
-                gen_mech = "Single-Site Chemisorption"
-            elif "haptic" in mech_str.lower():
-                gen_mech = "Haptic-Ligand Chemisorption"
-            elif "dissociation" in mech_str.lower():
-                gen_mech = "Chemisorption (Dissociation)"
-            elif "protector" in mech_str.lower():
-                gen_mech = "Protector Exchange"
-            else:
-                gen_mech = "Chemisorption"
-
-            m_site = re.search(r"(?:site|on|pair)\s+([0-9\-]+)", mech_str, re.IGNORECASE)
-            if m_site:
-                val = m_site.group(1)
-                site = f"Pair {val}" if "-" in val else f"Site {val}"
-            else:
-                site = "unknown"
-            return (gen_mech, site)
-
         # 1. Group items
         groups = {}
         for item in summary_data:
-            g = _get_candidate_group(item["mech"])
+            g = parse_mechanism_group(item["mech"])
             if g not in groups:
                 groups[g] = []
             groups[g].append(item)

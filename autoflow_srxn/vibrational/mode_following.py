@@ -38,7 +38,7 @@ from ase.io import read
 from .vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
 from ..simulation.potentials import SimulationEngine
 from ..simulation.qpoint_handler import QPointParser
-from ..utils.logger_utils import setup_logger
+from ..utils import load_yaml_config, setup_logger
 
 
 # ---------------------------------------------------------------------------
@@ -158,9 +158,7 @@ def run_mode_following(config_path: str = "config.yaml"):
     config_path = os.path.abspath(config_path)
     config_dir  = os.path.dirname(config_path)
     os.chdir(config_dir)
-
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    config = load_yaml_config(config_path)
 
     # Parameters
     vib_cfg  = config["analysis"]["vibrational"]
@@ -226,13 +224,11 @@ def run_mode_following(config_path: str = "config.yaml"):
         (iter_cfg["analysis"]["vibrational"]
                   ["mode_refinement"]["perturbation_alpha"]) = current_alpha
 
-        target_modes = [b for phon in parser.data["phonon"] for b in phon["band"]]
-
         logger.info("  Mode-following perturbation + relaxation...")
         follower = MultiModeFollower(engine, config=iter_cfg)
         atoms = follower.optimize(
             atoms,
-            modes=target_modes,
+            modes=parser,
             fmax=fmax_ref,
             steps=steps_ref,
             optimizer=optimizer,
