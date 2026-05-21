@@ -1,0 +1,37 @@
+# =============================================================================
+# Interface Lattice-Match: t-ZrO2 (substrate) / Ta2O5 B-type (film)
+# =============================================================================
+# t-ZrO2:    tetragonal P42/nmc (#137), a=3.60 c=5.23 Ang
+# B-Ta2O5:   monoclinic C2/m (#12), a=12.780 b=4.900 c=5.590 Ang, beta=104.90
+#
+# NOTE: B-Ta2O5 (isostructural with B-Nb2O5) is used here. For the beta
+#       orthorhombic phase, replace film_path with the appropriate VASP file.
+# =============================================================================
+
+sub_path:  "../../../structures/ZrO2_t_bulk.vasp"
+film_path: "../../../structures/Ta2O5_B_bulk.vasp"
+
+sub_name:  "t-ZrO2"
+film_name: "B-Ta2O5"
+
+# Miller indices
+sub_max_miller:  2
+film_max_miller: 2
+miller_mode: "distinct"
+
+# Lattice matching parameters
+max_det:       10
+strain_cutoff: 0.08
+max_atoms:     800
+
+# Slab construction
+# B-Ta2O5 (C2/m) needs min 15 A for symmetrize=True to succeed on most faces.
+min_slab_thickness: 15.0
+vacuum:             15.0
+
+# Interface stacking
+interface_gap: 2.5
+
+# Build top-k lowest-strain candidates (null = all)
+build_top_k: 5
+output_dir:  "results"

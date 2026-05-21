@@ -143,25 +143,50 @@ class InterfaceCandidate:
     notes: list[str] = field(default_factory=list)
 
 
-def get_surface_lattice_2d(structure: Structure, miller: Sequence[int]) -> np.ndarray:
-    """Return the 2x2 in-plane lattice matrix for a given Miller plane."""
+def get_surface_lattice_2d(
+    structure: Structure,
+    miller: Sequence[int],
+    min_slab_size: float = 8.0,
+    min_vacuum_size: float = 1.0,
+) -> np.ndarray:
+    """Return the 2x2 in-plane lattice matrix for a given Miller plane.
+
+    Parameters
+    ----------
+    min_slab_size :
+        Minimum slab thickness in Angstroms.  Must be > 0 and consistent
+        with the value used in :func:`build_symmetric_slab` so the two
+        functions use the same surface primitive cell.
+    min_vacuum_size :
+        A small positive vacuum is required for pymatgen to build a proper
+        slab (as opposed to a periodic bulk cell).  Any value > 0 works;
+        the default 1 Å keeps computation fast.
+    """
     gen = SlabGenerator(
         structure,
         miller_index=list(miller),
-        min_slab_size=1,
-        min_vacuum_size=0,
+        min_slab_size=min_slab_size,
+        min_vacuum_size=min_vacuum_size,
         center_slab=False,
         in_unit_planes=False,
     )
-    slabs = gen.get_slabs()
+    slabs = gen.get_slabs(symmetrize=False)
     if not slabs:
         raise ValueError(f"SlabGenerator produced no slab for miller={miller}.")
     slab = slabs[0]
-    v1, v2 = slab.lattice.matrix[0], slab.lattice.matrix[1]
-    norm1, norm2 = np.linalg.norm(v1), np.linalg.norm(v2)
+    # Convert to ASE and rotate so the surface normal points to z.
+    # Only after this rotation are cell[0] and cell[1] truly in-plane (z≈0).
+    adaptor = AseAtomsAdaptor()
+    atoms = adaptor.get_atoms(slab)
+    normal = np.cross(atoms.cell[0], atoms.cell[1])
+    atoms.rotate(normal, [0, 0, 1], rotate_cell=True)
+    cell = np.array(atoms.cell)
+    v1_xy = cell[0, :2]
+    v2_xy = cell[1, :2]
+    norm1, norm2 = np.linalg.norm(v1_xy), np.linalg.norm(v2_xy)
     if norm1 < 1e-8 or norm2 < 1e-8:
-        return np.array([v1[:2], v2[:2]])
-    cos_gamma = np.clip(np.dot(v1, v2) / (norm1 * norm2), -1.0, 1.0)
+        return np.array([[np.linalg.norm(cell[0]), 0.0], [0.0, np.linalg.norm(cell[1])]])
+    cos_gamma = np.clip(np.dot(v1_xy, v2_xy) / (norm1 * norm2), -1.0, 1.0)
     sin_gamma = np.sqrt(1.0 - cos_gamma**2)
     return np.array([
         [norm1, 0.0],
@@ -318,6 +343,81 @@ def stack_interface(
         pbc=[True, True, True],
         tags=all_tags,
     )
+
+
+def wrap_interface_for_dft(
+    interface: "ase.Atoms",
+    vacuum_ang: float = 15.0,
+    bottom_margin_ang: float = 0.5,
+    sort_atoms: bool = True,
+) -> "ase.Atoms":
+    """Wrap and prepare an interface structure for DFT submission.
+
+    After :func:`stack_interface` the cell may have:
+    * atoms drifting slightly outside [0,1) in fractional coordinates due to
+      floating-point arithmetic in the rotation/stacking step;
+    * the vacuum sitting above the film with no bottom margin.
+
+    This function corrects these issues so the resulting POSCAR is clean and
+    VASP-ready.
+
+    Parameters
+    ----------
+    interface:
+        Output of :func:`stack_interface`.
+    vacuum_ang:
+        Total vacuum layer thickness to enforce above the top of the film.
+    bottom_margin_ang:
+        Gap between z=0 and the lowest atom in the slab.
+    sort_atoms:
+        If True, sort atoms by (atomic number, z-coordinate) for a clean
+        POSCAR species block ordering.
+
+    Returns
+    -------
+    ase.Atoms
+        New Atoms object with all positions wrapped to the unit cell,
+        slab translated so the lowest atom sits at *bottom_margin_ang*,
+        and the c-vector trimmed to slab_height + vacuum_ang.
+        The a- and b-vectors are preserved exactly.
+    """
+    from ase import Atoms
+
+    atoms = interface.copy()
+
+    # 1. Wrap all fractional coordinates to [0, 1)
+    atoms.wrap()
+
+    # 2. After wrapping some atoms may have jumped from z≈0 to z≈cell_c.
+    #    Re-detect the slab as atoms below the midpoint of the cell.
+    cell_c = float(atoms.cell[2, 2])
+    frac = atoms.get_scaled_positions()
+    z_cart = frac[:, 2] * cell_c
+
+    # Distinguish slab from vacuum: atoms with z_cart in lower half of cell
+    # (works because vacuum is always on top after stack_interface)
+    z_min = z_cart.min()
+    z_max = z_cart.max()
+
+    # 3. Shift slab so lowest atom is at bottom_margin_ang
+    shift = bottom_margin_ang - z_min
+    pos = atoms.get_positions()
+    pos[:, 2] += shift
+    atoms.set_positions(pos)
+    z_max += shift
+
+    # 4. Recompute cell c to slab_height + vacuum
+    new_c = z_max + vacuum_ang
+    new_cell = atoms.cell.copy()
+    new_cell[2] = np.array([0.0, 0.0, new_c])
+    atoms.set_cell(new_cell, scale_atoms=False)
+
+    # 5. Sort by (atomic number, z)
+    if sort_atoms:
+        from ase.build import sort as ase_sort
+        atoms = ase_sort(atoms, tags=atoms.get_atomic_numbers())
+
+    return atoms
 
 
 def resolve_millers(

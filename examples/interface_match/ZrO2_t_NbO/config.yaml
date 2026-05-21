@@ -1,0 +1,33 @@
+# =============================================================================
+# Interface Lattice-Match: t-ZrO2 (substrate) / NbO (film)
+# =============================================================================
+# t-ZrO2: tetragonal P42/nmc (#137), a=3.60 c=5.23 Ang
+# NbO:    cubic Pm-3m (#221), a=4.21 Ang
+# =============================================================================
+
+sub_path:  "../../../structures/ZrO2_t_bulk.vasp"
+film_path: "../../../structures/NbO_bulk.vasp"
+
+sub_name:  "t-ZrO2"
+film_name: "NbO"
+
+# Miller indices: symmetrically distinct up to max index
+sub_max_miller:  2
+film_max_miller: 2
+miller_mode: "distinct"
+
+# Lattice matching parameters
+max_det:       12
+strain_cutoff: 0.08
+max_atoms:     500
+
+# Slab construction
+min_slab_thickness: 10.0
+vacuum:             15.0
+
+# Interface stacking
+interface_gap: 2.5
+
+# Build top-k lowest-strain candidates (null = all)
+build_top_k: 5
+output_dir:  "results"
