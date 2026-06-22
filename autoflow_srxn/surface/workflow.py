@@ -391,7 +391,16 @@ def execute_verification_stage(candidates, config, logger, out_prefix, tag=3, e_
 
 
 def execute_ts_search_stage(results, config, logger, out_prefix):
-    """Pairs physisorption and chemisorption results and runs automated TS search."""
+    """Pairs physisorption and chemisorption results and runs automated TS search.
+
+    By design this runs for the **precursor** stage only: the config is read
+    from ``reaction_search.mechanisms.precursor.ts_search``, and the caller
+    (:func:`execute_discovery_stage`) only invokes this when
+    ``stage_type == "precursor"``. The inhibitor stage intentionally skips TS
+    search — inhibitor adsorption is screened for binding strength, not for the
+    reaction pathway, so a NEB/ARTn transition-state search is not meaningful
+    there.
+    """
     ts_cfg = config.get("reaction_search", {}).get("mechanisms", {}).get("precursor", {}).get("ts_search", {"enabled": False})
     if not ts_cfg.get("enabled", False): return []
 
@@ -497,6 +506,7 @@ def execute_discovery_stage(slab, mol, config, out_prefix, logger, tag=2, center
         write(f"{out_prefix}_candidates.extxyz", all_cands)
 
     results = execute_verification_stage(all_cands, config, logger, out_prefix, tag=tag, e_gas=e_gas, e_base=e_base)
+    # TS search is intentionally precursor-only (see execute_ts_search_stage docstring).
     if stage_type == "precursor":
         execute_ts_search_stage(results, config, logger, out_prefix)
     return results
