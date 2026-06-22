@@ -733,3 +733,86 @@ analysis:
       # Reference electronic energy (eV), usually from MLIP single-point.
       electronic_energy: 0.0
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # [METADYNAMICS]  PLUMED-free, ASE-native (well-tempered) metadynamics.
+  # ───────────────────────────────────────────────────────────────────────────
+  # Biases a set of collective variables (CVs) to reconstruct a 2D free-energy
+  # surface (FES) of the precursor surface reaction. No external PLUMED install
+  # is required — the bias is added as an ASE calculator.
+  #
+  # Outputs (under <results>/metad/):
+  #   COLVAR            time series of CVs + bias energy
+  #   HILLS             deposited Gaussians
+  #   metad_traj.extxyz MD trajectory
+  #   fes_2d.npz        reconstructed 2D FES grid (x, y, fes)
+  #   fes_2d.png        2D FES contour plot
+  metadynamics:                    # [REQUIRES POTENTIAL]
+    enabled:           false
+
+    # ── MD / deposition parameters ──────────────────────────────────────────
+    temperature_K:     500.0       # Langevin thermostat temperature.
+    timestep_fs:       1.0         # MD timestep (fs).
+    friction:          0.01        # Langevin friction (1/fs-ish, ASE units).
+    steps:             20000       # Total MD steps.
+    deposition_stride: 50          # Deposit one Gaussian every N steps.
+    colvar_stride:     50          # Write COLVAR / trajectory every N steps.
+    height:            0.05        # Initial Gaussian height h0 (eV).
+    bias_factor:       10          # Well-tempered factor γ (>1). null → standard metaD.
+
+    # Optional: freeze substrate atoms below this absolute z (Å). null → none.
+    freeze_below_z:    null
+
+    # ── Collective variables ────────────────────────────────────────────────
+    # Define ≥2 CVs; the 2D FES is plotted over the pair named in `plot.cvs`
+    # (extra CVs are biased too and marginalised out of the 2D plot).
+    #
+    # Atom selection accepts:
+    #   42                  → atom index 42
+    #   "Si"                → all Si atoms
+    #   "O@substrate"       → O atoms with tag < 2 (slab)
+    #   "N@adsorbate"       → N atoms with tag ≥ 2 (precursor)
+    #   [3, 7, 11]          → explicit group
+    #
+    # CV types:
+    #   distance        raw bond length between `center` and `partner` (one bond).
+    #                   Use for the forming central-atom ↔ substrate bond so it
+    #                   can be driven shorter. (set grid_min/grid_max as a wall-
+    #                   like plotting range; add freeze if fragments fly off).
+    #   coordination    rational-switching coordination number of `center` to a
+    #                   `group` (needs `r0`, optional n/m). Permutation-invariant
+    #                   and bounded — robust for the breaking bond when several
+    #                   equivalent ligand atoms exist (e.g. 4× Cl of TiCl4).
+    #   proton_transfer ξ = d(donor–H) − d(acceptor–H). Drives the H from the
+    #                   surface `donor` onto the leaving-ligand `acceptor`,
+    #                   inducing the byproduct (HCl, amine-H) bond.
+    cvs:
+      - name:    forming_bond          # central atom approaching the substrate
+        type:    distance
+        center:  "Si@adsorbate"
+        partner: "O@substrate"
+        sigma:   0.10
+        grid_min: 1.4
+        grid_max: 4.0
+
+      - name:    breaking_bond         # central atom ↔ leaving ligand
+        type:    coordination
+        center:  "Si@adsorbate"
+        group:   "N@adsorbate"
+        r0:      2.2
+        n:       6
+        m:       12
+        sigma:   0.10
+
+      # Optional 3rd CV — proton transfer that forms the ligand-H byproduct.
+      # - name:     proton_transfer
+      #   type:     proton_transfer
+      #   donor:    "O@substrate"       # surface O-H (proton source)
+      #   acceptor: "N@adsorbate"       # leaving amine N (proton sink)
+      #   # proton:  <index>            # optional; defaults to H nearest the donor
+      #   sigma:    0.10
+
+    # ── 2D FES plot selection ───────────────────────────────────────────────
+    plot:
+      cvs:  ["forming_bond", "breaking_bond"]   # the two CVs spanning the FES
+      bins: 120                                  # grid resolution per axis
+

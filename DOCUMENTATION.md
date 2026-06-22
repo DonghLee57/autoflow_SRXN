@@ -360,3 +360,278 @@ When atoms are frozen (e.g., bottom slab layers), the engine automatically pads 
 
 #### 8.4.3 Physics-Informed Physisorption Alignment
 The physisorption engine uses PCA to align the molecule's thin axis with the surface normal (Flat Alignment). Additionally, it calculates the average hydrogen direction relative to the center of mass; if hydrogens point towards the surface, the molecule is automatically flipped 180° (H-up Logic) to maximize physical plausibility.
+
+---
+
+## 9. Metadynamics (`analysis.metadynamics`)
+
+AutoFlow-SRXN ships a **PLUMED-free, ASE-native (well-tempered) metadynamics**
+engine that reconstructs a **2-D free-energy surface (FES)** of the precursor
+surface reaction. No external installation is needed: the history-dependent
+bias is implemented as an ordinary ASE `Calculator` and added to the physical
+(MLIP/EMT) calculator with `ase.calculators.mixing.SumCalculator`.
+
+**Source files**
+
+| File | Contents |
+|------|----------|
+| `autoflow_srxn/metadynamics/collective_variables.py` | CV definitions + analytic gradients + atom-selection helpers + `build_cv` factory |
+| `autoflow_srxn/metadynamics/md_bias.py` | `MetadynamicsBias` (bias calculator), `ColvarLogger`, FES reconstruction |
+| `autoflow_srxn/metadynamics/workflow.py` | `MetadynamicsWorkflow` — reads config, runs MD, writes outputs & 2-D FES plot |
+| `examples/metadynamics/run_metadynamics.py` | CLI runner (`config.yaml` + `structure.vasp`) |
+
+### 9.1 Theory
+
+#### Bias potential
+
+Given collective variables $\mathbf{s}(\mathbf{R}) = (s_1,\dots,s_N)$, a Gaussian
+hill is deposited every $\tau$ steps. The accumulated bias after depositing
+$K$ hills is
+
+$$
+V(\mathbf{s}) \;=\; \sum_{k=1}^{K} h_k \,
+\exp\!\left( -\sum_{d=1}^{N} \frac{\bigl(s_d - c_{k,d}\bigr)^2}{2\,\sigma_d^{2}} \right),
+$$
+
+where $c_{k,d}$ is the position of hill $k$ in CV $d$, $\sigma_d$ its width and
+$h_k$ its height.
+
+#### Bias force
+
+The force added to each atom is the chain rule through the CVs:
+
+$$
+\mathbf{F}^{\text{bias}}_{i}
+= -\frac{\partial V}{\partial \mathbf{R}_i}
+= -\sum_{d=1}^{N}\frac{\partial V}{\partial s_d}\,
+\frac{\partial s_d}{\partial \mathbf{R}_i},
+\qquad
+\frac{\partial V}{\partial s_d}
+= -\sum_{k} \frac{h_k\,g_k\,(s_d-c_{k,d})}{\sigma_d^{2}},
+$$
+
+with $g_k$ the Gaussian of hill $k$. This is implemented vectorised in
+`MetadynamicsBias`:
+
+```python
+def _bias_and_dVds(self, s):
+    diff = (s[None, :] - self.centers) / self.sigmas[None, :]   # (nhills, ncv)
+    g = self.heights * np.exp(-0.5 * np.sum(diff**2, axis=1))   # (nhills,)
+    V = float(g.sum())
+    dVds = -np.sum((g[:, None] * diff / self.sigmas[None, :]), axis=0)
+    return V, dVds
+
+def calculate(self, atoms=None, ...):
+    s, grads = self._cv_values_and_grads(atoms)
+    V, dVds = self._bias_and_dVds(s)
+    forces = np.zeros((len(atoms), 3))
+    for d in range(self.ncv):
+        forces -= dVds[d] * grads[d]          # F = -dV/ds · ds/dR
+    self.results["energy"] = V
+    self.results["forces"] = forces
+```
+
+#### Well-tempered deposition
+
+To guarantee convergence, the deposited height is damped by the bias already
+present at the current point:
+
+$$
+h_k \;=\; h_0 \,\exp\!\left( -\frac{V(\mathbf{s}_k)}{k_B \,\Delta T} \right),
+\qquad \Delta T = (\gamma - 1)\,T,
+$$
+
+where $\gamma$ is the **bias factor** (`bias_factor`). Setting
+`bias_factor: null` recovers standard (non-tempered) metadynamics
+($h_k = h_0$).
+
+```python
+def deposit(self, atoms):
+    s, _ = self._cv_values_and_grads(atoms)
+    if self.gamma is not None:
+        V, _ = self._bias_and_dVds(s)
+        h = self.h0 * np.exp(-V / self._kB_dT)   # _kB_dT = (γ-1)·kB·T
+    else:
+        h = self.h0
+    self.centers = np.vstack([self.centers, s])
+    self.heights = np.append(self.heights, h)
+```
+
+#### Free-energy reconstruction
+
+At convergence the FES is recovered from the bias:
+
+$$
+F(\mathbf{s}) =
+\begin{cases}
+-\,V(\mathbf{s}) & \text{standard} \\[4pt]
+-\dfrac{\gamma}{\gamma-1}\,V(\mathbf{s}) & \text{well-tempered}
+\end{cases}
+$$
+
+When **more than two** CVs are biased, the 2-D FES over the chosen pair
+$(a,b)$ is obtained by marginalising the remaining CVs:
+
+$$
+F(s_a,s_b) = -k_B T \,\ln \!\!\sum_{\text{others}} \exp\!\left(-\frac{F(\mathbf{s})}{k_B T}\right).
+$$
+
+### 9.2 Collective Variables
+
+All CVs expose `value_and_grad(atoms) -> (s, grad)` with `grad` of shape
+`(natoms, 3)`. Every gradient is analytic and is unit-tested against central
+differences (`unittests/test_metadynamics.py`). Note the ASE convention
+`atoms.get_distance(i, j, vector=True)` returns $\mathbf{R}_j-\mathbf{R}_i$.
+
+#### `distance` — raw bond length
+
+$$ s = \lVert \mathbf{R}_j - \mathbf{R}_i \rVert,\qquad
+\frac{\partial s}{\partial \mathbf{R}_j} = \hat{\mathbf{u}},\;
+\frac{\partial s}{\partial \mathbf{R}_i} = -\hat{\mathbf{u}},\;
+\hat{\mathbf{u}}=\frac{\mathbf{R}_j-\mathbf{R}_i}{s}. $$
+
+Use for a single, well-defined bond — typically the **forming** central-atom ↔
+substrate bond (so metadynamics can drive it shorter).
+
+#### `coordination` — rational-switching coordination number
+
+$$ s = \sum_{j \in \text{group}} \frac{1 - x_{ij}^{\,n}}{1 - x_{ij}^{\,m}},
+\qquad x_{ij} = \frac{r_{ij}}{r_0}. $$
+
+Permutation-invariant and bounded ($s \to 0$ when the group leaves), so it is
+the robust choice for the **breaking** bond when several equivalent ligand
+atoms exist (e.g. the four Cl of TiCl₄). The $r_{ij}=r_0$ singularity is
+handled by the L'Hôpital limit $f \to n/m$:
+
+```python
+def _switch(self, r):
+    x = r / self.r0
+    if abs(x - 1.0) < 1e-6:
+        f = self.n / self.m
+        dfdx = (self.n - self.m) / (2.0 * self.m)
+    else:
+        num, den = 1.0 - x**self.n, 1.0 - x**self.m
+        f = num / den
+        dfdx = ((-self.n*x**(self.n-1))*den - num*(-self.m*x**(self.m-1))) / den**2
+    return f, dfdx / self.r0          # df/dr
+```
+
+#### `proton_transfer` — antisymmetric stretch
+
+$$ \xi = d(\text{donor–H}) - d(\text{acceptor–H}). $$
+
+$\xi<0$: the proton sits on the surface donor (O–H / N–H); $\xi>0$: it has
+moved onto the leaving ligand. Biasing $\xi$ positive therefore **induces the
+ligand–H byproduct bond** (HCl, amine-H). Add it as a third CV when the
+mechanism is a concerted proton transfer.
+
+### 9.3 Atom Selection
+
+CV endpoints/groups accept several spec forms (resolved in
+`collective_variables.resolve_atom` / `resolve_group`):
+
+| Spec | Meaning |
+|------|---------|
+| `42` or `{index: 42}` | atom index 42 |
+| `"Si"` | all Si atoms |
+| `"O@substrate"` | O atoms with `tag < 2` (slab) |
+| `"N@adsorbate"` | N atoms with `tag ≥ 2` (precursor) |
+| `[3, 7, 11]` | explicit group |
+
+The package's builders set these tags automatically, so reactions can be set
+up **without hard-coding indices**. For a single-atom endpoint that matches
+several atoms, the one nearest the other endpoint is chosen deterministically.
+
+### 9.4 Configuration Reference
+
+```yaml
+analysis:
+  metadynamics:
+    enabled:           true
+    temperature_K:     500.0     # Langevin thermostat temperature
+    timestep_fs:       1.0
+    friction:          0.01
+    steps:             20000     # total MD steps
+    deposition_stride: 50        # deposit a Gaussian every N steps
+    colvar_stride:     50        # COLVAR / trajectory write interval
+    height:            0.05      # initial Gaussian height h0 (eV)
+    bias_factor:       10        # well-tempered γ (>1); null → standard
+    freeze_below_z:    null      # freeze atoms below this z (Å); null → none
+
+    cvs:                         # ≥ 2 CVs
+      - name:    forming_bond
+        type:    distance
+        center:  "Si@adsorbate"
+        partner: "O@substrate"
+        sigma:   0.10
+        grid_min: 1.4           # plot/grid range (optional)
+        grid_max: 4.0
+      - name:    breaking_bond
+        type:    coordination
+        center:  "Si@adsorbate"
+        group:   "N@adsorbate"
+        r0:      2.2
+        n:       6
+        m:       12
+        sigma:   0.10
+      # Optional 3rd CV (marginalised out of the 2-D plot):
+      # - name: proton_transfer
+      #   type: proton_transfer
+      #   donor:    "O@substrate"
+      #   acceptor: "N@adsorbate"
+      #   sigma:    0.10
+
+    plot:
+      cvs:  ["forming_bond", "breaking_bond"]   # the two CVs spanning the FES
+      bins: 120
+```
+
+**Key notes**
+- Define **≥ 2** CVs; any extra ones are biased and marginalised out of the 2-D plot.
+- `sigma` ≈ 0.3–0.5 × the CV's thermal fluctuation; `bias_factor` 5–20 is typical.
+- For a `distance` breaking-bond CV, set `grid_max` and consider `freeze_below_z` so a dissociated fragment cannot drift off and stall recrossing. `coordination` avoids this by construction.
+
+### 9.5 Outputs
+
+Written under `<output_dir>/` (default `metad/`):
+
+| File | Description |
+|------|-------------|
+| `fes_2d.png` | 2-D free-energy contour plot (axes = the two selected CVs, colour = eV) |
+| `fes_2d.npz` | FES grid arrays (`x`, `y`, `fes`, `cv_x`, `cv_y`) for re-plotting |
+| `COLVAR` | time series of CV values + bias energy (convergence check) |
+| `HILLS` | deposited Gaussians (PLUMED-like format) |
+| `metad_traj.extxyz`, `metad_final.vasp` | MD trajectory and final structure |
+
+### 9.6 Usage
+
+**CLI**
+
+```bash
+python examples/metadynamics/run_metadynamics.py config_full.yaml structure.vasp results/metad
+```
+
+**Python API**
+
+```python
+from autoflow_srxn.simulation.potentials import SimulationEngine
+from autoflow_srxn.metadynamics import MetadynamicsWorkflow
+
+engine = SimulationEngine(config)                       # full config (engine.*)
+wf = MetadynamicsWorkflow(engine, config=config["analysis"]["metadynamics"])
+res = wf.run(atoms, output_dir="results/metad")
+
+x, y, fes = res["fes"]                                  # 2-D FES arrays (eV)
+print("Approx. barrier:", fes.max(), "eV")
+```
+
+The structure passed to `run()` should carry tags marking slab (`tag < 2`) vs
+adsorbate (`tag ≥ 2`) so the `Element@region` selectors resolve correctly; the
+package's surface/chemisorption builders set these automatically.
+
+### 9.7 Practical Guidance
+
+- **Check convergence** via `COLVAR`: the CVs should diffuse back and forth over the explored range, and the FES should stop deepening as hills accumulate.
+- **CV choice is everything.** A poorly chosen CV that misses a slow orthogonal degree of freedom (surface reconstruction, byproduct diffusion) gives a hysteretic, non-reproducible FES.
+- For an ALD ligand-exchange reaction, a good 2-D set is *forming bond* (`distance`/`coordination`) × *breaking bond* (`coordination`); add `proton_transfer` as a third dimension when the byproduct forms via concerted H transfer.
+- If a quick NEB/scan (Stage 2.5, §5.7) already shows a **barrierless** path, the FES will be downhill and metadynamics is unnecessary — use it for activated reactions where a barrier exists.
