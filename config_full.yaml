@@ -604,14 +604,20 @@ reaction_search:
         enabled:          true
 
         # ── Advanced TS Logic ───────────────────────────────────────────────
-        # mapping_mode: "geometric" (default)
-        #   Uses a Hungarian algorithm to automatically map atom indices between
-        #   external structures if they are shuffled. Enforces element consistency.
+        # mapping_mode: true (default)
+        #   true  -> run the Hungarian algorithm (geometric matching) to map atom
+        #            indices between the initial/final states. Robust when the two
+        #            states are built independently and atom ordering may differ;
+        #            enforces element-count consistency under PBC.
+        #   false -> skip Hungarian matching and assume the two states already
+        #            share an identical atom ordering (identity mapping). Cheaper,
+        #            and avoids any risk of mismatched pairing when ordering is
+        #            already known to be consistent (e.g. same builder).
         #
         # verification: true (default)
         #   Automatically runs vibrational analysis after TS refinement to
         #   confirm exactly one imaginary frequency (saddle point).
-        mapping_mode:     "geometric"
+        mapping_mode:     true
         verification:     true
 
         # ── NEB (Nudged Elastic Band) ────────────────────────────────────────
