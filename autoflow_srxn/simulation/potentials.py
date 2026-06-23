@@ -373,28 +373,74 @@ class SimulationEngine:
                 sn_kwargs["enable_flash"] = True
 
             if self.d3:
-                from sevenn.calculator import SevenNetD3Calculator
-
-                calc = SevenNetD3Calculator(**sn_kwargs)
-                rel_model = os.path.relpath(model) if os.path.isfile(str(model)) else model
-                logger.info(f"  [Engine] Loaded SevenNet+D3 (model={rel_model}, modal={self.modal}).")
+                from sevenn.calculator import SevenNetD3Calculator as _SNCls
             else:
-                from sevenn.calculator import SevenNetCalculator
+                from sevenn.calculator import SevenNetCalculator as _SNCls
 
-                calc = SevenNetCalculator(**sn_kwargs)
-                rel_model = os.path.relpath(model) if os.path.isfile(str(model)) else model
-                logger.info(f"  [Engine] Loaded SevenNet (model={rel_model}, modal={self.modal}).")
+            # Propagate the single `dtype` option to SevenNet too, but only if the
+            # installed version exposes a matching kwarg (version-safe). The global
+            # torch default dtype set in _setup_torch_runtime covers the rest.
+            import inspect
+            try:
+                params = inspect.signature(_SNCls).parameters
+                for _key in ("default_dtype", "dtype"):
+                    if _key in params:
+                        sn_kwargs[_key] = self.dtype
+                        break
+            except (TypeError, ValueError):
+                pass
+
+            calc = _SNCls(**sn_kwargs)
+            rel_model = os.path.relpath(model) if os.path.isfile(str(model)) else model
+            tag = "SevenNet+D3" if self.d3 else "SevenNet"
+            logger.info(f"  [Engine] Loaded {tag} (model={rel_model}, modal={self.modal}, dtype={self.dtype}).")
             return calc
 
         except Exception as e:
             logger.warning(f"  [Engine] SevenNet loading failed ({type(e).__name__}: {e}). Falling back to EMT.")
             return EMT()
 
+    def _resolve_torch_dtype(self):
+        """Map the config `dtype` string to a torch dtype (float32/float64)."""
+        import torch
+        if str(self.dtype).lower() in ("float64", "double", "64"):
+            return torch.float64
+        return torch.float32
+
+    def _setup_torch_runtime(self, logger):
+        """Single control point for compute precision and GPU fast-math.
+
+        `engine.potential.dtype` is applied globally via ``torch.set_default_dtype``
+        so every torch-backed calculator (MACE, SevenNet) shares one precision
+        setting — previously `dtype` only reached MACE. On CUDA, TF32 fast paths
+        are enabled for a free speed-up on Ampere+ GPUs.
+
+        No-op for non-torch backends (e.g. EMT) so torch is not required there.
+        """
+        if self.backend not in ("mace", "sevennet", "omni"):
+            return
+        try:
+            import torch
+        except ImportError:
+            return
+
+        torch.set_default_dtype(self._resolve_torch_dtype())
+
+        if str(self.device).startswith("cuda") and torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            try:
+                torch.set_float32_matmul_precision("high")
+            except Exception:
+                pass
+            logger.info("  [Engine] CUDA TF32 fast-math enabled (matmul/cudnn allow_tf32).")
+
     def get_calculator(self):
         if self._calculator is not None:
             return self._calculator
 
         logger = get_workflow_logger()
+        self._setup_torch_runtime(logger)
         base_calc = self._build_base_calculator(logger)
 
         if self.zbl_enabled:
