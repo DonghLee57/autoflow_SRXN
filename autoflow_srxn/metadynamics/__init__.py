@@ -3,6 +3,7 @@ from .knowledge import GlobalKnowledge, KnowledgeManager
 from ..transition import TSSearcher, NEBSearcher, ARTSearcher, TransitionStateWorkflow
 from .collective_variables import (
     CollectiveVariable,
+    CoordinateCV,
     DistanceCV,
     CoordinationCV,
     ProtonTransferCV,
@@ -21,6 +22,7 @@ __all__ = [
     "TransitionStateWorkflow",
     # Metadynamics
     "CollectiveVariable",
+    "CoordinateCV",
     "DistanceCV",
     "CoordinationCV",
     "ProtonTransferCV",

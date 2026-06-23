@@ -13,9 +13,12 @@ The structure's tags should mark the slab (tag < 2) vs the adsorbate
 (tag >= 2) so that "Element@substrate" / "Element@adsorbate" CV selectors
 resolve correctly (the project's builders set these tags automatically).
 """
+import os
 import sys
 import yaml
 from ase.io import read
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from autoflow_srxn.simulation.potentials import SimulationEngine
 from autoflow_srxn.metadynamics import MetadynamicsWorkflow

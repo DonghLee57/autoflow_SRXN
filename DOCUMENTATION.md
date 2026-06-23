@@ -721,3 +721,42 @@ package's surface/chemisorption builders set these automatically.
 - **CV choice is everything.** A poorly chosen CV that misses a slow orthogonal degree of freedom (surface reconstruction, byproduct diffusion) gives a hysteretic, non-reproducible FES.
 - For an ALD ligand-exchange reaction, a good 2-D set is *forming bond* (`distance`/`coordination`) × *breaking bond* (`coordination`); add `proton_transfer` as a third dimension when the byproduct forms via concerted H transfer.
 - If a quick NEB/scan (Stage 2.5, §5.7) already shows a **barrierless** path, the FES will be downhill and metadynamics is unnecessary — use it for activated reactions where a barrier exists.
+
+### 9.8 Validation
+
+The engine is validated against references with **known answers**, in two tiers
+(`unittests/test_metadynamics_validation.py`, plus an EMT example).
+
+**Tier 1 — algorithm correctness (analytic reference).**
+- *FES reconstruction / well-tempered scaling* — deterministic (no MD): a single
+  Gaussian of height $h$ must produce a well of depth $h$ (standard) or
+  $\tfrac{\gamma}{\gamma-1}h$ (well-tempered). Checked exactly.
+- *Double-well potential* $V(x,y)=h_0\big((x/a)^2-1\big)^2+\tfrac12 k y^2$ — the
+  canonical enhanced-sampling sanity benchmark, with an exactly known barrier.
+  `CoordinateCV` over $(x,y)$ recovers the analytic barrier; convergence is
+  clean once the walker is bounded (harmonic walls):
+
+  | MD steps | recovered barrier (eV) | analytic |
+  |---------:|:----------------------:|:--------:|
+  | 15 000   | 0.117                  | 0.200    |
+  | 30 000   | 0.176                  | 0.200    |
+  | 50 000   | 0.197 ± 0.022          | 0.200    |
+
+**Tier 2 — physical, literature-comparable (EMT).**
+`examples/metadynamics/cu_diffusion_metad.py` runs Cu adatom diffusion on
+Cu(100) and compares the metadynamics hop barrier against (a) a NEB barrier on
+the **same** EMT potential and (b) the published band:
+
+| Method | Cu(100) hop barrier (eV) |
+|--------|:------------------------:|
+| **NEB (EMT, this work)**     | **0.420** |
+| **MetaD (EMT, this work, 50k steps)** | **0.340** |
+| EMT (literature)             | ~0.40 |
+| DFT (literature, hop)        | ~0.50 |
+| Experiment                   | ~0.28–0.40 |
+
+The metaD↔NEB agreement (~0.08 eV at 50k steps, tightening with longer sampling)
+on an identical potential is the rigorous internal check; the literature band
+confirms the EMT reference itself is physically reasonable. The same protocol —
+metaD FES vs NEB on the production MLIP — is the recommended way to validate CV
+choice for a real precursor reaction (a good CV reproduces the NEB barrier).

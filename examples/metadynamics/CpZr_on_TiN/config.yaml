@@ -1,0 +1,58 @@
+# CpZr(NMe2)3 on TiN(100) — 2D metadynamics with SevenNet 7net-0
+# Intended for a CUDA GPU server. See README.md.
+
+engine:
+  potential:
+    backend: sevennet        # 7net-0 universal potential (89 elements incl. Zr/Ti)
+    model:   7net-0
+    device:  cuda            # GPU. (TF32 auto-enabled; falls back to CPU if no CUDA)
+    dtype:   float32         # single precision — recommended for MD/metaD on GPU
+    # enable_cueq: true      # uncomment if cuequivariance-torch is installed (extra GPU speed)
+
+analysis:
+  metadynamics:
+    enabled:           true
+
+    temperature_K:     600.0    # typical ALD process temperature
+    timestep_fs:       1.0
+    friction:          0.01
+    steps:             200000   # ~110 min on a modern CUDA GPU (see README)
+    deposition_stride: 50
+    colvar_stride:     200
+    height:            0.03
+    bias_factor:       10
+    freeze_below_z:    null     # run_metad.py auto-freezes the bottom TiN layers
+
+    cvs:
+      # CV1 — forming bond: Zr approaching the nearest surface lattice N
+      - name:    Zr_surfN
+        type:    distance
+        center:  "Zr"
+        partner: "N@substrate"
+        sigma:   0.12
+        grid_min: 1.8
+        grid_max: 4.8
+
+      # CV2 — breaking bond: Zr coordination to its amido N ligands (drops as a
+      # -NMe2 ligand dissociates)
+      - name:    Zr_amidoN
+        type:    coordination
+        center:  "Zr"
+        group:   "N@adsorbate"
+        r0:      2.7
+        n:       6
+        m:       12
+        sigma:   0.10
+
+      # CV3 (optional) — proton transfer forming the leaving amine (HNMe2).
+      # Uncomment and point `donor` at a surface N-H once the slab is hydroxyl/
+      # amine-terminated; `acceptor` is the leaving amido N.
+      # - name:     proton_transfer
+      #   type:     proton_transfer
+      #   donor:    "N@substrate"
+      #   acceptor: "N@adsorbate"
+      #   sigma:    0.10
+
+    plot:
+      cvs:  ["Zr_surfN", "Zr_amidoN"]
+      bins: 120
