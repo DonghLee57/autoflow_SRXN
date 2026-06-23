@@ -130,6 +130,33 @@ class DistanceCV(CollectiveVariable):
         return s, grad
 
 
+class CoordinateCV(CollectiveVariable):
+    """Cartesian coordinate of one atom along a fixed axis (x/y/z), in Å.
+
+    s = R[atom, axis]. The gradient is the unit vector along that axis, so this
+    CV is exact and trivial — ideal for validating the metadynamics machinery
+    against analytic model potentials (e.g. Müller-Brown, double well) and for
+    mapping lateral surface-diffusion landscapes (CV = adatom x / y).
+    """
+
+    unit = "Å"
+    _AXES = {"x": 0, "y": 1, "z": 2, 0: 0, 1: 1, 2: 2}
+
+    def __init__(self, atom: int, axis="x", sigma: float = 0.1,
+                 grid_min=None, grid_max=None, label: str | None = None):
+        self.atom = int(atom)
+        self.axis = self._AXES[axis]
+        self.default_sigma = sigma
+        self.grid_min, self.grid_max = grid_min, grid_max
+        self.label = label or f"{['x', 'y', 'z'][self.axis]}({atom})"
+
+    def value_and_grad(self, atoms: Atoms):
+        s = float(atoms.positions[self.atom, self.axis])
+        grad = np.zeros((len(atoms), 3))
+        grad[self.atom, self.axis] = 1.0
+        return s, grad
+
+
 class CoordinationCV(CollectiveVariable):
     """Rational-switching coordination number of atom ``i`` to a ``group``.
 
@@ -243,6 +270,10 @@ def build_cv(spec: dict, atoms: Atoms) -> CollectiveVariable:
         label=spec.get("label"),
     )
     mic = bool(spec.get("mic", any(atoms.pbc)))
+
+    if cv_type == "coordinate":
+        atom = resolve_atom(spec["atom"], atoms)
+        return CoordinateCV(atom, axis=spec.get("axis", "x"), **common)
 
     if cv_type == "distance":
         i = resolve_atom(spec["center"], atoms)

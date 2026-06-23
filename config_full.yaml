@@ -165,10 +165,12 @@ engine:
     model:    null
 
     # ── Floating-point precision ───────────────────────────────────────────────
-    # Controls the PyTorch default dtype for MACE and SevenNet.
+    # SINGLE control for compute precision. Applied globally via
+    # torch.set_default_dtype AND passed to the backend, so it now governs both
+    # MACE and SevenNet (and any torch-backed step) from one option.
     #
     # "float32"  Faster (≈2× on CPU, ≈4× on GPU), lower memory.
-    #            Sufficient for NVT-MD and coarse geometry screening.
+    #            Sufficient for NVT-MD, metadynamics and coarse geometry screening.
     #            Typical force error vs float64: < 1 meV/A.
     #
     # "float64"  Double precision.  Required when:
@@ -176,6 +178,9 @@ engine:
     #            • Hessian / vibrational-frequency calculations
     #            • Thermodynamic free-energy comparisons (PHVA / FHVA)
     #            Numerical second derivatives amplify any single-precision noise.
+    #
+    # Note: when device is "cuda", TF32 fast-math (matmul/cudnn allow_tf32) is
+    # enabled automatically for an additional float32 speed-up on Ampere+ GPUs.
     dtype:    "float64"
 
     # ── D3 dispersion correction ───────────────────────────────────────────────
