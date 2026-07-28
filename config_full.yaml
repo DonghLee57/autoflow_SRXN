@@ -641,24 +641,35 @@ analysis:
     # phva.enabled: true   →  PHVA: Partial Hessian; atom selection via sub-options.
     #
     # Sub-options (only active when enabled: true):
+    #   use_selective_dynamics
+    #                 true (default) -> use fixed atoms/directions read from the
+    #                                   input POSCAR to define the PHVA scope.
+    #                 false          -> ignore input selective-dynamics flags and
+    #                                   use the nested geometric selectors below.
+    #                 FHVA always ignores selective dynamics so every atom is
+    #                 included in the full Hessian.
+    #
+    # The following selectors are applied only when use_selective_dynamics=false:
+    #
     #   frozen_z_ang  Exclude atoms whose z < z_min(atoms) + this value (A).
-    #                 Prevents spurious imaginary modes from artificially frozen
-    #                 bottom layers.  null → no height filtering.
+    #                 null → no height filtering.
     #
-    #   radius_ang    Further restrict to adsorbate atoms + all neighbours within
-    #                 this radius (A).  Requires adsorbate identification via
-    #                 tags / protector-species.  null → no radius restriction.
+    #   phva_radius_ang
+    #                 Further restrict to adsorbate atoms + all neighbours within
+    #                 this radius (A). Requires adsorbate identification via
+    #                 tags / protector-species. null → no radius restriction.
     #
-    #   center        Focal atom(s) for the radius_ang sphere.
+    #   center        Focal atom(s) for the phva_radius_ang sphere.
     #                 null / "adsorbate" → all adsorbate atoms (union of spheres).
     #                 element symbol    → adsorbate atoms of that element, e.g. "Si".
     #                 integer           → one specific atom by absolute index.
     #                 "com"             → adsorbate center-of-mass.
     phva:
       enabled:      true
-      frozen_z_ang: 3.0          # Exclude bottom slab layers (A).
-      radius_ang:   6.0          # Neighbourhood radius around focal atom(s) (A).
-      center:       "Si"         # e.g. central reactive atom of the precursor.
+      use_selective_dynamics: true
+      frozen_z_ang: null          # Used only when false; e.g. 3.0 A.
+      phva_radius_ang: null       # Used only when false; e.g. 6.0 A.
+      center:       null          # Used with phva_radius_ang; e.g. "Si".
     
     # --- Cache format --------------------------------------------------------
     # cache_format: null (default) | "lammps_dump"

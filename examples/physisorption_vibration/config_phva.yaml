@@ -16,4 +16,5 @@ analysis:
     displacement_ang: 0.01
     phva:
       enabled:      true
+      use_selective_dynamics: false
       frozen_z_ang: 5.5          # Freeze bottom 5.5 Å (~99 atoms frozen)

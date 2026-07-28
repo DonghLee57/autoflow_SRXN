@@ -1,7 +1,9 @@
 import os
 import shutil
+from collections.abc import Mapping
 
 import numpy as np
+from ase.constraints import FixAtoms, FixScaled
 from ase.io import write
 
 # NOTE: ase.optimize.dimer is intentionally excluded due to environment import issues.
@@ -27,9 +29,89 @@ _EV_PER_AMU_ANG2_TO_THZ: float = float(
 )
 
 
+def remove_selective_dynamics_constraints(atoms):
+    """Remove constraints produced by VASP selective-dynamics flags.
+
+    ASE represents fully fixed atoms with :class:`FixAtoms` and partially
+    fixed atoms with :class:`FixScaled`. Other constraint types are retained.
+
+    Returns
+    -------
+    list
+        The removed constraints.
+    """
+    removed = [
+        constraint
+        for constraint in atoms.constraints
+        if isinstance(constraint, (FixAtoms, FixScaled))
+    ]
+    if removed:
+        retained = [
+            constraint
+            for constraint in atoms.constraints
+            if not isinstance(constraint, (FixAtoms, FixScaled))
+        ]
+        atoms.set_constraint(retained)
+    return removed
+
+
+def _fully_fixed_indices(atoms):
+    """Return atom indices with all three directions constrained."""
+    fixed = set()
+    for constraint in atoms.constraints:
+        if isinstance(constraint, FixAtoms):
+            fixed.update(int(index) for index in constraint.index)
+        elif isinstance(constraint, FixScaled) and np.all(constraint.mask):
+            fixed.update(int(index) for index in constraint.index)
+    return fixed
+
+
+def resolve_phva_settings(config):
+    """Resolve PHVA settings through one consistent configuration hierarchy.
+
+    ``use_selective_dynamics`` defaults to ``True``. When it is enabled, the
+    structure's selective-dynamics constraints define the PHVA scope and the
+    geometric selectors are intentionally disabled. When it is disabled,
+    selective dynamics are ignored and the nested ``frozen_z_ang`` and
+    ``phva_radius_ang`` values define the PHVA scope.
+
+    ``radius_ang`` is accepted as a lower-priority compatibility alias for
+    ``phva_radius_ang``.
+    """
+    root = config if isinstance(config, Mapping) else {}
+    analysis_cfg = root.get("analysis", {})
+    if not isinstance(analysis_cfg, Mapping):
+        analysis_cfg = {}
+    vib_cfg = analysis_cfg.get("vibrational", {})
+    if not isinstance(vib_cfg, Mapping):
+        vib_cfg = {}
+    phva_cfg = vib_cfg.get("phva", {})
+    if not isinstance(phva_cfg, Mapping):
+        phva_cfg = {}
+
+    enabled = bool(phva_cfg.get("enabled", False))
+    use_selective = bool(phva_cfg.get("use_selective_dynamics", True))
+    use_geometric_selectors = enabled and not use_selective
+
+    if "phva_radius_ang" in phva_cfg:
+        radius = phva_cfg.get("phva_radius_ang")
+    else:
+        radius = phva_cfg.get("radius_ang")
+
+    return {
+        "enabled": enabled,
+        "use_selective_dynamics": use_selective,
+        "frozen_z_ang": (
+            phva_cfg.get("frozen_z_ang") if use_geometric_selectors else None
+        ),
+        "phva_radius_ang": radius if use_geometric_selectors else None,
+        "center": phva_cfg.get("center"),
+    }
+
+
 def _resolve_phva_center(atoms, ads_idx, center_cfg):
     """Resolve which adsorbate atom index/indices to use as the focal point(s)
-    for the ``phva.radius_ang`` sphere.
+    for the ``phva.phva_radius_ang`` sphere.
 
     Parameters
     ----------
@@ -87,12 +169,33 @@ class VibrationalAnalyzer:
         displacement: Finite difference displacement (A).
         name: Name for the vibration log directory.
         """
-        self.atoms = atoms
         self.engine = engine
         self._indices = indices
         self.displacement = displacement
         self.name = name
         self.logger = get_workflow_logger()
+
+        config = getattr(self.engine, "all_config", {})
+        phva_settings = resolve_phva_settings(config)
+        phva_enabled = phva_settings["enabled"]
+        use_selective = phva_settings["use_selective_dynamics"]
+
+        # FHVA must displace every atom even when the input POSCAR contains
+        # selective-dynamics flags. PHVA can opt into the same behaviour.
+        # Work on a copy so vibration analysis does not remove constraints
+        # needed by a caller's relaxation workflow.
+        if not phva_enabled or not use_selective:
+            prepared_atoms = atoms.copy()
+            removed = remove_selective_dynamics_constraints(prepared_atoms)
+            self.atoms = prepared_atoms if removed else atoms
+            if removed:
+                mode = "FHVA" if not phva_enabled else "PHVA"
+                self.logger.info(
+                    f"  [VibAnalyzer] {mode} ignored {len(removed)} "
+                    "selective-dynamics constraint(s)."
+                )
+        else:
+            self.atoms = atoms
 
         # Attach calculator
         self.atoms.calc = self.engine.get_calculator()
@@ -111,8 +214,10 @@ class VibrationalAnalyzer:
            ``analysis.vibrational.phva.enabled: false``  →  Full Hessian (all atoms,
                return ``None`` so ASE Vibrations uses every atom).
            ``analysis.vibrational.phva.enabled: true``   →  Partial Hessian:
-               a. ``phva.frozen_z_ang``  – exclude atoms whose z < z_min + threshold.
-               b. ``phva.radius_ang``    – if set, further restrict to adsorbate atoms
+               a. ``phva.use_selective_dynamics`` – optionally use fixed
+                  atoms and directions from the input structure.
+               b. ``phva.frozen_z_ang``  – exclude atoms whose z < z_min + threshold.
+               c. ``phva.phva_radius_ang`` – if set, further restrict to adsorbate atoms
                   (identified via tag/protector detection) plus all neighbours within
                   the given radius.  ``phva.center`` controls the focal atom(s).
         """
@@ -120,40 +225,25 @@ class VibrationalAnalyzer:
             return self._indices
 
         config = self.engine.all_config
-        vib_cfg = config.get("analysis", {}).get("vibrational", {})
-        phva_cfg = vib_cfg.get("phva", {})
+        phva_settings = resolve_phva_settings(config)
 
-        # phva.enabled = false (or block absent) → Use non-constrained atoms (FHVA)
-        if not phva_cfg.get("enabled", False):
-            # Check for FixAtoms constraints
-            from ase.constraints import FixAtoms
-            constrained_indices = set()
-            for c in self.atoms.constraints:
-                if isinstance(c, FixAtoms):
-                    constrained_indices.update(c.index)
-            
-            if not constrained_indices:
-                return None # Full Hessian on all atoms
-            
-            # Use all non-constrained atoms
-            indices_set = set(range(len(self.atoms))) - constrained_indices
-            self._indices = sorted(list(indices_set))
-            self.logger.info(f"  [VibAnalyzer] FHVA detected constraints. Active atoms: {len(self._indices)}/{len(self.atoms)}")
-            return self._indices
+        # phva.enabled = false (or block absent) -> force a full Hessian.
+        if not phva_settings["enabled"]:
+            return None
 
-        # ── Resolve PHVA parameters ──────────────────────────────────────────
-        frozen_z = phva_cfg.get("frozen_z_ang")
-
-        radius     = phva_cfg.get("radius_ang")
-        center_cfg = phva_cfg.get("center", None)
+        use_selective = phva_settings["use_selective_dynamics"]
+        frozen_z = phva_settings["frozen_z_ang"]
+        radius = phva_settings["phva_radius_ang"]
+        center_cfg = phva_settings["center"]
 
         indices_set = set(range(len(self.atoms)))
 
-        # 0. Constraint-based exclusion (always apply if PHVA is enabled too)
-        from ase.constraints import FixAtoms
-        for c in self.atoms.constraints:
-            if isinstance(c, FixAtoms):
-                indices_set -= set(c.index)
+        # 0. Select one scope hierarchy: input selective dynamics or nested
+        # geometric selectors. The resolver prevents the two from mixing.
+        # Partially constrained FixScaled atoms remain active so their free
+        # directions can still contribute to the partial Hessian.
+        if use_selective:
+            indices_set -= _fully_fixed_indices(self.atoms)
 
         # 1. Height-based frozen-atom exclusion
         if frozen_z is not None:
@@ -215,7 +305,7 @@ class VibrationalAnalyzer:
                 indices_set &= phva_set
             else:
                 self.logger.warning(
-                    "  [VibAnalyzer] phva.radius_ang set but no adsorbate found — "
+                    "  [VibAnalyzer] phva.phva_radius_ang set but no adsorbate found — "
                     "using height-filtered selection only."
                 )
 

@@ -22,6 +22,11 @@ Config keys that control structure handling
                is automatically applied so frozen atoms stay fixed during
                every relaxation step.
     ``false`` – Full Hessian; no atoms are frozen.
+
+``analysis.vibrational.phva.use_selective_dynamics``  (default: true)
+    When PHVA is enabled, use selective-dynamics constraints read from the
+    input structure. When false, use the nested ``frozen_z_ang`` and
+    ``phva_radius_ang`` selectors instead. FHVA always removes constraints.
 """
 
 from __future__ import annotations
@@ -35,7 +40,12 @@ import yaml
 from ase.constraints import FixAtoms
 from ase.io import read
 
-from .vibrational_analyzer import MultiModeFollower, VibrationalAnalyzer
+from .vibrational_analyzer import (
+    MultiModeFollower,
+    VibrationalAnalyzer,
+    remove_selective_dynamics_constraints,
+    resolve_phva_settings,
+)
 from ..simulation.potentials import SimulationEngine
 from ..simulation.qpoint_handler import QPointParser
 from ..utils import load_yaml_config, setup_logger
@@ -84,16 +94,43 @@ def _load_structure(config: dict, config_dir: str, engine, logger):
         atoms.center(vacuum=10.0)
         logger.info(f"  center_in_vacuum=true")
 
-    # 3. FixAtoms for frozen zone (slab PHVA)
+    # 3. Apply the vibration mode's selective-dynamics policy before
+    # relaxation. FHVA always releases input POSCAR constraints; PHVA can
+    # preserve them with use_selective_dynamics=true (the default).
     frozen_idx = None
-    phva_cfg = config["analysis"]["vibrational"].get("phva", {})
-    frozen_z = phva_cfg.get("frozen_z_ang") if phva_cfg.get("enabled") else None
+    phva_settings = resolve_phva_settings(config)
+    phva_enabled = phva_settings["enabled"]
+    use_selective = phva_settings["use_selective_dynamics"]
+
+    if not phva_enabled or not use_selective:
+        removed = remove_selective_dynamics_constraints(atoms)
+        if removed:
+            mode = "FHVA" if not phva_enabled else "PHVA"
+            logger.info(
+                f"  {mode}: ignored {len(removed)} input "
+                "selective-dynamics constraint(s)"
+            )
+
+    frozen_z = phva_settings["frozen_z_ang"]
 
     if frozen_z is not None:
         z_min = atoms.positions[:, 2].min()
         mask = atoms.positions[:, 2] < z_min + float(frozen_z)
-        frozen_idx = list(np.where(mask)[0])
-        atoms.set_constraint(FixAtoms(indices=frozen_idx))
+        frozen_set = set(int(index) for index in np.where(mask)[0])
+
+        # Preserve remaining non-selective constraints while merging any
+        # existing fully fixed atoms into one FixAtoms constraint.
+        retained_constraints = []
+        for constraint in atoms.constraints:
+            if isinstance(constraint, FixAtoms):
+                frozen_set.update(int(index) for index in constraint.index)
+            else:
+                retained_constraints.append(constraint)
+
+        frozen_idx = sorted(frozen_set)
+        atoms.set_constraint(
+            retained_constraints + ([FixAtoms(indices=frozen_idx)] if frozen_idx else [])
+        )
         n_active = len(atoms) - len(frozen_idx)
         logger.info(
             f"  phva.enabled=true, frozen_z_ang={frozen_z}  "
